@@ -1,0 +1,26 @@
+{
+    "compilerOptions": {
+      "module": "system",
+      "alwaysStrict": true,
+      "declaration": false,
+      "lib": [
+        "dom",
+        "es5",
+        "scripthost",
+        "es2015.promise",
+        "ES2015.Iterable"
+      ],
+      "sourceMap": false,
+      "noEmitOnError": true,
+      "noFallthroughCasesInSwitch": true,
+      "noImplicitAny": true,
+      "noImplicitReturns": true,
+      "noImplicitThis": true,
+      "noUnusedLocals": true,
+      "removeComments": true,
+      "strictFunctionTypes": true,
+      "stripInternal": true,
+      "target": "es5"
+    },
+    "exclude": [ "../obj" ]
+  }

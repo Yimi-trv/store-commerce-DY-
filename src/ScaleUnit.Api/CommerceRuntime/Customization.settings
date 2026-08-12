@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<commerceRuntimeExtensions>
+  <composition>
+    <add source="assembly" value="DP.LocalizacionPeru.CommerceRuntime" />
+  </composition>
+  <settings />
+</commerceRuntimeExtensions>

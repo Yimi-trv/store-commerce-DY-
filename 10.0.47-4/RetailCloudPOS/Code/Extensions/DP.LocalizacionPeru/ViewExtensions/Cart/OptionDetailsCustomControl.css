@@ -1,0 +1,59 @@
+﻿@import url('OptionDetailsCustomControl.css');
+*.tabFontColor.active {
+    border-bottom-width: 5px !important;
+    border-bottom-color: gray !important;
+    border-bottom-style: solid !important;
+}
+
+.boton_2{
+    text-decoration: none;
+    padding: 5px;
+    font-family: arial;
+   /* text-transform: uppercase;*/
+    padding-left: 5px;
+    padding-right: 5px;
+    color: white;
+    background-color: #9b0e0e;
+  }
+  .boton_2:hover{
+    color: #9b0e0e;
+    background-color: #bc6355;
+    text-decoration: none;
+  }
+/*.win-appbar.dynamicsSymbolFont button.iconMultiSelect {
+    display: none !important;
+}
+
+.activeStatus {
+    color:green;
+}
+.pendingStatus {
+    color:red;
+}
+
+.iconView {
+    display: none !important;
+}
+
+.win-appbar.dynamicsSymbolFont button.iconAdd {
+    display: none !important;
+}
+
+
+.win-appbar.dynamicsSymbolFont button.iconAddFriend {
+    display: none !important;
+}*/
+
+/*.win-appbar.dynamicsSymbolFont button.iconAddFriend.custom {
+    display: block !important;
+}
+
+.win-appbar.dynamicsSymbolFont button.iconAdd.custom {
+    display: block !important;
+}
+
+.iconMail {
+    height: 100px !important;
+    width:80px !important;
+    font-size:18px !important;
+}*/

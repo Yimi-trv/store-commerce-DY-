@@ -1,0 +1,102 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>Trujillo.PeruEInvoicing.ScaleUnit</AssemblyName>
+    <RootNamespace>Trujillo.PeruEInvoicing.ScaleUnit</RootNamespace>
+    <Version>1.7.0.0</Version>
+    <PackageDisplayName>Trujillo Peru E-Invoicing API</PackageDisplayName>
+    <PackageDescription>API de consulta de transacciones y descarga de TXT de facturacion electronica</PackageDescription>
+    <PackageName>Trujillo.PeruEInvoicing.ScaleUnit</PackageName>
+    <PackagePublisher>DP</PackagePublisher>
+    <PackageVersion>2.9.4.0</PackageVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Dynamics.Commerce.Sdk.ScaleUnit" Version="9.51.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- CRT extension -->
+    <ProjectReference Include="..\CommerceRuntime\RegenerateFE.CommerceRuntime.csproj" />
+    <!-- POS extension (SOLO builds de prueba: msbuild -p:IncludePos=true). Prod = API-only (default). -->
+    <ProjectReference Include="..\PosExtension\Terranova.PosExtension.csproj" Condition="'$(IncludePos)' == 'true'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="DP.LocalizacionPeru.CommerceRuntime">
+      <HintPath>..\..\10.0.47-4\RetailServer\Code\bin\ext\DP.LocalizacionPeru.CommerceRuntime.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Merge configs to register DP.LocalizacionPeru.CommerceRuntime -->
+  <ItemGroup>
+    <!-- CRT config (CommerceRuntime.ext.config) -->
+    <CommerceRuntimeConfigFilesFromPackageReferences Include="$(MSBuildProjectDirectory)\CommerceRuntime\Customization.settings" />
+    <!-- Retail Server config (web.config) - registers DP controllers -->
+    <RetailServerConfigFilesFromPackageReferences Include="$(MSBuildProjectDirectory)\RetailServer\Customization.settings" />
+  </ItemGroup>
+
+  <Target Name="IncludeDPExtensionDlls" AfterTargets="GetUpstreamPackagingOutput" BeforeTargets="GenerateSdkPackage">
+    <ItemGroup>
+      <CommerceRuntime_Ext_Files Include="..\..\10.0.47-4\RetailServer\Code\bin\ext\DP.LocalizacionPeru.CommerceRuntime.dll" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Copy DP 10.0.47 files to staging and re-generate ZIP -->
+  <Target Name="CopyDPFilesAndRezip" AfterTargets="GenerateSdkPackage">
+    <!-- POS files from DP 10.0.47-4 -->
+    <ItemGroup>
+      <DPPosFiles Include="..\..\10.0.47-4\RetailCloudPOS\Code\Extensions\DP.LocalizacionPeru\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DPPosFiles)"
+          DestinationFiles="@(DPPosFiles->'$(OutputPath)CloudScaleUnitExtensionPackage\RetailCloudPOS\Code\Extensions\DP.LocalizacionPeru\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="false" />
+
+    <!-- Override DPEndTransaction.js with fixed version (null-check DPIsDocRetorno) -->
+    <Copy SourceFiles="dp-overrides\DPEndTransaction.fixed.js"
+          DestinationFiles="$(OutputPath)CloudScaleUnitExtensionPackage\RetailCloudPOS\Code\Extensions\DP.LocalizacionPeru\Triggers\DPEndTransaction.js"
+          SkipUnchangedFiles="false" />
+
+    <!-- Override cosmético del control OptionDetails del DP (pedido 2026-07-31):
+         botón "Seleccionar documento", fondo #fdc928, sin bordes/sombras, ancho completo.
+         Solo rótulo + estilos; la lógica del DP queda intacta. -->
+    <Copy SourceFiles="dp-overrides\OptionDetailsCustomControl.fixed.html"
+          DestinationFiles="$(OutputPath)CloudScaleUnitExtensionPackage\RetailCloudPOS\Code\Extensions\DP.LocalizacionPeru\ViewExtensions\Cart\OptionDetailsCustomControl.html"
+          SkipUnchangedFiles="false" />
+    <Copy SourceFiles="dp-overrides\OptionDetailsCustomControl.fixed.css"
+          DestinationFiles="$(OutputPath)CloudScaleUnitExtensionPackage\RetailCloudPOS\Code\Extensions\DP.LocalizacionPeru\ViewExtensions\Cart\OptionDetailsCustomControl.css"
+          SkipUnchangedFiles="false" />
+
+    <!-- Manifest del DP con version 10.0.47.4 (el original declara 10.0.47.3 desde siempre;
+         DP no la sube ni entre sus propias entregas). El POS cachea el bundle de la extensión
+         por versión: sin este bump, las cajas pueden seguir sirviendo los archivos viejos y
+         nuestros overrides (guard del TXT, botón) no llegan. REGLA: cada vez que cambie un
+         override de dp-overrides, subir el 4to segmento de esta versión. -->
+    <Copy SourceFiles="dp-overrides\DP.LocalizacionPeru.manifest.fixed.json"
+          DestinationFiles="$(OutputPath)CloudScaleUnitExtensionPackage\RetailCloudPOS\Code\Extensions\DP.LocalizacionPeru\manifest.json"
+          SkipUnchangedFiles="false" />
+
+    <!-- SQL upgrade scripts from DP 10.0.47-4 -->
+    <ItemGroup>
+      <DPSqlScripts Include="..\..\10.0.47-4\RetailServer\Data\Upgrade\Custom\*.sql" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DPSqlScripts)"
+          DestinationFolder="$(OutputPath)CloudScaleUnitExtensionPackage\RetailServer\Data\Upgrade\Custom\"
+          SkipUnchangedFiles="true" />
+
+    <!-- NOTA composición CRT: el orden default del merge del SDK (Trujillo PRIMERO, DP después)
+         es el correcto. Empíricamente (deploys UAT v2.8.0→v2.8.2) la precedencia es
+         "PRIMERO registrado gana": nuestro PosExtensionPackagesService debe ser el punto de
+         entrada para poder dedupear la respuesta del DP (que encadena y apila su entrada
+         hardcodeada). En v2.8.1/2 se pisaba este orden con un override (DP primero) por la
+         hipótesis errónea "último gana" — se eliminó en v2.8.3. -->
+
+    <!-- Re-generate ZIP -->
+    <Delete Files="$(OutputPath)CloudScaleUnitExtensionPackage.zip" />
+    <ZipDirectory SourceDirectory="$(OutputPath)CloudScaleUnitExtensionPackage"
+                  DestinationFile="$(OutputPath)CloudScaleUnitExtensionPackage.zip" />
+  </Target>
+
+</Project>

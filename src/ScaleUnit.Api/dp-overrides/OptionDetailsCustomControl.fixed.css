@@ -1,0 +1,35 @@
+/* OVERRIDE Terranova (2026-07-31) sobre el CSS del control OptionDetails del DP.
+   Cambios cosméticos del botón .boton_2 (pedido de negocio):
+   - Fondo #fdc928 (amarillo), texto oscuro #212121 (blanco sobre ese amarillo es ilegible).
+   - Sin bordes ni sombras.
+   - Ancho completo del área del control ("que ocupe toda la posición").
+   Se eliminó también el @import circular del original (el archivo se importaba a sí mismo).
+   El resto de reglas se conserva igual que en 10.0.47-4. */
+
+*.tabFontColor.active {
+    border-bottom-width: 5px !important;
+    border-bottom-color: gray !important;
+    border-bottom-style: solid !important;
+}
+
+.boton_2 {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    text-decoration: none;
+    padding: 8px 5px;
+    font-family: arial;
+    color: #212121;
+    background-color: #fdc928;
+    border: none;
+    box-shadow: none;
+    outline: none;
+}
+
+.boton_2:hover {
+    color: #212121;
+    background-color: #e6b511;
+    text-decoration: none;
+    border: none;
+    box-shadow: none;
+}

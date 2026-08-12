@@ -1,0 +1,7 @@
+﻿{
+  "extends": "./devDependencies/pos-tsconfig-base.json",
+  "exclude": [
+    "obj",
+    "bin"
+  ]
+}

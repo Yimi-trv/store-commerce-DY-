@@ -1,0 +1,59 @@
+===========================================================================
+API PERUDEVS (consulta RUC / DNI) — referencia de consumo
+Fuente: la misma key y endpoints que usa SunatLookupCommand.ts en el POS
+===========================================================================
+
+BASE:  https://api.perudevs.com/api/v1
+KEY:   cGVydWRldnMucHJvZHVjdGlvbi5maXRjb2RlcnMuNjgxY2IzYzE5ZmE0MTczZjYxMzIwYWVh
+AUTH:  la key viaja como query param "key" (no hay header de autorizacion)
+
+---------------------------------------------------------------------------
+1) CONSULTA RUC (11 digitos)
+---------------------------------------------------------------------------
+curl "https://api.perudevs.com/api/v1/ruc?document=20407077785&key=cGVydWRldnMucHJvZHVjdGlvbi5maXRjb2RlcnMuNjgxY2IzYzE5ZmE0MTczZjYxMzIwYWVh"
+
+Respuesta (estado=true si encontro):
+{
+  "estado": true,
+  "mensaje": "...",
+  "resultado": {
+    "razon_social": "TRUJILLO INVESTMENT S.A.",
+    "nombre_comercial": "COMERCIAL TRUJILLO",
+    "direccion": "AV. RAYMONDI NRO. 351 ...",
+    "departamento": "ANCASH",
+    "provincia": "HUARAZ",
+    "distrito": "HUARAZ",
+    "estado": "ACTIVO",
+    "condicion": "HABIDO",
+    "tipo": "...",
+    "padrones": [ "Incorporado al Regimen de Agentes de Retencion ..." ]
+  }
+}
+
+---------------------------------------------------------------------------
+2) CONSULTA DNI (8 digitos)
+---------------------------------------------------------------------------
+curl "https://api.perudevs.com/api/v1/dni/complete?document=12345678&key=cGVydWRldnMucHJvZHVjdGlvbi5maXRjb2RlcnMuNjgxY2IzYzE5ZmE0MTczZjYxMzIwYWVh"
+
+Respuesta:
+{
+  "estado": true,
+  "resultado": {
+    "nombre_completo": "...",
+    "nombres": "...",
+    "apellido_paterno": "...",
+    "apellido_materno": "..."
+  }
+}
+
+---------------------------------------------------------------------------
+NOTAS
+---------------------------------------------------------------------------
+- Si estado=false, leer "mensaje" (documento no encontrado, key invalida, etc.).
+- Windows cmd: usar comillas dobles como en los ejemplos (la URL lleva & y debe
+  ir entre comillas si no, cmd corta el comando).
+- Como el POS la llama con fetch directo desde el navegador, la key es visible
+  en el bundle JS (SunatLookupCommand). PENDIENTE conocido del proyecto:
+  moverla a configuracion del servidor y consumir via CRT (TaxpayerLookup).
+- Uso de la key: es la cuenta del proyecto en perudevs.com (plan con limite de
+  consultas; si devuelve error de cuota, revisar el plan en su dashboard).

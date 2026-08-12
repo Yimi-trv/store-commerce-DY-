@@ -1,0 +1,224 @@
+﻿<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <title></title>
+    <link href="CustomerFieldsPeru.css" rel="stylesheet" />
+</head>
+<body>
+
+    <script id="Microsoft_Pos_Extensibility_Localizacion_CustomerFieldsPeru" type="text/html">
+        <div class="gutter40x40"></div>
+
+        <div class="col stretch">
+
+            <label for="custAccIdInput">Customer Account</label>
+            <input type="text" id="custAccIdInput" data-bind="value: custAcc, valueUpdate: 'afterkeydown'" readonly />
+        </div>
+        <h2 class="marginTop8 marginBottom8" data-bind="text: header">Datos Peru</h2>
+
+        <div class="gutter20x20"></div>
+
+        <div class="row">
+            <div class="col stretch">
+
+                <!--<input type="text" id="customerPersonalizado" data-bind="value: personalizado, valueUpdate: 'afterkeydown'" />-->
+
+                <div class="divTable">
+                    <div class="divTableBody">
+                        <div class="divTableRow">
+                            <div class="divTableCell">
+                                <label for="customerPersonalizado">Tipo documento de identidad</label>
+                                <select tabindex="1" id="customerPersonalizado"
+                                        data-bind="options: currentTypeDocuments,
+                                            optionsText: 'description',
+                                            optionsValue: 'typeDocId',
+                                            value: personalizado,
+                                            optionsCaption: '--',
+                                            attr: { 'title': 'Tipo de documento'}"></select>
+                            </div>
+
+
+                            <div class="divTableCell">
+                                <label for="dpagentretention_pe">Agente de retención</label>
+                                <div id="dpagentretention_pe">
+                                </div>
+                            </div>
+
+                            <div class="divTableCell">
+                                <label for="dpagentperception_pe">Agente de percepción</label>
+                                <div id="dpagentperception_pe">
+                                </div>
+                            </div>
+
+                            <div class="divTableCell">
+                                <label for="dpemergencyzone_pe">Zona de emergencia</label>
+                                <div id="dpemergencyzone_pe">
+                                </div>
+                            </div>
+
+                            <div class="divTableCell">
+                                <label for="dppublicsector_pe">Sector público</label>
+                                <div id="dppublicsector_pe">
+                                </div>
+                            </div>                           
+
+                            <!--<h3>ToggleSwitch</h3>
+    <div class="pad8">
+        <div id="dpagentretention_pe">
+        </div>
+    </div>
+
+    <!--<div class="divTableCell">
+        <label for="titledpagentretention_pe">Agente de retención</label>
+        <input type="checkbox" id="dpagentretention_pe" data-bind="checked: dpagentretention_pe, valueUpdate: 'afterkeydown'" />
+    </div>-->
+                            <!--<div class="divTableCell">
+
+
+        <label for="dpagentretention_pe">Agente de retención</label>
+        <div id="dpagentretention_pe"
+             data-bind="toggleSwitch: {
+                labelOn: 'string_1357',
+                labelOff:'string_1358',
+                checked: dpagentretention_pe,
+                onChange: toggledpAgentretention
+             }">
+        </div>
+    </div>-->
+                            <!--<div class="divTableCell">
+        <label for="dpagentperception_pe">Agente de percepción</label>
+        <div id="dpagentperception_pe"
+             data-bind="toggleSwitch: {
+                    labelOn: 'string_1357',
+                    labelOff:'string_1358',
+                    checked: dpagentperception_pe,
+                    onChange: toggledpAgentperception
+                 }">
+        </div>
+    </div>-->
+                            <!--<div class="divTableCell">
+        <label for="dpemergencyzone_pe">Zona de emergencia</label>
+        <div id="dpemergencyzone_pe"
+             data-bind="toggleSwitch: {
+                                labelOn: 'string_1357',
+                                labelOff:'string_1358',
+                                checked: dpemergencyzone_pe,
+                                onChange: toggledpEmergencyzone
+                             }">
+        </div>
+    </div>-->
+                            <!--<div class="divTableCell">
+        <label for="dppublicsector_pe">Sector público</label>
+        <div id="dppublicsector_pe"
+             data-bind="toggleSwitch: {
+                                labelOn: 'string_1357',
+                                labelOff:'string_1358',
+                                checked: dppublicsector_pe,
+                                onChange: toggledppublicsector
+                                }">
+        </div>
+    </div>-->
+                        </div>
+                        <div class="divTableRow">
+                            <div class="divTableCell">
+                                <label for="customerdpnumberid_pe">Número de documento de identidad</label>
+                                <input type="text" id="customerdpnumberid_pe" data-bind="value: dpnumberdocumid_pe, valueUpdate: 'afterkeydown'" />
+                                <!--    <label for="dpagentretention_pe">Agente de retención</label>
+           <input type="checkbox" id="dpagentretention_pe" data-bind="checked: dpagentretention_pe, valueUpdate: 'afterkeydown'" />
+        -->
+
+                            </div>
+                            <div class="divTableCell">&nbsp;</div>
+                            <div class="divTableCell">
+                                <label for="dpexoneratedperception_pe">Exonerado de percepción</label>
+                                <div id="dpexoneratedperception_pe">
+                                </div>
+                            </div>
+
+                            <div class="divTableCell">
+                                <label for="dpfinalconsumer_pe">Consumidor final</label>
+                                <div id="dpfinalconsumer_pe">
+                                </div>
+                            </div>
+
+                            <!--<div class="divTableCell">
+        <label for="dpexoneratedperception_pe">Exonerado de percepción</label>
+        <div id="dpexoneratedperception_pe"
+             data-bind="toggleSwitch: {
+                    labelOn: 'string_1357',
+                    labelOff:'string_1358',
+                    checked: dpexoneratedperception_pe,
+                    onChange: toggledpExoneratedperception
+                 }">
+        </div>
+    </div>-->
+                            <!--<div class="divTableCell">
+                                <label for="dpfinalconsumer_pe">Consumidor final</label>
+                                <div id="dpfinalconsumer_pe"
+                                     data-bind="toggleSwitch: {
+                                                        labelOn: 'string_1357',
+                                                        labelOff:'string_1358',
+                                                        checked: dpfinalconsumer_pe,
+                                                        onChange: toggledpFinalconsumer
+                                                        }">
+                                </div>
+                            </div>-->
+                        </div>
+                        <div class="divTableRow">
+                            <div class="divTableCell">
+                                <label for="dpinvoice01_pe">Emitir Factura</label>
+                                <div id="dpinvoice01_pe"
+                                     data-bind="toggleSwitch: {
+                                                    labelOn: 'string_1357',
+                                                    labelOff:'string_1358',
+                                                    checked: dpinvoice01_pe
+                                                 }">
+                                </div>
+                                <!--DPINVOICE No tiene   onChange: toggledpOthers-->
+                            </div>
+                            <div class="divTableCell">&nbsp;</div>
+
+                            <div class="divTableCell">
+                                <label for="dpothers_pe">Otros</label>
+                                <div id="dpothers_pe">
+                                </div>
+                            </div>
+                            <div class="divTableCell">
+                                <label for="dpnotdomiciled_pe">No domiciliado</label>
+                                <div id="dpnotdomiciled_pe">
+                                </div>
+                            </div>
+
+                            <!--<div class="divTableCell">
+        <label for="dpothers_pe">Otros</label>
+        <div id="dpothers_pe"
+             data-bind="toggleSwitch: {
+                            labelOn: 'string_1357',
+                            labelOff:'string_1358',
+                            checked: dpothers_pe,
+                            onChange: toggledpOthers
+                         }">
+        </div>
+    </div>-->
+                            <!--<div class="divTableCell">
+                                <label for="dpnotdomiciled_pe">No domiciliado</label>
+                                <div id="dpnotdomiciled_pe"
+                                     data-bind="toggleSwitch: {
+                                                        labelOn: 'string_1357',
+                                                        labelOff:'string_1358',
+                                                        checked: dpnotdomiciled_pe,
+                                                        onChange: toggledpNotdomiciled
+                                                        }">
+                                </div>
+                            </div>-->
+                        </div>
+
+                        </div>
+                </div>
+            </div>
+        </div>
+    </script>
+</body>
+</html>

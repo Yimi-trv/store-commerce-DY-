@@ -1,0 +1,99 @@
+﻿{
+  "$schema": "./devDependencies/schemas/manifestSchema.json",
+  "name": "DP.LocalizacionPeru",
+  "publisher": "DP",
+  "version": "10.0.47.3",
+  "minimumPosVersion": "9.32.0.0",
+  "description": "Package extensión Perú : Controla las operaciones impuestos y formato generación txt electrónico de la Localización.",
+  "dependencies": [
+    {
+      "alias": "knockout",
+      "format": "amd",
+      "modulePath": "Libraries/knockout"
+    }
+  ],
+  "components": {
+    "resources": {
+      "supportedUICultures": [ "en-US" ],
+      "fallbackUICulture": "en-US",
+      "culturesDirectoryPath": "Resources/Strings",
+      "stringResourcesFileName": "resources.resjson"
+    },
+    "extend": {
+      "views": {
+        "CartView": {
+          "viewController": { "modulePath": "ViewExtensions/Cart/CartViewController" },
+          "controlsConfig": {
+            "customControls": [
+              {
+                "controlName": "OptionDetails",
+                "htmlPath": "ViewExtensions/Cart/OptionDetailsCustomControl.html",
+                "modulePath": "ViewExtensions/Cart/OptionDetailsCustomControl"
+              }
+            ]
+          }
+        },
+        "ShowJournalView": {
+          "appBarCommands": [ { "modulePath": "ViewExtensions/ShowJournal/DownloadDocumentElectronic" } ]
+        },
+        "CustomerAddEditView": {
+          "controlsConfig": {
+            "customControls": [
+              {
+                "controlName": "customerFieldsPeru",
+                "htmlPath": "ViewExtensions/CustomerAddEdit/CustomerFieldsPeru.html",
+                "modulePath": "ViewExtensions/CustomerAddEdit/CustomerFieldsPeru"
+              }
+            ]
+          }
+        },
+        "SearchView": {
+          "customerListConfiguration": {
+            "name": "Customized Customize Search Columns",
+            "description": "An extension providing a customized set of columns on the customer search grid.",
+            "modulePath": "ViewExtensions/SearchColumns/CustomerSearch"
+          }
+        },
+        "ManageShiftsView": {
+          "appBarCommands": [
+            { "modulePath": "ViewExtensions/ManageShifts/ManageShiftsCommand" }
+          ]
+        }
+      },
+      "triggers": [
+        {
+          "triggerType": "PostOperation",
+          "modulePath": "Triggers/DPOperationPost"
+        },
+        {
+          "triggerType": "PostEndTransaction",
+          "modulePath": "Triggers/DPEndTransaction"
+        }
+      ]
+    },
+    "create": {
+      "templatedDialogs": [
+        {
+          "htmlPath": "Controls/Dialogs/Edit/StoreReceiptEditDialog.html",
+          "modulePath": "Controls/Dialogs/Edit/StoreReceiptEditDialogModule"
+        }
+      ],
+      "views": [
+        {
+          "title": "Secuencia Númerica",
+          "pageName": "StoreReceiptView",
+          "phonePageName": "StoreReceiptView",
+          "viewDirectory": "Views/",
+          "viewControllerPath": "Views/StoreReceiptView"
+        }
+      ],
+      "operations": [
+        {
+          "operationId": "4001",
+          "operationRequestFactoryPath": "Operations/StoreReceipts/StoreReceiptsOperationRequestFactory",
+          "operationRequestHandlerPath": "Operations/StoreReceipts/StoreReceiptsOperationRequestHandler"
+        }
+      ]
+    }
+  }
+}

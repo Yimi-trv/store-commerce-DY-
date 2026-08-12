@@ -1,0 +1,7 @@
+{
+    "sdkVersion": "9.57.26159.2",
+    "customPackageName": "LocalizacionPeru",
+    "customPackageDescription": "Controla las operaciones impuestos y formato generación txt electrónico de la Localización.",
+    "customPackagePublisher": "CN=Contoso Ltd.",
+    "customPackageVersion": "9.57.0.0"
+}

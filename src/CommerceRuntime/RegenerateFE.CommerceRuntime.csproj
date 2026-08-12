@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>Trujillo.PeruEInvoicing.CommerceRuntime</AssemblyName>
+    <RootNamespace>Trujillo.PeruEInvoicing.CommerceRuntime</RootNamespace>
+    <Version>1.0.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Dynamics.Commerce.Sdk.Runtime" Version="9.51.*" />
+  </ItemGroup>
+
+  <!-- El override de GetExtensionPackageDefinitions (necesario para que Store Commerce
+       descubra la extensión POS RegenerateFE) SOLO se compila en builds POS de prueba
+       (-p:IncludePos=true). El build API-only de prod no lo lleva: el handler del DP queda intacto. -->
+  <ItemGroup Condition="'$(IncludePos)' != 'true'">
+    <Compile Remove="Services\PosExtensionPackagesService.cs" />
+  </ItemGroup>
+
+  <!-- Sin referencia a DP.LocalizacionPeru.CommerceRuntime -
+       evita conflicto de doble carga de assembly en el CSU -->
+
+</Project>

@@ -1,0 +1,32 @@
+{
+  "$schema": "./devDependencies/schemas/manifestSchema.json",
+  "name": "RegenerateFE",
+  "publisher": "DP",
+  "version": "1.0.0",
+  "minimumPosVersion": "9.51.0.0",
+  "description": "Extension POS para consulta de RUC y DNI via SUNAT en Customer Add/Edit",
+  "components": {
+    "extend": {
+      "views": {
+        "CustomerAddEditView": {
+          "appBarCommands": [
+            {
+              "modulePath": "ViewExtensions/CustomerAddEdit/SunatLookupCommand"
+            }
+          ],
+          "controlsConfig": {
+            "customControls": [
+              {
+                "controlName": "sunatPadronesControl",
+                "htmlPath": "ViewExtensions/CustomerAddEdit/SunatPadronesControl.html",
+                "modulePath": "ViewExtensions/CustomerAddEdit/SunatPadronesControl",
+                "name": "SunatPadronesControl",
+                "description": "Padrones SUNAT (retencion/percepcion/sector publico) editables y visibles en vivo"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

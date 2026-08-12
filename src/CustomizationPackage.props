@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <Version>1.0.0.0</Version>
+    <PackagePublisher Condition="'$(PackagePublisher)' == ''">DP</PackagePublisher>
+    <PackagePublisherDisplayName Condition="'$(PackagePublisherDisplayName)' == ''">DP</PackagePublisherDisplayName>
+    <PackageVersion Condition="'$(PackageVersion)' == ''">$(Version)</PackageVersion>
+    <PackageName Condition="'$(PackageName)' == ''">RegenerateFE</PackageName>
+    <PackageDisplayName Condition="'$(PackageDisplayName)' == ''">Terranova POS - Consulta SUNAT</PackageDisplayName>
+    <PackageDescription Condition="'$(PackageDescription)' == ''">Extension POS para consulta de RUC y DNI via SUNAT en Customer Add/Edit</PackageDescription>
+  </PropertyGroup>
+</Project>

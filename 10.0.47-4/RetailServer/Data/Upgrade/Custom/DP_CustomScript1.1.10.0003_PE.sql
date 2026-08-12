@@ -1,0 +1,111 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+-- Creación de Catalogo e indices 
+
+IF EXISTS (SELECT * FROM sys.fulltext_indexes  
+    where object_id = object_id('EXT.DPCUSTTABLE_PE'))
+BEGIN
+	DROP FULLTEXT INDEX ON EXT.DPCUSTTABLE_PE;  
+END	   
+GO
+IF EXISTS (select i.name from sys.objects t inner join sys.indexes i on t.object_id = i.object_id
+			where  t.is_ms_shipped <> 1
+			and index_id > 0
+			and i.name = 'IX_DPCUSTTABLEPE_RECID'
+			and  schema_name(t.schema_id) = 'EXT' 
+			and  t.[name] = 'DPCUSTTABLE_PE')
+BEGIN
+	DROP INDEX [IX_DPCUSTTABLEPE_RECID] ON [ext].[DPCUSTTABLE_PE]
+END
+GO
+
+
+IF EXISTS (SELECT * FROM sys.fulltext_indexes  
+    where object_id = object_id('EXT.CUSTTABLE'))
+BEGIN
+	DROP FULLTEXT INDEX ON EXT.CUSTTABLE;  
+END	   
+GO
+IF EXISTS (select i.name from sys.objects t inner join sys.indexes i on t.object_id = i.object_id
+			where  t.is_ms_shipped <> 1
+			and index_id > 0
+			and i.name = 'IX_CUSTTABLEPE_RECID'
+			and  schema_name(t.schema_id) = 'EXT' 
+			and  t.[name] = 'CUSTTABLE')
+BEGIN
+	DROP INDEX [IX_CUSTTABLEPE_RECID] ON [ext].[CUSTTABLE]
+END
+GO
+
+
+IF EXISTS (SELECT t.name
+			FROM sys.fulltext_catalogs t
+			where t.name = 'DPCOMMERCEFULLTEXTCATALOG_PE')
+BEGIN
+	DROP FULLTEXT CATALOG [DPCOMMERCEFULLTEXTCATALOG_PE]
+END
+GO
+
+--****** Object:  FullTextCatalog [DPCOMMERCEFULLTEXTCATALOG_PE]    Script Date: 2/15/2021 11:36:55 PM ******
+CREATE FULLTEXT CATALOG [DPCOMMERCEFULLTEXTCATALOG_PE] WITH ACCENT_SENSITIVITY = ON
+GO
+
+CREATE UNIQUE NONCLUSTERED INDEX [IX_DPCUSTTABLEPE_RECID] ON [EXT].[DPCUSTTABLE_PE]
+(
+	[REPLICATIONCOUNTERFROMORIGIN] ASC
+)
+WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+
+Create fulltext index on ext.DPCUSTTABLE_PE(DPNUMBERDOCUMID_PE)
+	key Index IX_DPCUSTTABLEPE_RECID on DPCOMMERCEFULLTEXTCATALOG_PE	
+with change_tracking AUTO, stoplist OFF
+GO
+
+
+CREATE UNIQUE NONCLUSTERED INDEX [IX_CUSTTABLEPE_RECID] ON [EXT].[CUSTTABLE]
+(
+	[RECID] ASC
+)
+WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+
+Create fulltext index on ext.CUSTTABLE(DPNUMBERDOCUMID_PE)
+	key Index IX_CUSTTABLEPE_RECID on DPCOMMERCEFULLTEXTCATALOG_PE	
+with change_tracking AUTO, stoplist OFF
+GO
+
+
+--DROP FUNCTION IF EXISTS  [EXT].[DPCUSTOMERSEARCHASYNCPE]
+IF EXISTS (select t.name from sys.objects t 
+where t.name = 'DPCUSTOMERSEARCHASYNCPE'
+and  schema_name(t.schema_id) = 'EXT' 
+and type = 'IF')
+BEGIN
+	DROP FUNCTION [EXT].[DPCUSTOMERSEARCHASYNCPE]
+END
+GO
+
+CREATE FUNCTION [EXT].[DPCUSTOMERSEARCHASYNCPE]
+(   
+     @nvc_SearchText             NVARCHAR(255)  -- length is 255 because [ax].LOGISTICSELECTRONICADDRESS.LOCATOR has a length of 255 and is the longest compared string.
+)
+RETURNS TABLE
+RETURN
+    SELECT PARTYID, 1 AS ISASYNCCUSTOMER, SUM(RANKING) AS RANKING
+    FROM (
+        -- search by number document
+		SELECT
+            [dpCT].REPLICATIONCOUNTERFROMORIGIN AS PARTYID, COALESCE([CustomerAccountAsyncFullTextKey_Key].[RANK], 0) AS RANKING
+		FROM EXT.DPCUSTTABLE_PE dpCT
+		LEFT JOIN FREETEXTTABLE([EXT].DPCUSTTABLE_PE, DPNUMBERDOCUMID_PE, @nvc_SearchText) CustomerAccountAsyncFullTextKey_Key 
+		ON dpCT.REPLICATIONCOUNTERFROMORIGIN = [CustomerAccountAsyncFullTextKey_Key].[KEY]
+		WHERE CONTAINS(DPNUMBERDOCUMID_PE,@nvc_SearchText)
+		AND NOT EXISTS (SELECT 1 FROM [ax].RETAILCUSTTABLE rct WHERE rct.CUSTACCOUNTASYNC = dpCT.CUSTACCOUNTASYNC) 
+
+    ) results
+    GROUP BY [results].PARTYID
+
+GO
