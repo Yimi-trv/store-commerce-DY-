@@ -1,32 +1,62 @@
 {
-  "$schema": "./devDependencies/schemas/manifestSchema.json",
-  "name": "RegenerateFE",
-  "publisher": "DP",
-  "version": "1.0.0",
-  "minimumPosVersion": "9.51.0.0",
-  "description": "Extension POS para consulta de RUC y DNI via SUNAT en Customer Add/Edit",
-  "components": {
-    "extend": {
-      "views": {
-        "CustomerAddEditView": {
-          "appBarCommands": [
-            {
-              "modulePath": "ViewExtensions/CustomerAddEdit/SunatLookupCommand"
-            }
-          ],
-          "controlsConfig": {
-            "customControls": [
-              {
-                "controlName": "sunatPadronesControl",
-                "htmlPath": "ViewExtensions/CustomerAddEdit/SunatPadronesControl.html",
-                "modulePath": "ViewExtensions/CustomerAddEdit/SunatPadronesControl",
-                "name": "SunatPadronesControl",
-                "description": "Padrones SUNAT (retencion/percepcion/sector publico) editables y visibles en vivo"
-              }
-            ]
-          }
-        }
-      }
-    }
-  }
+"$schema": "./devDependencies/schemas/manifestSchema.json",
+"name": "RegenerateFE",
+"publisher": "DP",
+"version": "1.0.0",
+"minimumPosVersion": "9.51.0.0",
+"description": "Extension POS para consulta de RUC y DNI via SUNAT en Customer Add/Edit",
+"components": {
+"extend": {
+"views": {
+"CustomerAddEditView": {
+"appBarCommands": [
+{
+"modulePath": "ViewExtensions/CustomerAddEdit/SunatLookupCommand"
+}
+],
+"controlsConfig": {
+"customControls": [
+{
+"controlName": "sunatPadronesControl",
+"htmlPath": "ViewExtensions/CustomerAddEdit/SunatPadronesControl.html",
+"modulePath": "ViewExtensions/CustomerAddEdit/SunatPadronesControl",
+"name": "SunatPadronesControl",
+"description": "Padrones SUNAT (retencion/percepcion/sector publico) editables y visibles en vivo"
+}
+]
+}
+}
+},
+"triggers": [
+{
+"triggerType": "PreCustomerSearch",
+"modulePath": "Triggers/PreCustomerSearchModalTrigger",
+"name": "PreCustomerSearchModalTrigger",
+"description": "Abre el modal de cliente en ventas antes de ejecutar la busqueda estandar."
+},
+{
+"triggerType": "PreCustomerAdd",
+"modulePath": "Triggers/PreCustomerAddModalTrigger",
+"name": "PreCustomerAddModalTrigger",
+"description": "Abre el modal de cliente en ventas antes de navegar a crear cliente."
+},
+{
+"triggerType": "PreCustomerEdit",
+"modulePath": "Triggers/PreCustomerEditModalTrigger",
+"name": "PreCustomerEditModalTrigger",
+"description": "Abre el modal de cliente en ventas antes de navegar a editar cliente."
+}
+]
+},
+"create": {
+"templatedDialogs": [
+{
+"htmlPath": "Controls/Dialogs/CustomerInline/CustomerInlineDialog.html",
+"modulePath": "Controls/Dialogs/CustomerInline/CustomerInlineDialog",
+"name": "CustomerInlineDialog",
+"description": "Modal unificado para buscar, crear y editar cliente desde ventas."
+}
+]
+}
+}
 }

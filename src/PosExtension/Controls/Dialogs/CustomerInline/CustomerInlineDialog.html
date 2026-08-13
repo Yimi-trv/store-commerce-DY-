@@ -1,0 +1,205 @@
+<div class="customer-inline-dialog">
+    <style>
+        .customer-inline-dialog {
+            min-width: 780px;
+            max-width: 980px;
+            padding: 16px 20px 20px 20px;
+            box-sizing: border-box;
+            font-family: "Segoe UI", Arial, sans-serif;
+        }
+
+        .customer-inline-dialog__tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #d8d8d8;
+        }
+
+        .customer-inline-dialog__tab {
+            min-width: 140px;
+            padding: 10px 12px;
+            border: 0;
+            border-bottom: 3px solid transparent;
+            background: transparent;
+            color: #333;
+            text-align: left;
+            font-size: 15px;
+            cursor: pointer;
+        }
+
+        .customer-inline-dialog__tab.is-active {
+            border-bottom-color: #0063b1;
+            color: #000;
+            font-weight: 600;
+        }
+
+        .customer-inline-dialog__panel {
+            display: none;
+        }
+
+        .customer-inline-dialog__panel.is-active {
+            display: block;
+        }
+
+        .customer-inline-dialog__grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px 16px;
+        }
+
+        .customer-inline-dialog__field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .customer-inline-dialog__field label {
+            color: #333;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .customer-inline-dialog__field input,
+        .customer-inline-dialog__field select {
+            min-height: 36px;
+            padding: 6px 8px;
+            border: 1px solid #a6a6a6;
+            font-size: 15px;
+            box-sizing: border-box;
+        }
+
+        .customer-inline-dialog__actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 18px;
+        }
+
+        .customer-inline-dialog__action {
+            min-width: 132px;
+            min-height: 36px;
+            border: 1px solid #0063b1;
+            background: #0063b1;
+            color: #fff;
+            font-size: 15px;
+            cursor: pointer;
+        }
+
+        .customer-inline-dialog__action--secondary {
+            background: #fff;
+            color: #0063b1;
+        }
+
+        .customer-inline-dialog__action:disabled {
+            border-color: #9a9a9a;
+            background: #d0d0d0;
+            color: #555;
+            cursor: default;
+        }
+
+        .customer-inline-dialog__result {
+            min-height: 76px;
+            margin-top: 14px;
+            padding: 10px;
+            border: 1px solid #d8d8d8;
+            background: #fafafa;
+            color: #222;
+            white-space: pre-wrap;
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .customer-inline-dialog__message {
+            min-height: 28px;
+            margin-top: 12px;
+            color: #605e5c;
+            font-size: 13px;
+        }
+    </style>
+
+    <div class="customer-inline-dialog__tabs">
+        <button id="customerInlineTabSearch" class="customer-inline-dialog__tab" type="button">Buscar cliente</button>
+        <button id="customerInlineTabCreate" class="customer-inline-dialog__tab" type="button">Crear cliente</button>
+        <button id="customerInlineTabEdit" class="customer-inline-dialog__tab" type="button">Editar cliente</button>
+    </div>
+
+    <section id="customerInlinePanelSearch" class="customer-inline-dialog__panel">
+        <div class="customer-inline-dialog__grid">
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineSearchText">Cuenta / DNI / RUC / nombre</label>
+                <input id="customerInlineSearchText" type="text" autocomplete="off" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineSearchType">Tipo de busqueda</label>
+                <select id="customerInlineSearchType">
+                    <option value="document">Documento</option>
+                    <option value="account">Cuenta de cliente</option>
+                    <option value="name">Nombre</option>
+                </select>
+            </div>
+        </div>
+        <div class="customer-inline-dialog__actions">
+            <button id="customerInlineSearchSunatButton" class="customer-inline-dialog__action customer-inline-dialog__action--secondary" type="button">Validar SUNAT</button>
+            <button id="customerInlineSearchButton" class="customer-inline-dialog__action" type="button">Buscar en sistema</button>
+        </div>
+        <div id="customerInlineSearchResult" class="customer-inline-dialog__result"></div>
+    </section>
+
+    <section id="customerInlinePanelCreate" class="customer-inline-dialog__panel">
+        <div class="customer-inline-dialog__grid">
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateDocument">DNI / RUC</label>
+                <input id="customerInlineCreateDocument" type="text" autocomplete="off" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateName">Nombre / razon social</label>
+                <input id="customerInlineCreateName" type="text" autocomplete="off" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreatePhone">Telefono</label>
+                <input id="customerInlineCreatePhone" type="text" autocomplete="off" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateEmail">Correo</label>
+                <input id="customerInlineCreateEmail" type="email" autocomplete="off" />
+            </div>
+        </div>
+        <div class="customer-inline-dialog__actions">
+            <button id="customerInlineCreateSunatButton" class="customer-inline-dialog__action customer-inline-dialog__action--secondary" type="button">Consultar SUNAT</button>
+            <button id="customerInlineCreateButton" class="customer-inline-dialog__action" type="button">Crear cliente</button>
+        </div>
+        <div id="customerInlineCreateSunatResult" class="customer-inline-dialog__result"></div>
+    </section>
+
+    <section id="customerInlinePanelEdit" class="customer-inline-dialog__panel">
+        <div class="customer-inline-dialog__grid">
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineEditAccount">Cuenta de cliente</label>
+                <input id="customerInlineEditAccount" type="text" autocomplete="off" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineEditDocument">DNI / RUC</label>
+                <input id="customerInlineEditDocument" type="text" autocomplete="off" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineEditName">Nombre / razon social</label>
+                <input id="customerInlineEditName" type="text" autocomplete="off" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineEditPhone">Telefono</label>
+                <input id="customerInlineEditPhone" type="text" autocomplete="off" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineEditEmail">Correo</label>
+                <input id="customerInlineEditEmail" type="email" autocomplete="off" />
+            </div>
+        </div>
+        <div class="customer-inline-dialog__actions">
+            <button id="customerInlineEditSunatButton" class="customer-inline-dialog__action customer-inline-dialog__action--secondary" type="button">Validar SUNAT</button>
+            <button id="customerInlineEditButton" class="customer-inline-dialog__action" type="button">Guardar cambios</button>
+        </div>
+        <div id="customerInlineEditResult" class="customer-inline-dialog__result"></div>
+    </section>
+
+    <div id="customerInlineMessage" class="customer-inline-dialog__message"></div>
+</div>
