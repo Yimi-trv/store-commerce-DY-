@@ -16,8 +16,11 @@ import {
 } from "PosApi/Consume/Cart";
 import { ProxyEntities } from "PosApi/Entities";
 import SunatCustomerService, { ISunatCustomerData } from "../../../Services/SunatCustomerService";
+import { TRU_GeographicData, Entities } from "../../../DataService/DataServiceRequests.g";
 
-export type CustomerInlineDialogMode = "search" | "create" | "edit";
+const GUARD_KEY: string = "__customerInlineDialogActive";
+
+export type CustomerInlineDialogMode = "searchcreate" | "edit";
 
 export interface ICustomerInlineDialogResult {
     mode: CustomerInlineDialogMode;
@@ -29,30 +32,25 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _mode: CustomerInlineDialogMode;
     private _resolve: ((result: ICustomerInlineDialogResult | null) => void) | null;
     private _currentCustomer: ProxyEntities.Customer | null;
-    private _selectedCustomer: ProxyEntities.Customer | null;
     private _initialSearchText: string;
     private readonly _sunatService: SunatCustomerService;
-    private readonly _sunatByDocument: { [documentNumber: string]: ISunatCustomerData };
 
     constructor() {
         super();
-        this._mode = "search";
+        this._mode = "searchcreate";
         this._resolve = null;
         this._currentCustomer = null;
-        this._selectedCustomer = null;
         this._initialSearchText = "";
         this._sunatService = new SunatCustomerService();
-        this._sunatByDocument = {};
     }
 
     public open(
-        mode: CustomerInlineDialogMode,
+        mode: string,
         customer?: ProxyEntities.Customer | null,
         initialSearchText?: string
     ): Promise<ICustomerInlineDialogResult | null> {
-        this._mode = mode;
+        this._mode = mode === "edit" ? "edit" : "searchcreate";
         this._currentCustomer = customer || null;
-        this._selectedCustomer = null;
         this._initialSearchText = initialSearchText || "";
 
         return new Promise((resolve: (result: ICustomerInlineDialogResult | null) => void) => {
@@ -74,16 +72,19 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     public onReady(element: HTMLElement): void {
-        this._bindTab(element, "search", "customerInlineTabSearch");
-        this._bindTab(element, "create", "customerInlineTabCreate");
+        this._bindTab(element, "searchcreate", "customerInlineTabSearchCreate");
         this._bindTab(element, "edit", "customerInlineTabEdit");
 
-        this._bindAction(element, "customerInlineSearchButton", this._searchAndSetCustomer.bind(this));
-        this._bindAction(element, "customerInlineSearchSunatButton", this._validateSearchWithSunat.bind(this));
-        this._bindAction(element, "customerInlineCreateSunatButton", this._lookupSunatForCreate.bind(this));
-        this._bindAction(element, "customerInlineCreateButton", this._createCustomer.bind(this));
+        this._bindAction(element, "customerInlineSearchCreateButton", this._processDocument.bind(this));
         this._bindAction(element, "customerInlineEditSunatButton", this._lookupSunatForEdit.bind(this));
         this._bindAction(element, "customerInlineEditButton", this._updateCustomer.bind(this));
+
+        if (!this._currentCustomer) {
+            const editTab: HTMLElement = element.querySelector("#customerInlineTabEdit") as HTMLElement;
+            if (editTab) {
+                editTab.style.display = "none";
+            }
+        }
 
         this._prefillInitialValues(element);
         this._setMode(element, this._mode);
@@ -118,7 +119,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
     private _prefillInitialValues(element: HTMLElement): void {
         if (this._initialSearchText) {
-            this._setValue(element, "customerInlineSearchText", this._initialSearchText);
+            this._setValue(element, "customerInlineSearchDocument", this._initialSearchText);
         }
 
         if (this._currentCustomer) {
@@ -127,135 +128,132 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             this._setValue(element, "customerInlineEditName", this._currentCustomer.Name || "");
             this._setValue(element, "customerInlineEditPhone", this._currentCustomer.Phone || "");
             this._setValue(element, "customerInlineEditEmail", this._currentCustomer.Email || "");
-            this._showCustomerResult(element, "customerInlineEditResult", this._currentCustomer);
+            this._showTextResult(element, "customerInlineEditResult", this._formatCustomerSummary(this._currentCustomer));
         }
     }
 
-    private _searchAndSetCustomer(element: HTMLElement): Promise<void> {
-        const searchText: string = this._getValue(element, "customerInlineSearchText");
-        const searchType: string = this._getValue(element, "customerInlineSearchType");
+    private _processDocument(element: HTMLElement): Promise<void> {
+        let rawDocument: string = this._getValue(element, "customerInlineSearchDocument");
+        let documentNumber: string = this._sunatService.normalizeDocument(rawDocument);
 
-        if (!searchText) {
-            this._showMessage(element, "Ingrese cuenta, DNI/RUC o nombre para buscar en el sistema.");
+        if (!this._sunatService.getDocumentType(documentNumber)) {
+            this._showMessage(element, "Ingrese un DNI de 8 dígitos o RUC de 11 dígitos válido.");
             return Promise.resolve();
         }
 
-        this._showMessage(element, "Buscando cliente en Store Commerce/D365...");
+        this._showMessage(element, "Paso 1: Buscando cliente en Store Commerce...");
+        this._showTextResult(element, "customerInlineSearchCreateResult", "");
 
-        return this._findCustomerInSystem(searchText, searchType)
+        return this._selectCustomerFromSystem(documentNumber)
             .then((customer: ProxyEntities.Customer | null): Promise<void> => {
-                if (!customer) {
-                    this._showMessage(element, "No se selecciono ningun cliente del sistema.");
-                    return Promise.resolve();
-                }
-
-                this._selectedCustomer = customer;
-                this._showCustomerResult(element, "customerInlineSearchResult", customer);
-
-                const accountNumber: string = customer.AccountNumber || "";
-                if (!accountNumber) {
-                    this._showMessage(element, "El cliente seleccionado no tiene numero de cuenta para asignar a la venta.");
-                    return Promise.resolve();
-                }
-
-                return this._setCustomerOnCart(accountNumber).then((): void => {
-                    this._showMessage(element, "Cliente del sistema asignado a la venta. Puede validar SUNAT sin sobrescribir o cerrar.");
-                });
-            });
-    }
-
-    private _validateSearchWithSunat(element: HTMLElement): Promise<void> {
-        const customer: ProxyEntities.Customer | null = this._selectedCustomer || this._currentCustomer;
-        let documentNumber: string = this._sunatService.normalizeDocument(this._getValue(element, "customerInlineSearchText"));
-
-        if (!this._sunatService.getDocumentType(documentNumber) && customer) {
-            documentNumber = this._sunatService.getDocumentNumber(customer);
-        }
-
-        if (!this._sunatService.getDocumentType(documentNumber)) {
-            this._showMessage(element, "Para validar SUNAT ingrese o seleccione un cliente con DNI/RUC fiscal.");
-            return Promise.resolve();
-        }
-
-        this._showMessage(element, "Validando contra SUNAT sin modificar el cliente del sistema...");
-
-        return this._getSunatData(documentNumber)
-            .then((sunatData: ISunatCustomerData): void => {
-                const differences: string[] = customer ? this._sunatService.compareWithCustomer(customer, sunatData) : [
-                    "SUNAT validado. Seleccione el cliente del sistema para comparar trazabilidad."
-                ];
-
-                this._showTextResult(element, "customerInlineSearchResult", this._formatSunatSummary(sunatData) + "\n" + differences.join("\n"));
-                this._showMessage(element, "SUNAT se uso solo como validacion. No se actualizo ningun dato del cliente.");
-            });
-    }
-
-    private _lookupSunatForCreate(element: HTMLElement): Promise<void> {
-        const documentNumber: string = this._sunatService.normalizeDocument(this._getValue(element, "customerInlineCreateDocument"));
-
-        if (!this._sunatService.getDocumentType(documentNumber)) {
-            this._showMessage(element, "Ingrese un DNI de 8 digitos o RUC de 11 digitos.");
-            return Promise.resolve();
-        }
-
-        this._showMessage(element, "Consultando SUNAT para prellenar el cliente...");
-
-        return this._getSunatData(documentNumber)
-            .then((sunatData: ISunatCustomerData): void => {
-                this._setValue(element, "customerInlineCreateName", sunatData.name || "");
-                this._showTextResult(element, "customerInlineCreateSunatResult", this._formatSunatSummary(sunatData));
-                this._showMessage(element, "Datos SUNAT cargados como sugerencia. Revise y confirme Crear.");
-            });
-    }
-
-    private _createCustomer(element: HTMLElement): Promise<void> {
-        const documentNumber: string = this._sunatService.normalizeDocument(this._getValue(element, "customerInlineCreateDocument"));
-
-        if (!this._sunatService.getDocumentType(documentNumber)) {
-            this._showMessage(element, "Para crear con trazabilidad ingrese DNI o RUC valido.");
-            return Promise.resolve();
-        }
-
-        this._showMessage(element, "Validando SUNAT antes de crear el cliente...");
-
-        return this._getSunatData(documentNumber)
-            .then((sunatData: ISunatCustomerData): Promise<void> => {
-                const customer: ProxyEntities.Customer = new ProxyEntities.CustomerClass({});
-                this._sunatService.applySunatIdentity(customer, sunatData);
-                this._applyEditableFields(
-                    customer,
-                    this._getValue(element, "customerInlineCreateName") || sunatData.name,
-                    this._getValue(element, "customerInlineCreatePhone"),
-                    this._getValue(element, "customerInlineCreateEmail")
-                );
-
-                const request: CreateCustomerServiceRequest =
-                    new CreateCustomerServiceRequest(this._getCorrelationId(), customer);
-
-                return this.context.runtime.executeAsync(request)
-                    .then((response: any): Promise<void> => {
-                        if (response.canceled || !response.data || !response.data.customer) {
-                            this._showMessage(element, "La creacion del cliente fue cancelada o no devolvio cliente.");
-                            return Promise.resolve();
-                        }
-
-                        const createdCustomer: ProxyEntities.Customer = response.data.customer;
-                        const accountNumber: string = createdCustomer.AccountNumber || "";
-
-                        if (!accountNumber) {
-                            this._showCustomerResult(element, "customerInlineCreateSunatResult", createdCustomer);
-                            this._showMessage(element, "Cliente creado, pero no se recibio cuenta para asignarlo a la venta.");
-                            return Promise.resolve();
-                        }
-
-                        return this._setCustomerOnCart(accountNumber).then((): void => {
-                            this._complete({
-                                mode: "create",
-                                action: "createAndSetCustomerOnCart",
-                                customerAccountNumber: accountNumber
-                            });
+                if (customer) {
+                    this._showMessage(element, "Cliente encontrado en el sistema. Asignando a la venta...");
+                    const accountNumber: string = customer.AccountNumber || "";
+                    if (!accountNumber) {
+                        this._showMessage(element, "El cliente del sistema no tiene número de cuenta.");
+                        return Promise.resolve();
+                    }
+                    return this._setCustomerOnCart(accountNumber).then((): void => {
+                        this._complete({
+                            mode: "searchcreate",
+                            action: "searchAndSetCustomerOnCart",
+                            customerAccountNumber: accountNumber
                         });
                     });
+                } else {
+                    this._showMessage(element, "Paso 2: Consultando SUNAT para crear cliente...");
+                    
+                    return this._sunatService.lookup(documentNumber)
+                        .then((sunatData: ISunatCustomerData): Promise<void> => {
+                            this._showMessage(element, "Paso 3: Resolviendo dirección (Ubigeo)...");
+                            return this._resolveAndCreateCustomer(element, sunatData);
+                        });
+                }
+            });
+    }
+
+    private _resolveAndCreateCustomer(element: HTMLElement, sunatData: ISunatCustomerData): Promise<void> {
+        const customer: ProxyEntities.Customer = new ProxyEntities.CustomerClass({});
+        this._sunatService.applySunatIdentity(customer, sunatData);
+        
+        let resolvePromise: Promise<Entities.UbigeoResolutionResult | null> = Promise.resolve(null);
+
+        if (sunatData.documentType === "RUC" && (sunatData.department || sunatData.province)) {
+            const request: TRU_GeographicData.ResolveUbigeoRequest<TRU_GeographicData.ResolveUbigeoResponse> =
+                new TRU_GeographicData.ResolveUbigeoRequest(sunatData.department || "", sunatData.province || "", sunatData.district || "");
+            
+            resolvePromise = this.context.runtime.executeAsync(request)
+                .then((response: any): Entities.UbigeoResolutionResult | null => {
+                    if (response && response.data && response.data.result && response.data.result.length > 0) {
+                        return response.data.result[0];
+                    }
+                    return null;
+                })
+                .catch((error: any): Entities.UbigeoResolutionResult | null => {
+                    this._logError("ResolveUbigeo error: " + this._stringify(error));
+                    return null;
+                });
+        }
+
+        return resolvePromise.then((u: Entities.UbigeoResolutionResult | null): Promise<void> => {
+            if (u && u.IsValid) {
+                const address: ProxyEntities.Address = new ProxyEntities.AddressClass();
+                address.AddressTypeValue = 2; // Negocio
+                address.ThreeLetterISORegionName = "PER";
+                address.Name = "DOMICILIO FISCAL";
+                address.Street = (sunatData.address || "").trim();
+                address.State = u.StateId;
+                address.County = u.CountyId;
+                address.City = u.CityName;
+                address.IsPrimary = true;
+                
+                customer.Addresses = [address];
+            }
+
+            this._showMessage(element, "Paso 4: Registrando cliente en D365...");
+            const createRequest: CreateCustomerServiceRequest = new CreateCustomerServiceRequest(this._getCorrelationId(), customer);
+
+            return this.context.runtime.executeAsync(createRequest)
+                .then((response: any): Promise<void> => {
+                    if (response.canceled || !response.data || !response.data.customer) {
+                        this._showMessage(element, "La creación del cliente falló o fue cancelada.");
+                        return Promise.resolve();
+                    }
+
+                    const createdCustomer: ProxyEntities.Customer = response.data.customer;
+                    const accountNumber: string = createdCustomer.AccountNumber || "";
+
+                    if (!accountNumber) {
+                        this._showMessage(element, "Cliente creado pero sin número de cuenta.");
+                        return Promise.resolve();
+                    }
+
+                    this._showMessage(element, "Paso 5: Asignando nuevo cliente a la venta...");
+                    return this._setCustomerOnCart(accountNumber).then((): void => {
+                        this._complete({
+                            mode: "searchcreate",
+                            action: "createAndSetCustomerOnCart",
+                            customerAccountNumber: accountNumber
+                        });
+                    });
+                });
+        });
+    }
+
+    private _selectCustomerFromSystem(searchText: string): Promise<ProxyEntities.Customer | null> {
+        const request: SelectCustomerClientRequest<SelectCustomerClientResponse> =
+            new SelectCustomerClientRequest(this._getCorrelationId(), searchText);
+
+        return this.context.runtime.executeAsync(request)
+            .then((response: any): ProxyEntities.Customer | null => {
+                if (response.canceled || !response.data || !response.data.result) {
+                    return null;
+                }
+
+                return response.data.result;
+            })
+            .catch((): ProxyEntities.Customer | null => {
+                return null;
             });
     }
 
@@ -263,21 +261,19 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         const documentNumber: string = this._sunatService.normalizeDocument(this._getValue(element, "customerInlineEditDocument"));
 
         if (!this._sunatService.getDocumentType(documentNumber)) {
-            this._showMessage(element, "Ingrese un DNI de 8 digitos o RUC de 11 digitos.");
+            this._showMessage(element, "Ingrese un DNI de 8 dígitos o RUC de 11 dígitos.");
             return Promise.resolve();
         }
 
         this._showMessage(element, "Consultando SUNAT para comparar antes de editar...");
 
-        return this._getSunatData(documentNumber)
+        return this._sunatService.lookup(documentNumber)
             .then((sunatData: ISunatCustomerData): void => {
                 if (!this._getValue(element, "customerInlineEditName")) {
                     this._setValue(element, "customerInlineEditName", sunatData.name || "");
                 }
 
-                const differences: string[] = this._currentCustomer ? this._sunatService.compareWithCustomer(this._currentCustomer, sunatData) : [
-                    "SUNAT validado. Cargue la cuenta del cliente para comparar contra el sistema."
-                ];
+                const differences: string[] = this._currentCustomer ? this._sunatService.compareWithCustomer(this._currentCustomer, sunatData) : [];
 
                 this._showTextResult(element, "customerInlineEditResult", this._formatSunatSummary(sunatData) + "\n" + differences.join("\n"));
                 this._showMessage(element, "SUNAT consultado. Revise diferencias y confirme Guardar.");
@@ -299,17 +295,12 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                         return this.context.runtime.executeAsync(request)
                             .then((response: any): Promise<void> => {
                                 if (response.canceled || !response.data || !response.data.customer) {
-                                    this._showMessage(element, "La actualizacion fue cancelada o no devolvio cliente.");
+                                    this._showMessage(element, "La actualización fue cancelada.");
                                     return Promise.resolve();
                                 }
 
                                 const updatedCustomer: ProxyEntities.Customer = response.data.customer;
                                 const accountNumber: string = updatedCustomer.AccountNumber || this._getValue(element, "customerInlineEditAccount");
-
-                                if (!accountNumber) {
-                                    this._showMessage(element, "Cliente actualizado, pero no se recibio cuenta para asignarlo a la venta.");
-                                    return Promise.resolve();
-                                }
 
                                 return this._setCustomerOnCart(accountNumber).then((): void => {
                                     this._complete({
@@ -326,13 +317,13 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 }
 
                 if (!this._sunatService.getDocumentType(documentNumber)) {
-                    this._showMessage(element, "El documento de edicion debe ser DNI de 8 digitos o RUC de 11 digitos.");
+                    this._showMessage(element, "El documento debe ser válido.");
                     return Promise.resolve();
                 }
 
                 this._showMessage(element, "Validando SUNAT antes de guardar cambios...");
 
-                return this._getSunatData(documentNumber)
+                return this._sunatService.lookup(documentNumber)
                     .then((sunatData: ISunatCustomerData): Promise<void> => {
                         this._sunatService.applySunatMetadata(customer, sunatData);
                         return updateWithCustomer(customer);
@@ -340,15 +331,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             });
     }
 
-    private _findCustomerInSystem(searchText: string, searchType: string): Promise<ProxyEntities.Customer | null> {
-        if (searchType === "account") {
-            return this._getCustomerByAccount(searchText)
-                .then((customer: ProxyEntities.Customer | null): Promise<ProxyEntities.Customer | null> => {
-                    return customer ? Promise.resolve(customer) : this._selectCustomerFromSystem(searchText);
-                });
-        }
+    private _setCustomerOnCart(accountNumber: string): Promise<void> {
+        const request: SetCustomerOnCartOperationRequest<SetCustomerOnCartOperationResponse> =
+            new SetCustomerOnCartOperationRequest(this._getCorrelationId(), accountNumber);
 
-        return this._selectCustomerFromSystem(searchText);
+        return this.context.runtime.executeAsync(request)
+            .then((response: any): void => {
+                if (response.canceled) {
+                    throw new Error("La asignación del cliente a la venta fue cancelada.");
+                }
+            });
     }
 
     private _getCustomerByAccount(accountNumber: string): Promise<ProxyEntities.Customer | null> {
@@ -360,34 +352,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 if (response.canceled || !response.data || !response.data.result) {
                     return null;
                 }
-
                 return response.data.result;
-            });
-    }
-
-    private _selectCustomerFromSystem(searchText: string): Promise<ProxyEntities.Customer | null> {
-        const request: SelectCustomerClientRequest<SelectCustomerClientResponse> =
-            new SelectCustomerClientRequest(this._getCorrelationId(), searchText);
-
-        return this.context.runtime.executeAsync(request)
-            .then((response: any): ProxyEntities.Customer | null => {
-                if (response.canceled || !response.data || !response.data.result) {
-                    return null;
-                }
-
-                return response.data.result;
-            });
-    }
-
-    private _setCustomerOnCart(accountNumber: string): Promise<void> {
-        const request: SetCustomerOnCartOperationRequest<SetCustomerOnCartOperationResponse> =
-            new SetCustomerOnCartOperationRequest(this._getCorrelationId(), accountNumber);
-
-        return this.context.runtime.executeAsync(request)
-            .then((response: any): void => {
-                if (response.canceled) {
-                    throw new Error("La asignacion del cliente a la venta fue cancelada.");
-                }
             });
     }
 
@@ -403,23 +368,18 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
         return this._getCustomerByAccount(accountNumber)
             .then((customer: ProxyEntities.Customer | null): ProxyEntities.Customer => {
-                if (!customer) {
-                    throw new Error("No se encontro el cliente en el sistema.");
-                }
-
+                if (!customer) throw new Error("No se encontro el cliente en el sistema.");
                 return this._cloneCustomer(customer);
             });
     }
 
     private _cloneCustomer(customer: ProxyEntities.Customer): ProxyEntities.Customer {
         let customerCopy: any = {};
-
         try {
             customerCopy = JSON.parse(JSON.stringify(customer || {}));
         } catch (error) {
             customerCopy = customer || {};
         }
-
         return new ProxyEntities.CustomerClass(customerCopy);
     }
 
@@ -429,73 +389,32 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         customer.Email = email || "";
     }
 
-    private _getSunatData(documentNumber: string): Promise<ISunatCustomerData> {
-        const normalizedDocument: string = this._sunatService.normalizeDocument(documentNumber);
-
-        if (this._sunatByDocument[normalizedDocument]) {
-            return Promise.resolve(this._sunatByDocument[normalizedDocument]);
-        }
-
-        return this._sunatService.lookup(normalizedDocument)
-            .then((sunatData: ISunatCustomerData): ISunatCustomerData => {
-                this._sunatByDocument[normalizedDocument] = sunatData;
-                return sunatData;
-            });
-    }
-
     private _setMode(element: HTMLElement, mode: CustomerInlineDialogMode): void {
         this._mode = mode;
 
-        this._toggle(element, "customerInlineTabSearch", mode === "search");
-        this._toggle(element, "customerInlineTabCreate", mode === "create");
+        this._toggle(element, "customerInlineTabSearchCreate", mode === "searchcreate");
         this._toggle(element, "customerInlineTabEdit", mode === "edit");
-        this._toggle(element, "customerInlinePanelSearch", mode === "search");
-        this._toggle(element, "customerInlinePanelCreate", mode === "create");
+        this._toggle(element, "customerInlinePanelSearchCreate", mode === "searchcreate");
         this._toggle(element, "customerInlinePanelEdit", mode === "edit");
 
-        this._showMessage(element, this._getModeMessage(mode));
+        this._showMessage(element, mode === "edit" ? "Edite el cliente actual." : "Si no existe en D365, se consultará en SUNAT automáticamente.");
     }
 
     private _toggle(element: HTMLElement, id: string, active: boolean): void {
         const target: HTMLElement = element.querySelector("#" + id) as HTMLElement;
-        if (!target) {
-            return;
-        }
-
-        if (active) {
-            target.classList.add("is-active");
-        } else {
-            target.classList.remove("is-active");
-        }
+        if (!target) return;
+        if (active) target.classList.add("is-active");
+        else target.classList.remove("is-active");
     }
 
     private _showMessage(element: HTMLElement, message: string): void {
         const messageElement: HTMLElement = element.querySelector("#customerInlineMessage") as HTMLElement;
-        if (messageElement) {
-            messageElement.textContent = message;
-        }
-    }
-
-    private _showCustomerResult(element: HTMLElement, id: string, customer: ProxyEntities.Customer): void {
-        this._showTextResult(element, id, this._formatCustomerSummary(customer));
+        if (messageElement) messageElement.textContent = message;
     }
 
     private _showTextResult(element: HTMLElement, id: string, message: string): void {
         const target: HTMLElement = element.querySelector("#" + id) as HTMLElement;
-        if (target) {
-            target.textContent = message || "";
-        }
-    }
-
-    private _getModeMessage(mode: CustomerInlineDialogMode): string {
-        switch (mode) {
-            case "create":
-                return "Cree el cliente desde la venta. SUNAT prellena, el cajero confirma.";
-            case "edit":
-                return "Edite el cliente sin salir de la venta. SUNAT valida antes de guardar.";
-            default:
-                return "Buscar usa clientes del sistema. SUNAT solo valida y no sobrescribe.";
-        }
+        if (target) target.textContent = message || "";
     }
 
     private _getValue(element: HTMLElement, id: string): string {
@@ -505,16 +424,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
     private _setValue(element: HTMLElement, id: string, value: string): void {
         const target: HTMLInputElement = element.querySelector("#" + id) as HTMLInputElement;
-        if (target) {
-            target.value = value || "";
-        }
+        if (target) target.value = value || "";
     }
 
     private _formatCustomerSummary(customer: ProxyEntities.Customer): string {
-        if (!customer) {
-            return "";
-        }
-
+        if (!customer) return "";
         return [
             "Cliente del sistema",
             "Cuenta: " + (customer.AccountNumber || ""),
@@ -528,67 +442,44 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             "SUNAT " + sunatData.documentType + ": " + sunatData.documentNumber,
             "Nombre: " + (sunatData.name || "")
         ];
-
-        if (sunatData.padronesText) {
-            lines.push("Padrones: " + sunatData.padronesText);
-        }
-
-        if (sunatData.documentType === "RUC") {
-            lines.push("Retencion: " + (sunatData.isRetentionAgent ? "Si" : "No"));
-            lines.push("Percepcion: " + (sunatData.isPerceptionAgent ? "Si" : "No"));
-            lines.push("Sector publico: " + (sunatData.isPublicSector ? "Si" : "No"));
-        }
-
+        if (sunatData.padronesText) lines.push("Padrones: " + sunatData.padronesText);
         return lines.join("\n");
     }
 
     private _getCorrelationId(): string {
         const logger: any = this.context && this.context.logger;
-
-        if (logger && logger.getNewCorrelationId) {
-            return logger.getNewCorrelationId();
-        }
-
+        if (logger && logger.getNewCorrelationId) return logger.getNewCorrelationId();
         return "customer-inline-" + new Date().getTime().toString();
     }
 
     private _complete(result: ICustomerInlineDialogResult): void {
+        (window as any)[GUARD_KEY] = false;
         if (this._resolve) {
             this._resolve(result);
             this._resolve = null;
         }
-
         this.closeDialog();
     }
 
     private _closeClickHandler(): boolean {
+        (window as any)[GUARD_KEY] = false;
         if (this._resolve) {
             this._resolve(null);
             this._resolve = null;
         }
-
         return true;
     }
 
     private _getErrorMessage(reason: any): string {
-        if (reason && reason.message) {
-            return reason.message;
-        }
-
-        return "No se pudo completar la accion. Revise el log del POS.";
+        if (reason && reason.message) return reason.message;
+        return "No se pudo completar la acción. Revise el log del POS.";
     }
 
     private _stringify(value: any): string {
-        try {
-            return JSON.stringify(value);
-        } catch (error) {
-            return value ? value.toString() : "";
-        }
+        try { return JSON.stringify(value); } catch (error) { return value ? value.toString() : ""; }
     }
 
     private _logError(message: string): void {
-        if (this.context && this.context.logger) {
-            this.context.logger.logError(message);
-        }
+        if (this.context && this.context.logger) this.context.logger.logError(message);
     }
 }

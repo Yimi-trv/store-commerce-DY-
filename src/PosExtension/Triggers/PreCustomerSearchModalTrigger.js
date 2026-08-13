@@ -15,7 +15,7 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var CustomerTriggers_1, CustomerInlineDialog_1, PreCustomerSearchModalTrigger;
+    var CustomerTriggers_1, CustomerInlineDialog_1, GUARD_KEY, PreCustomerSearchModalTrigger;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -27,6 +27,7 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
             }
         ],
         execute: function () {
+            GUARD_KEY = "__customerInlineDialogActive";
             PreCustomerSearchModalTrigger = (function (_super) {
                 __extends(PreCustomerSearchModalTrigger, _super);
                 function PreCustomerSearchModalTrigger() {
@@ -34,13 +35,19 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
                 }
                 PreCustomerSearchModalTrigger.prototype.execute = function (options) {
                     var _this = this;
+                    if (window[GUARD_KEY]) {
+                        return Promise.resolve({ canceled: false });
+                    }
+                    window[GUARD_KEY] = true;
                     var dialog = new CustomerInlineDialog_1.default();
                     var searchText = options && options.searchText ? options.searchText : "";
                     return dialog.open("search", null, searchText)
                         .then(function () {
+                        window[GUARD_KEY] = false;
                         return { canceled: true };
                     })
                         .catch(function (reason) {
+                        window[GUARD_KEY] = false;
                         _this.context.logger.logError("PreCustomerSearchModalTrigger error: " + JSON.stringify(reason));
                         return { canceled: false };
                     });

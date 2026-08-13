@@ -15,7 +15,7 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var CustomerTriggers_1, CustomerInlineDialog_1, PreCustomerAddModalTrigger;
+    var CustomerTriggers_1, CustomerInlineDialog_1, GUARD_KEY, PreCustomerAddModalTrigger;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -27,6 +27,7 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
             }
         ],
         execute: function () {
+            GUARD_KEY = "__customerInlineDialogActive";
             PreCustomerAddModalTrigger = (function (_super) {
                 __extends(PreCustomerAddModalTrigger, _super);
                 function PreCustomerAddModalTrigger() {
@@ -34,12 +35,18 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
                 }
                 PreCustomerAddModalTrigger.prototype.execute = function (options) {
                     var _this = this;
+                    if (window[GUARD_KEY]) {
+                        return Promise.resolve({ canceled: false });
+                    }
+                    window[GUARD_KEY] = true;
                     var dialog = new CustomerInlineDialog_1.default();
                     return dialog.open("create")
                         .then(function () {
+                        window[GUARD_KEY] = false;
                         return { canceled: true };
                     })
                         .catch(function (reason) {
+                        window[GUARD_KEY] = false;
                         _this.context.logger.logError("PreCustomerAddModalTrigger error: " + JSON.stringify(reason));
                         return { canceled: false };
                     });
