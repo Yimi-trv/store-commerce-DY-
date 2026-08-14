@@ -251,7 +251,6 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         if ((u && u.IsValid) || addressStreet) {
                             var address = {
                                 ThreeLetterISORegionName: "PER",
-                                CountryRegionId: "PER",
                                 Name: sunatData.documentType === "RUC" ? "DOMICILIO FISCAL" : "DOMICILIO PERSONAL",
                                 Street: addressStreet,
                                 IsPrimary: true

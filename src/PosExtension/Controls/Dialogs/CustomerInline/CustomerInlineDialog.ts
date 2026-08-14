@@ -282,7 +282,6 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             if ((u && u.IsValid) || addressStreet) {
                 const address: any = {
                     ThreeLetterISORegionName: "PER",
-                    CountryRegionId: "PER",
                     Name: sunatData.documentType === "RUC" ? "DOMICILIO FISCAL" : "DOMICILIO PERSONAL",
                     Street: addressStreet,
                     IsPrimary: true
