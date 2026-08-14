@@ -342,7 +342,7 @@ export class ThemeEngine {
         for (var i: number = 0; i < botonesC.length; i++) {
             botonesC[i].classList.add("sct-cbtn");
             botonesC[i].classList.add(i === 0 ? "sct-cbtn-primary" : "sct-cbtn-dark");
-            ThemeEngine.estilo(botonesC[i], { "left": "0px", "top": (i * 82) + "px", "width": "316px", "height": "74px", "min-height": "0", "max-height": "74px", "color": "#FFFFFF", "background-image": "none", "background-color": i === 0 ? "#C8102E" : "#1B1A19", "transform": "none" });
+            ThemeEngine.estilo(botonesC[i], { "position": "absolute", "left": "0px", "top": (i * 82) + "px", "width": "316px", "height": "74px", "min-height": "0", "max-height": "74px", "color": "#FFFFFF", "background-image": "none", "background-color": i === 0 ? "#C8102E" : "#1B1A19", "transform": "none" });
             ThemeEngine.icono(botonesC[i], "sct-ic-c" + (i + 1));
         }
 
@@ -353,7 +353,7 @@ export class ThemeEngine {
         var botonesT: HTMLElement[] = ThemeEngine.todos("#ButtonGrid2Control .buttonGridButton");
         for (var j: number = 0; j < botonesT.length; j++) {
             botonesT[j].classList.add("sct-tbtn", "sct-t" + (j + 1));
-            ThemeEngine.estilo(botonesT[j], { "left": columnasT[j % 3] + "px", "top": (filasT[Math.floor(j / 3)] || 0) + "px", "width": "100px", "height": "122px", "min-height": "0", "max-height": "122px", "color": "#FFFFFF", "background-image": "none", "background-color": j === 4 ? "#C8102E" : "#1B1A19", "transform": "none" });
+            ThemeEngine.estilo(botonesT[j], { "position": "absolute", "left": columnasT[j % 3] + "px", "top": (filasT[Math.floor(j / 3)] || 0) + "px", "width": "100px", "height": "122px", "min-height": "0", "max-height": "122px", "color": "#FFFFFF", "background-image": "none", "background-color": j === 4 ? "#C8102E" : "#1B1A19", "transform": "none" });
             ThemeEngine.icono(botonesT[j], "sct-ic-t" + (j + 1));
         }
 
@@ -364,7 +364,7 @@ export class ThemeEngine {
         var subtitulos: string[] = ["Empleado Planilla", "RECIBO POR HONORARIOS"];
         for (var k: number = 0; k < botonesB.length; k++) {
             botonesB[k].classList.add("sct-bbtn", "sct-b" + (k + 1));
-            ThemeEngine.estilo(botonesB[k], { "left": "0px", "top": (k * 124) + "px", "width": "316px", "height": "112px", "min-height": "0", "max-height": "112px", "background-color": "#1B1A19", "color": "#FFFFFF", "background-image": "none", "transform": "none" });
+            ThemeEngine.estilo(botonesB[k], { "position": "absolute", "left": "0px", "top": (k * 124) + "px", "width": "316px", "height": "112px", "min-height": "0", "max-height": "112px", "background-color": "#1B1A19", "color": "#FFFFFF", "background-image": "none", "transform": "none" });
             ThemeEngine.icono(botonesB[k], "sct-ic-b" + (k + 1));
             var etiqueta = botonesB[k].querySelector("div");
             if (etiqueta && !etiqueta.querySelector(".sct-b-t") && k < titulos.length) {
@@ -376,9 +376,9 @@ export class ThemeEngine {
         // Pagos
         var botonesP: any[] = [[".sct-p0", 0], [".sct-p1", 86], [".sct-p3", 172], [".sct-p4", 258]];
         for (var m: number = 0; m < botonesP.length; m++) {
-            ThemeEngine.establecer("#ButtonGrid4Control " + botonesP[m][0], { "left": botonesP[m][1] + "px", "top": "0px", "width": "82px", "height": "64px", "min-height": "0", "max-height": "64px" });
+            ThemeEngine.establecer("#ButtonGrid4Control " + botonesP[m][0], { "position": "absolute", "left": botonesP[m][1] + "px", "top": "0px", "width": "82px", "height": "64px", "min-height": "0", "max-height": "64px" });
         }
-        ThemeEngine.establecer("#ButtonGrid4Control .sct-p2", { "left": "0px", "top": "75px", "width": "340px", "height": "52px", "min-height": "0", "max-height": "52px" });
+        ThemeEngine.establecer("#ButtonGrid4Control .sct-p2", { "position": "absolute", "left": "0px", "top": "75px", "width": "340px", "height": "52px", "min-height": "0", "max-height": "52px" });
 
         // Zonas de clientes y montos inferiores
         var raiz = ThemeEngine.raiz();
