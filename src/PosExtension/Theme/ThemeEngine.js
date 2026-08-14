@@ -313,9 +313,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     ThemeEngine.establecer("#TotalsPanel", { "right": "auto", "width": "312px", "height": "228px", "min-height": "0px", "max-height": "228px", "transform": "translateY(-20px)", "box-sizing": "border-box", "overflow": "hidden" });
                     ThemeEngine.establecer("#TotalsPanel .fields.row", { "width": "100%", "height": "188px", "min-height": "188px", "max-height": "188px" });
                     ThemeEngine.establecer("#TotalsPanel .panel-footer", { "width": "100%", "height": "40px", "min-height": "40px", "max-height": "40px" });
-                    ThemeEngine.establecer("#TabControl", { "position": "absolute", "left": "518px", "top": "132px", "right": "auto", "width": "452px", "height": "422px", "transform": "none" });
-                    ThemeEngine.establecer("#TabControl .commerceTabControl.righttabs", { "width": "452px", "height": "400px" });
-                    ThemeEngine.establecer("#TabControl .commerceTabControl.righttabs > .tabContent", { "width": "340px", "height": "330px" });
+                    ThemeEngine.establecer("#TabControl", { "right": "auto" });
                     ThemeEngine.establecer("#CustomControl1", { "position": "absolute", "left": "630px", "top": "554px", "right": "auto", "width": "340px", "height": "94px", "min-height": "0px", "max-height": "94px", "transform": "none", "padding": "6px 10px 7px", "overflow": "hidden" });
                     ThemeEngine.establecer("#ButtonGrid4, #ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer", { "position": "absolute", "left": "630px", "top": "644px", "right": "auto", "width": "340px", "height": "127px", "min-height": "0px", "max-height": "127px", "transform": "none" });
                     ThemeEngine.establecer("#ButtonGrid1Control, #ButtonGrid1Control .buttonsContainer", { "width": "316px", "height": "238px" });

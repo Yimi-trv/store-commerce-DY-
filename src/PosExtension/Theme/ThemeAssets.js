@@ -139,9 +139,8 @@ System.register([], function (exports_1, context_1) {
             + ".panel-footer .h1{color:" + ROJO + " !important;font-size:30px !important;font-weight:700 !important;}\n"
             + ".dark .transactionLinesPane{border:" + BORDE_TARJETA + " !important;border-radius:14px !important;padding:2px 8px !important;box-sizing:border-box !important;}\n";
         var cssCompacto = ""
-            + "#TabControl, #TabControl .commerceTabControl.righttabs{width:452px !important;box-sizing:border-box !important;}\n"
-            + "#TabControl{pointer-events:none !important;}\n"
-            + "#TabControl .commerceTabControl.righttabs{height:400px !important;overflow:visible !important;}\n"
+            + "#TabControl{position:absolute !important;left:518px !important;top:132px !important;width:452px !important;height:422px !important;transform:none !important;pointer-events:none !important;}\n"
+            + "#TabControl .commerceTabControl.righttabs{width:452px !important;height:400px !important;overflow:visible !important;box-sizing:border-box !important;}\n"
             + "#TabControl .commerceTabControl.righttabs .tabsContainer{display:flex !important;flex-direction:row !important;justify-content:flex-start !important;align-items:flex-start !important;width:340px !important;min-width:340px !important;max-width:340px !important;height:62px !important;gap:6px !important;padding:0 !important;margin:0 0 8px 112px !important;left:0 !important;right:auto !important;transform:none !important;overflow:visible !important;box-sizing:border-box !important;pointer-events:auto !important;}\n"
             + "#TabControl .commerceTabControl.righttabs .tabsContainer .tab{position:relative !important;flex:0 0 80px !important;width:80px !important;min-width:80px !important;max-width:80px !important;height:58px !important;left:auto !important;right:auto !important;top:auto !important;margin:0 !important;transform:none !important;border-radius:9px !important;box-sizing:border-box !important;border:1px solid rgba(255,255,255,0.25) !important;background:#161514 !important;}\n"
             + "#TabControl .commerceTabControl.righttabs .tabsContainer .tab:hover,#TabControl .commerceTabControl.righttabs .tabsContainer .tab.hover,#TabControl .commerceTabControl.righttabs .tabsContainer .tab.pressed{border-color:" + ROJO + " !important;background:#1B1A19 !important;}\n"
@@ -200,8 +199,8 @@ System.register([], function (exports_1, context_1) {
             + ".sct-dom-card{overflow:hidden !important;}\n"
             + ".sct-dom-card .sct-live-direccion{display:block !important;width:100% !important;max-width:100% !important;max-height:58px !important;margin:0 !important;padding:0 !important;overflow:hidden !important;overflow-wrap:anywhere !important;word-break:normal !important;white-space:normal !important;font-size:10px !important;line-height:1.1 !important;box-sizing:border-box !important;}\n";
         return acotar(cssBase, "body." + CLASE_AMBITO)
-            + acotar(cssAmplio, "body." + CLASE_AMBITO + "." + CLASE_AMPLIO)
-            + acotar(cssCompacto, "body." + CLASE_AMBITO + "." + CLASE_COMPACTO);
+            + "@media screen and (min-width: 1367px) {\n" + acotar(cssAmplio, "body." + CLASE_AMBITO) + "}\n"
+            + "@media screen and (max-width: 1366px) {\n" + acotar(cssCompacto, "body." + CLASE_AMBITO) + "}\n";
     }
     exports_1("construirCss", construirCss);
     return {
