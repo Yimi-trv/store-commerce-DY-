@@ -33,7 +33,7 @@ class CustomCustomerSearchRequest extends Commerce.DataService.DataServiceReques
         (this as any)._entityType = "Customer";
         (this as any)._method = "";
         (this as any)._parameters = { 
-            "$filter": `substringof('${keyword}', Name) or IdentificationNumber eq '${keyword}' or AccountNumber eq '${keyword}'`,
+            "$filter": `(contains(Name, '${keyword}') or IdentificationNumber eq '${keyword}' or AccountNumber eq '${keyword}')`,
             "$top": top,
             "$skip": skip
         };
@@ -387,7 +387,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                     address.State = u.StateId;
                     address.County = u.CountyId;
                     address.City = u.CityName;
+                    address.DistrictName = u.DistrictName;
                 }
+                
+                address.ZipCode = ""; // Algunos entornos requieren que ZipCode no sea nulo
                 
                 customer.Addresses = [address];
             }
