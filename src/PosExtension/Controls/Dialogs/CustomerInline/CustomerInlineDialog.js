@@ -136,29 +136,29 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 CustomerInlineDialog.prototype._executeSearch = function (element) {
                     var _this = this;
                     var searchText = this._getValue(element, "customerInlineSearchText");
-                    window[GUARD_KEY] = true;
-                    var request = new Customer_1.SelectCustomerClientRequest(this._getCorrelationId(), searchText);
-                    return this.context.runtime.executeAsync(request).then(function (response) {
-                        window[GUARD_KEY] = false;
-                        if (!response.canceled && response.data && response.data.result) {
-                            if (_this._resolve) {
-                                _this._resolve({ mode: "search", action: "customerAdded" });
-                            }
-                            _this.closeDialog();
-                            return new Promise(function (resolve) {
-                                setTimeout(function () {
+                    if (this._resolve) {
+                        this._resolve({ mode: "search", action: "delegated" });
+                    }
+                    this.closeDialog();
+                    return new Promise(function (resolve) {
+                        setTimeout(function () {
+                            window["__customerSearchProgrammatic"] = true;
+                            var request = new Customer_1.SelectCustomerClientRequest(_this._getCorrelationId(), searchText);
+                            _this.context.runtime.executeAsync(request).then(function (response) {
+                                window["__customerSearchProgrammatic"] = false;
+                                if (!response.canceled && response.data && response.data.result) {
                                     var cartRequest = new Cart_1.SetCustomerOnCartOperationRequest(_this._getCorrelationId(), response.data.result.AccountNumber);
                                     _this.context.runtime.executeAsync(cartRequest).then(resolve).catch(resolve);
-                                }, 500);
+                                }
+                                else {
+                                    resolve();
+                                }
+                            }).catch(function (error) {
+                                window["__customerSearchProgrammatic"] = false;
+                                _this._logError("SelectCustomer error: " + _this._stringify(error));
+                                resolve();
                             });
-                        }
-                        else {
-                            if (_this._resolve) {
-                                _this._resolve({ mode: "search", action: "canceled" });
-                            }
-                            _this.closeDialog();
-                            return Promise.resolve();
-                        }
+                        }, 500);
                     });
                 };
                 CustomerInlineDialog.prototype._lookupSunatForCreate = function (element) {
@@ -249,18 +249,18 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     return resolvePromise.then(function (u) {
                         var addressStreet = (sunatData.address || "").trim();
                         if ((u && u.IsValid) || addressStreet) {
-                            var address = new Entities_1.ProxyEntities.AddressClass();
-                            address.AddressTypeValue = sunatData.documentType === "RUC" ? 2 : 1;
-                            address.ThreeLetterISORegionName = "PER";
-                            address.CountryRegionId = "PER";
-                            address.Name = sunatData.documentType === "RUC" ? "DOMICILIO FISCAL" : "DOMICILIO PERSONAL";
-                            address.Street = addressStreet;
+                            var address = {
+                                ThreeLetterISORegionName: "PER",
+                                CountryRegionId: "PER",
+                                Name: sunatData.documentType === "RUC" ? "DOMICILIO FISCAL" : "DOMICILIO PERSONAL",
+                                Street: addressStreet,
+                                IsPrimary: true
+                            };
                             if (u && u.IsValid) {
                                 address.State = u.StateId;
                                 address.County = u.CountyId;
                                 address.City = u.CityName;
                             }
-                            address.IsPrimary = true;
                             customer.Addresses = [address];
                         }
                         _this._showMessage(element, "Paso 3: Registrando cliente en D365...");

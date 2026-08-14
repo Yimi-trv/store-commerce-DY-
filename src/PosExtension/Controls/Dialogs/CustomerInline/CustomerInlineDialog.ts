@@ -148,31 +148,31 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _executeSearch(element: HTMLElement): Promise<void> {
         let searchText: string = this._getValue(element, "customerInlineSearchText");
         
-        (window as any)[GUARD_KEY] = true;
-        const request: SelectCustomerClientRequest<SelectCustomerClientResponse> = new SelectCustomerClientRequest(this._getCorrelationId(), searchText);
+        if (this._resolve) {
+            this._resolve({ mode: "search", action: "delegated" });
+        }
+        this.closeDialog();
         
-        return this.context.runtime.executeAsync(request).then((response: ClientEntities.ICancelableDataResult<SelectCustomerClientResponse>) => {
-            (window as any)[GUARD_KEY] = false;
-            
-            if (!response.canceled && response.data && response.data.result) {
-                if (this._resolve) {
-                    this._resolve({ mode: "search", action: "customerAdded" });
-                }
-                this.closeDialog();
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                (window as any)["__customerSearchProgrammatic"] = true;
+                const request: SelectCustomerClientRequest<SelectCustomerClientResponse> = new SelectCustomerClientRequest(this._getCorrelationId(), searchText);
                 
-                return new Promise((resolve) => {
-                    setTimeout(() => {
-                        const cartRequest: SetCustomerOnCartOperationRequest<SetCustomerOnCartOperationResponse> = new SetCustomerOnCartOperationRequest(this._getCorrelationId(), response.data!.result.AccountNumber);
+                this.context.runtime.executeAsync(request).then((response: ClientEntities.ICancelableDataResult<SelectCustomerClientResponse>) => {
+                    (window as any)["__customerSearchProgrammatic"] = false;
+                    
+                    if (!response.canceled && response.data && response.data.result) {
+                        const cartRequest: SetCustomerOnCartOperationRequest<SetCustomerOnCartOperationResponse> = new SetCustomerOnCartOperationRequest(this._getCorrelationId(), response.data.result.AccountNumber);
                         this.context.runtime.executeAsync(cartRequest).then(resolve as any).catch(resolve as any);
-                    }, 500);
+                    } else {
+                        resolve();
+                    }
+                }).catch((error: any) => {
+                    (window as any)["__customerSearchProgrammatic"] = false;
+                    this._logError("SelectCustomer error: " + this._stringify(error));
+                    resolve();
                 });
-            } else {
-                if (this._resolve) {
-                    this._resolve({ mode: "search", action: "canceled" });
-                }
-                this.closeDialog();
-                return Promise.resolve();
-            }
+            }, 500);
         });
     }
 
@@ -280,12 +280,13 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             let addressStreet: string = (sunatData.address || "").trim();
             
             if ((u && u.IsValid) || addressStreet) {
-                const address: ProxyEntities.Address = new ProxyEntities.AddressClass();
-                address.AddressTypeValue = sunatData.documentType === "RUC" ? 2 : 1; // 2=Negocio, 1=Casa
-                address.ThreeLetterISORegionName = "PER";
-                (address as any).CountryRegionId = "PER";
-                address.Name = sunatData.documentType === "RUC" ? "DOMICILIO FISCAL" : "DOMICILIO PERSONAL";
-                address.Street = addressStreet;
+                const address: any = {
+                    ThreeLetterISORegionName: "PER",
+                    CountryRegionId: "PER",
+                    Name: sunatData.documentType === "RUC" ? "DOMICILIO FISCAL" : "DOMICILIO PERSONAL",
+                    Street: addressStreet,
+                    IsPrimary: true
+                };
                 
                 if (u && u.IsValid) {
                     address.State = u.StateId;
@@ -293,7 +294,6 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                     address.City = u.CityName;
                 }
                 
-                address.IsPrimary = true;
                 customer.Addresses = [address];
             }
 

@@ -6,7 +6,7 @@ const GUARD_KEY = "__customerInlineDialogActive";
 
 export default class PreCustomerSearchModalTrigger extends PreCustomerSearchTrigger {
     public execute(options: IPreCustomerSearchTriggerOptions): Promise<ClientEntities.ICancelable> {
-        if ((window as any)[GUARD_KEY]) {
+        if ((window as any)[GUARD_KEY] || (window as any)["__customerSearchProgrammatic"]) {
             return Promise.resolve({ canceled: false });
         }
 

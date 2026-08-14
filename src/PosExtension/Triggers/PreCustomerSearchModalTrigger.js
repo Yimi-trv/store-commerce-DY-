@@ -34,7 +34,7 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
                     return _super !== null && _super.apply(this, arguments) || this;
                 }
                 PreCustomerSearchModalTrigger.prototype.execute = function (options) {
-                    if (window[GUARD_KEY]) {
+                    if (window[GUARD_KEY] || window["__customerSearchProgrammatic"]) {
                         return Promise.resolve({ canceled: false });
                     }
                     var searchText = "";
