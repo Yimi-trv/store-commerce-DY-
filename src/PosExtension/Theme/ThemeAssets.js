@@ -63,6 +63,7 @@ System.register([], function (exports_1, context_1) {
             + ".sct-ghost .fields.row,.sct-ghost .fields.row *,.sct-ghost .panel-footer,.sct-ghost .panel-footer *{pointer-events:auto !important;}\n"
             + ".dark .commerceTabControl.righttabs > .tabContent,.dark .transactionLinesPane,.sct-cli-card,.sct-dom-card,.fields.row,.panel-footer,#ButtonGrid4Control{background-color:" + FONDO_TARJETA + " !important;background-image:none !important;}\n"
             + ".sct-tbtn::before,.sct-bbtn::before,.sct-pbtn::before{content:none !important;}\n"
+            + ".sct-cbtn > *:not(i.sct-ic),.sct-tbtn > *:not(i.sct-ic),.sct-bbtn > *:not(i.sct-ic),#ButtonGrid4Control .sct-pbtn > *:not(i.sct-ic){display:none !important;}\n"
             + ".sct-ic{position:absolute;background-repeat:no-repeat;background-position:center;background-size:contain;pointer-events:none;}\n"
             + ".sct-cbtn .sct-ic{left:28px;top:50%;transform:translateY(-50%);width:46px;height:46px;}\n"
             + ".sct-tbtn .sct-ic{left:50%;top:20px;transform:translateX(-50%);width:60px;height:60px;}\n"

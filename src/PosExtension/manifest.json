@@ -29,6 +29,12 @@
 },
 "triggers": [
 {
+"modulePath": "Triggers/ApplyThemeTrigger",
+"triggerType": "ApplicationStart",
+"name": "ApplyThemeTrigger",
+"description": "Aplica el tema visual Trujillo Market al iniciar Store Commerce"
+},
+{
 "triggerType": "PreCustomerSearch",
 "modulePath": "Triggers/PreCustomerSearchModalTrigger",
 "name": "PreCustomerSearchModalTrigger",

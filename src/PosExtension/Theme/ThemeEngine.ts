@@ -297,6 +297,25 @@ export class ThemeEngine {
 
     // ---------------------------------------------------------------- layouts 1024 / 1920
 
+    private static prepararBotones(): void {
+        var nombresClaves = ["button0", "button1", "button3", "button4", "button2"];
+        var keysIds = ["p0", "p1", "p3", "p4", "p2"];
+        for (var i = 0; i < nombresClaves.length; i++) {
+            var pb = ThemeEngine.q("#ButtonGrid4Control .buttonGridButton." + nombresClaves[i]);
+            if (pb) {
+                if (!pb.classList.contains("sct-" + keysIds[i])) {
+                    pb.classList.add("sct-pbtn", "sct-" + keysIds[i]);
+                    ThemeEngine.icono(pb, "sct-ic-" + keysIds[i]);
+                }
+                ThemeEngine.estilo(pb, { "background-image": "none", "background-color": "rgba(22,21,20,0.6)", "border": "1px solid rgba(255,255,255,0.16)", "border-radius": "12px", "color": "#FFFFFF", "transform": "none" });
+                for (var j = 0; j < pb.children.length; j++) {
+                    var ch = pb.children[j] as HTMLElement;
+                    if (ch.tagName === "DIV") ch.style.setProperty("display", "none", "important");
+                }
+            }
+        }
+    }
+
     private static aplicarLayoutCompacto(): void {
         var panelLineas = ThemeEngine.q("#TransactionGrid");
         if (panelLineas && ThemeEngine.altoOriginalLineas === null) {
@@ -307,9 +326,15 @@ export class ThemeEngine {
         ThemeEngine.establecer("#TransactionGrid", propLineas);
         
         ThemeEngine.establecer("#TotalsPanel", { "right": "auto", "width": "312px", "height": "228px", "min-height": "0px", "max-height": "228px", "transform": "translateY(-20px)", "box-sizing": "border-box", "overflow": "hidden" });
+        ThemeEngine.establecer("#TotalsPanel .fields.row", { "width": "100%", "height": "188px", "min-height": "188px", "max-height": "188px" });
+        ThemeEngine.establecer("#TotalsPanel .panel-footer", { "width": "100%", "height": "40px", "min-height": "40px", "max-height": "40px" });
+
         ThemeEngine.establecer("#TabControl", { "left": "518px", "right": "auto", "width": "452px", "height": "422px" });
+        ThemeEngine.establecer("#TabControl .commerceTabControl.righttabs", { "width": "452px", "height": "400px" });
+        ThemeEngine.establecer("#TabControl .commerceTabControl.righttabs > .tabContent", { "width": "340px", "height": "330px" });
+
         ThemeEngine.establecer("#CustomControl1", { "left": "630px", "right": "auto", "width": "340px", "height": "94px", "min-height": "0px", "max-height": "94px", "transform": "translateY(88px)", "padding": "6px 10px 7px", "overflow": "hidden" });
-        ThemeEngine.establecer("#ButtonGrid4", { "left": "630px", "right": "auto", "width": "340px", "height": "127px", "min-height": "0px", "max-height": "127px", "transform": "translateY(77px)" });
+        ThemeEngine.establecer("#ButtonGrid4, #ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer", { "left": "630px", "right": "auto", "width": "340px", "height": "127px", "min-height": "0px", "max-height": "127px", "transform": "translateY(77px)" });
 
         // Cliente
         ThemeEngine.establecer("#ButtonGrid1Control, #ButtonGrid1Control .buttonsContainer", { "width": "316px", "height": "238px" });
@@ -317,7 +342,7 @@ export class ThemeEngine {
         for (var i: number = 0; i < botonesC.length; i++) {
             botonesC[i].classList.add("sct-cbtn");
             botonesC[i].classList.add(i === 0 ? "sct-cbtn-primary" : "sct-cbtn-dark");
-            ThemeEngine.estilo(botonesC[i], { "left": "0px", "top": (i * 82) + "px", "width": "316px", "height": "74px", "min-height": "0", "max-height": "74px", "color": "#FFFFFF", "background-image": "none", "background-color": i === 0 ? "#C8102E" : "#1B1A19" });
+            ThemeEngine.estilo(botonesC[i], { "left": "0px", "top": (i * 82) + "px", "width": "316px", "height": "74px", "min-height": "0", "max-height": "74px", "color": "#FFFFFF", "background-image": "none", "background-color": i === 0 ? "#C8102E" : "#1B1A19", "transform": "none" });
             ThemeEngine.icono(botonesC[i], "sct-ic-c" + (i + 1));
         }
 
@@ -328,7 +353,7 @@ export class ThemeEngine {
         var botonesT: HTMLElement[] = ThemeEngine.todos("#ButtonGrid2Control .buttonGridButton");
         for (var j: number = 0; j < botonesT.length; j++) {
             botonesT[j].classList.add("sct-tbtn", "sct-t" + (j + 1));
-            ThemeEngine.estilo(botonesT[j], { "left": columnasT[j % 3] + "px", "top": (filasT[Math.floor(j / 3)] || 0) + "px", "width": "100px", "height": "122px", "min-height": "0", "max-height": "122px", "color": "#FFFFFF", "background-image": "none", "background-color": j === 4 ? "#C8102E" : "#1B1A19" });
+            ThemeEngine.estilo(botonesT[j], { "left": columnasT[j % 3] + "px", "top": (filasT[Math.floor(j / 3)] || 0) + "px", "width": "100px", "height": "122px", "min-height": "0", "max-height": "122px", "color": "#FFFFFF", "background-image": "none", "background-color": j === 4 ? "#C8102E" : "#1B1A19", "transform": "none" });
             ThemeEngine.icono(botonesT[j], "sct-ic-t" + (j + 1));
         }
 
@@ -339,7 +364,7 @@ export class ThemeEngine {
         var subtitulos: string[] = ["Empleado Planilla", "RECIBO POR HONORARIOS"];
         for (var k: number = 0; k < botonesB.length; k++) {
             botonesB[k].classList.add("sct-bbtn", "sct-b" + (k + 1));
-            ThemeEngine.estilo(botonesB[k], { "left": "0px", "top": (k * 124) + "px", "width": "316px", "height": "112px", "min-height": "0", "max-height": "112px", "background-color": "#1B1A19", "color": "#FFFFFF", "background-image": "none" });
+            ThemeEngine.estilo(botonesB[k], { "left": "0px", "top": (k * 124) + "px", "width": "316px", "height": "112px", "min-height": "0", "max-height": "112px", "background-color": "#1B1A19", "color": "#FFFFFF", "background-image": "none", "transform": "none" });
             ThemeEngine.icono(botonesB[k], "sct-ic-b" + (k + 1));
             var etiqueta = botonesB[k].querySelector("div");
             if (etiqueta && !etiqueta.querySelector(".sct-b-t") && k < titulos.length) {
@@ -473,24 +498,17 @@ export class ThemeEngine {
             }
         }
         
-        // Asignar nombres sct-p0..sct-p4 a los botones de pago para que el CSS los encuentre
+        // Estilos para los botones de pago (las clases sct-p0..sct-p4 ya fueron asignadas en prepararBotones)
         var cols4 = [0, 114, 228, 342, 0];
         var fils4 = [0, 0, 0, 0, 84];
         var anchos4 = [110, 110, 110, 110, 452];
         var altos4 = [78, 78, 78, 78, 62];
-        var nombresClaves = ["button0", "button1", "button3", "button4", "button2"];
         var keysIds = ["p0", "p1", "p3", "p4", "p2"];
 
-        for (var i = 0; i < nombresClaves.length; i++) {
-            var pb = ThemeEngine.q("#ButtonGrid4Control .buttonGridButton." + nombresClaves[i]);
+        for (var i = 0; i < keysIds.length; i++) {
+            var pb = ThemeEngine.q("#ButtonGrid4Control .sct-" + keysIds[i]);
             if (pb) {
-                pb.classList.add("sct-pbtn", "sct-" + keysIds[i]);
                 ThemeEngine.estilo(pb, { "left": cols4[i] + "px", "top": fils4[i] + "px", "width": anchos4[i] + "px", "min-height": "0", "height": altos4[i] + "px", "max-height": altos4[i] + "px", "background-image": "none", "background-color": "rgba(22,21,20,0.6)", "border": "1px solid rgba(255,255,255,0.16)", "border-radius": "12px", "color": "#FFFFFF" });
-                ThemeEngine.icono(pb, "sct-ic-" + keysIds[i]);
-                for (var j = 0; j < pb.children.length; j++) {
-                    var ch = pb.children[j] as HTMLElement;
-                    if (ch.tagName === "DIV") ch.style.setProperty("display", "none", "important");
-                }
             }
         }
     }
@@ -509,6 +527,8 @@ export class ThemeEngine {
             document.body.classList.add(CLASE_AMPLIO);
             document.body.classList.remove(CLASE_COMPACTO);
         }
+
+        ThemeEngine.prepararBotones();
 
         var pasosComunes: Array<() => void> = [
             ThemeEngine.aplicarZonas, ThemeEngine.aplicarPestanas, ThemeEngine.aplicarMontos,
