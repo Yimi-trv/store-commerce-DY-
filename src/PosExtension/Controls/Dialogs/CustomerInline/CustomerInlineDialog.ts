@@ -6,8 +6,6 @@ import {
     CreateCustomerServiceRequest,
     GetCustomerClientRequest,
     GetCustomerClientResponse,
-    SelectCustomerClientRequest,
-    SelectCustomerClientResponse,
     UpdateCustomerServiceRequest,
 } from "PosApi/Consume/Customer";
 import {
@@ -20,7 +18,7 @@ import { TRU_GeographicData, Entities } from "../../../DataService/DataServiceRe
 
 const GUARD_KEY: string = "__customerInlineDialogActive";
 
-export type CustomerInlineDialogMode = "searchcreate" | "edit";
+export type CustomerInlineDialogMode = "search" | "create" | "edit";
 
 export interface ICustomerInlineDialogResult {
     mode: CustomerInlineDialogMode;
@@ -34,14 +32,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _currentCustomer: ProxyEntities.Customer | null;
     private _initialSearchText: string;
     private readonly _sunatService: SunatCustomerService;
+    private _lastSunatData: ISunatCustomerData | null;
 
     constructor() {
         super();
-        this._mode = "searchcreate";
+        this._mode = "search";
         this._resolve = null;
         this._currentCustomer = null;
         this._initialSearchText = "";
         this._sunatService = new SunatCustomerService();
+        this._lastSunatData = null;
     }
 
     public open(
@@ -49,7 +49,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         customer?: ProxyEntities.Customer | null,
         initialSearchText?: string
     ): Promise<ICustomerInlineDialogResult | null> {
-        this._mode = mode === "edit" ? "edit" : "searchcreate";
+        this._mode = mode as CustomerInlineDialogMode;
+        if (["search", "create", "edit"].indexOf(this._mode) === -1) {
+            this._mode = "search";
+        }
+        
         this._currentCustomer = customer || null;
         this._initialSearchText = initialSearchText || "";
 
@@ -72,10 +76,13 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     public onReady(element: HTMLElement): void {
-        this._bindTab(element, "searchcreate", "customerInlineTabSearchCreate");
+        this._bindTab(element, "search", "customerInlineTabSearch");
+        this._bindTab(element, "create", "customerInlineTabCreate");
         this._bindTab(element, "edit", "customerInlineTabEdit");
 
-        this._bindAction(element, "customerInlineSearchCreateButton", this._processDocument.bind(this));
+        this._bindAction(element, "customerInlineSearchButton", this._executeSearch.bind(this));
+        this._bindAction(element, "customerInlineCreateSunatButton", this._lookupSunatForCreate.bind(this));
+        this._bindAction(element, "customerInlineCreateButton", this._executeCreate.bind(this));
         this._bindAction(element, "customerInlineEditSunatButton", this._lookupSunatForEdit.bind(this));
         this._bindAction(element, "customerInlineEditButton", this._updateCustomer.bind(this));
 
@@ -119,7 +126,8 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
     private _prefillInitialValues(element: HTMLElement): void {
         if (this._initialSearchText) {
-            this._setValue(element, "customerInlineSearchDocument", this._initialSearchText);
+            this._setValue(element, "customerInlineSearchText", this._initialSearchText);
+            this._setValue(element, "customerInlineCreateDocument", this._initialSearchText);
         }
 
         if (this._currentCustomer) {
@@ -132,8 +140,22 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         }
     }
 
-    private _processDocument(element: HTMLElement): Promise<void> {
-        let rawDocument: string = this._getValue(element, "customerInlineSearchDocument");
+    private _executeSearch(element: HTMLElement): Promise<void> {
+        (window as any)[GUARD_KEY] = false;
+        
+        if (this._resolve) {
+            this._resolve({
+                mode: "search",
+                action: "delegatedToNativeSearch"
+            });
+            this._resolve = null;
+        }
+        this.closeDialog();
+        return Promise.resolve();
+    }
+
+    private _lookupSunatForCreate(element: HTMLElement): Promise<void> {
+        let rawDocument: string = this._getValue(element, "customerInlineCreateDocument");
         let documentNumber: string = this._sunatService.normalizeDocument(rawDocument);
 
         if (!this._sunatService.getDocumentType(documentNumber)) {
@@ -141,40 +163,77 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return Promise.resolve();
         }
 
-        this._showMessage(element, "Paso 1: Buscando cliente en Store Commerce...");
-        this._showTextResult(element, "customerInlineSearchCreateResult", "");
-
-        return this._selectCustomerFromSystem(documentNumber)
-            .then((customer: ProxyEntities.Customer | null): Promise<void> => {
-                if (customer) {
-                    this._showMessage(element, "Cliente encontrado en el sistema. Asignando a la venta...");
-                    const accountNumber: string = customer.AccountNumber || "";
-                    if (!accountNumber) {
-                        this._showMessage(element, "El cliente del sistema no tiene número de cuenta.");
-                        return Promise.resolve();
-                    }
-                    return this._setCustomerOnCart(accountNumber).then((): void => {
-                        this._complete({
-                            mode: "searchcreate",
-                            action: "searchAndSetCustomerOnCart",
-                            customerAccountNumber: accountNumber
-                        });
-                    });
-                } else {
-                    this._showMessage(element, "Paso 2: Consultando SUNAT para crear cliente...");
-                    
-                    return this._sunatService.lookup(documentNumber)
-                        .then((sunatData: ISunatCustomerData): Promise<void> => {
-                            this._showMessage(element, "Paso 3: Resolviendo dirección (Ubigeo)...");
-                            return this._resolveAndCreateCustomer(element, sunatData);
-                        });
-                }
+        this._showMessage(element, "Consultando SUNAT...");
+        this._showTextResult(element, "customerInlineCreateResult", "");
+        
+        return this._sunatService.lookup(documentNumber)
+            .then((sunatData: ISunatCustomerData): void => {
+                this._lastSunatData = sunatData;
+                this._setValue(element, "customerInlineCreateName", sunatData.name || "");
+                this._setValue(element, "customerInlineCreateAddress", sunatData.address || "");
+                this._setValue(element, "customerInlineCreateDepartment", sunatData.department || "");
+                this._setValue(element, "customerInlineCreateProvince", sunatData.province || "");
+                this._setValue(element, "customerInlineCreateDistrict", sunatData.district || "");
+                this._setValue(element, "customerInlineCreateCondition", (sunatData.raw && sunatData.raw.condicion) || "");
+                this._setChecked(element, "customerInlineCreateRetention", sunatData.isRetentionAgent);
+                this._setChecked(element, "customerInlineCreatePerception", sunatData.isPerceptionAgent);
+                this._setChecked(element, "customerInlineCreatePublicSector", sunatData.isPublicSector);
+                this._setChecked(element, "customerInlineCreateEmergencyZone", sunatData.isEmergencyZone);
+                this._setChecked(element, "customerInlineCreateExoneratedPerception", sunatData.isExoneratedPerception);
+                this._setChecked(element, "customerInlineCreateFinalConsumer", sunatData.isFinalConsumer);
+                this._setChecked(element, "customerInlineCreateOthers", sunatData.isOthers);
+                this._setChecked(element, "customerInlineCreateNotDomiciled", sunatData.isNotDomiciled);
+                this._showTextResult(element, "customerInlineCreateResult", this._formatSunatSummary(sunatData));
+                this._showMessage(element, "Datos obtenidos. Complete si falta algo y presione Crear en Sistema.");
             });
     }
 
-    private _resolveAndCreateCustomer(element: HTMLElement, sunatData: ISunatCustomerData): Promise<void> {
+    private _executeCreate(element: HTMLElement): Promise<void> {
+        let rawDocument: string = this._getValue(element, "customerInlineCreateDocument");
+        let documentNumber: string = this._sunatService.normalizeDocument(rawDocument);
+
+        if (!this._sunatService.getDocumentType(documentNumber)) {
+            this._showMessage(element, "Ingrese un documento válido.");
+            return Promise.resolve();
+        }
+
+        const name: string = this._getValue(element, "customerInlineCreateName");
+        if (!name) {
+            this._showMessage(element, "El nombre/razón social es obligatorio.");
+            return Promise.resolve();
+        }
+
+        this._showMessage(element, "Paso 1: Resolviendo dirección (Ubigeo)...");
+        
+        const sunatDataToUse: ISunatCustomerData = this._lastSunatData || {
+            documentNumber: documentNumber,
+            documentType: this._sunatService.getDocumentType(documentNumber) as string,
+            name: name
+        } as ISunatCustomerData;
+
+        sunatDataToUse.isRetentionAgent = this._getChecked(element, "customerInlineCreateRetention");
+        sunatDataToUse.isPerceptionAgent = this._getChecked(element, "customerInlineCreatePerception");
+        sunatDataToUse.isPublicSector = this._getChecked(element, "customerInlineCreatePublicSector");
+        sunatDataToUse.isEmergencyZone = this._getChecked(element, "customerInlineCreateEmergencyZone");
+        sunatDataToUse.isExoneratedPerception = this._getChecked(element, "customerInlineCreateExoneratedPerception");
+        sunatDataToUse.isFinalConsumer = this._getChecked(element, "customerInlineCreateFinalConsumer");
+        sunatDataToUse.isOthers = this._getChecked(element, "customerInlineCreateOthers");
+        sunatDataToUse.isNotDomiciled = this._getChecked(element, "customerInlineCreateNotDomiciled");
+        sunatDataToUse.address = this._getValue(element, "customerInlineCreateAddress");
+        sunatDataToUse.department = this._getValue(element, "customerInlineCreateDepartment");
+        sunatDataToUse.province = this._getValue(element, "customerInlineCreateProvince");
+        sunatDataToUse.district = this._getValue(element, "customerInlineCreateDistrict");
+
+        return this._resolveAndCreateCustomer(element, sunatDataToUse, name, this._getValue(element, "customerInlineCreatePhone"), this._getValue(element, "customerInlineCreateEmail"));
+    }
+
+    private _resolveAndCreateCustomer(element: HTMLElement, sunatData: ISunatCustomerData, overrideName: string, phone: string, email: string): Promise<void> {
         const customer: ProxyEntities.Customer = new ProxyEntities.CustomerClass({});
         this._sunatService.applySunatIdentity(customer, sunatData);
+        
+        customer.Name = overrideName || customer.Name;
+        customer.Phone = phone || "";
+        customer.Email = email || "";
         
         let resolvePromise: Promise<Entities.UbigeoResolutionResult | null> = Promise.resolve(null);
 
@@ -210,13 +269,13 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 customer.Addresses = [address];
             }
 
-            this._showMessage(element, "Paso 4: Registrando cliente en D365...");
+            this._showMessage(element, "Paso 3: Registrando cliente en D365...");
             const createRequest: CreateCustomerServiceRequest = new CreateCustomerServiceRequest(this._getCorrelationId(), customer);
 
             return this.context.runtime.executeAsync(createRequest)
                 .then((response: any): Promise<void> => {
                     if (response.canceled || !response.data || !response.data.customer) {
-                        this._showMessage(element, "La creación del cliente falló o fue cancelada.");
+                        this._showMessage(element, "La creación del cliente falló o fue cancelada por el sistema.");
                         return Promise.resolve();
                     }
 
@@ -228,33 +287,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                         return Promise.resolve();
                     }
 
-                    this._showMessage(element, "Paso 5: Asignando nuevo cliente a la venta...");
+                    this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
                     return this._setCustomerOnCart(accountNumber).then((): void => {
                         this._complete({
-                            mode: "searchcreate",
+                            mode: "create",
                             action: "createAndSetCustomerOnCart",
                             customerAccountNumber: accountNumber
                         });
                     });
                 });
         });
-    }
-
-    private _selectCustomerFromSystem(searchText: string): Promise<ProxyEntities.Customer | null> {
-        const request: SelectCustomerClientRequest<SelectCustomerClientResponse> =
-            new SelectCustomerClientRequest(this._getCorrelationId(), searchText);
-
-        return this.context.runtime.executeAsync(request)
-            .then((response: any): ProxyEntities.Customer | null => {
-                if (response.canceled || !response.data || !response.data.result) {
-                    return null;
-                }
-
-                return response.data.result;
-            })
-            .catch((): ProxyEntities.Customer | null => {
-                return null;
-            });
     }
 
     private _lookupSunatForEdit(element: HTMLElement): Promise<void> {
@@ -392,12 +434,20 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _setMode(element: HTMLElement, mode: CustomerInlineDialogMode): void {
         this._mode = mode;
 
-        this._toggle(element, "customerInlineTabSearchCreate", mode === "searchcreate");
+        this._toggle(element, "customerInlineTabSearch", mode === "search");
+        this._toggle(element, "customerInlineTabCreate", mode === "create");
         this._toggle(element, "customerInlineTabEdit", mode === "edit");
-        this._toggle(element, "customerInlinePanelSearchCreate", mode === "searchcreate");
+        this._toggle(element, "customerInlinePanelSearch", mode === "search");
+        this._toggle(element, "customerInlinePanelCreate", mode === "create");
         this._toggle(element, "customerInlinePanelEdit", mode === "edit");
 
-        this._showMessage(element, mode === "edit" ? "Edite el cliente actual." : "Si no existe en D365, se consultará en SUNAT automáticamente.");
+        if (mode === "search") {
+            this._showMessage(element, "Busque clientes existentes por documento, nombre o cuenta.");
+        } else if (mode === "create") {
+            this._showMessage(element, "El cliente será creado directamente validando la data desde SUNAT.");
+        } else {
+            this._showMessage(element, "Edite el cliente actual.");
+        }
     }
 
     private _toggle(element: HTMLElement, id: string, active: boolean): void {
@@ -425,6 +475,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _setValue(element: HTMLElement, id: string, value: string): void {
         const target: HTMLInputElement = element.querySelector("#" + id) as HTMLInputElement;
         if (target) target.value = value || "";
+    }
+
+    private _getChecked(element: HTMLElement, id: string): boolean {
+        const target: HTMLInputElement = element.querySelector("#" + id) as HTMLInputElement;
+        return target ? target.checked : false;
+    }
+
+    private _setChecked(element: HTMLElement, id: string, value: boolean): void {
+        const target: HTMLInputElement = element.querySelector("#" + id) as HTMLInputElement;
+        if (target) target.checked = value || false;
     }
 
     private _formatCustomerSummary(customer: ProxyEntities.Customer): string {

@@ -42,8 +42,11 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
                     var dialog = new CustomerInlineDialog_1.default();
                     var searchText = options && options.searchText ? options.searchText : "";
                     return dialog.open("search", null, searchText)
-                        .then(function () {
+                        .then(function (result) {
                         window[GUARD_KEY] = false;
+                        if (result && result.action === "delegatedToNativeSearch") {
+                            return { canceled: false };
+                        }
                         return { canceled: true };
                     })
                         .catch(function (reason) {

@@ -57,7 +57,7 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     if (!customer || !documentType) {
                         return customer;
                     }
-                    this._setStringProperty(customer, "DPTY_PEDOCID_PE", documentType === "RUC" ? "6" : "1");
+                    this._setStringProperty(customer, "DPTYPEDOCID_PE", documentType === "RUC" ? "6" : "1");
                     this._setStringProperty(customer, "DPNUMBERDOCUMID_PE", normalizedDocument);
                     customer.IdentificationNumber = normalizedDocument;
                     if (documentType === "RUC") {
@@ -76,6 +76,11 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     this._setIntegerProperty(customer, "DPAGENTRETENTION_PE", sunatData.isRetentionAgent ? 1 : 0);
                     this._setIntegerProperty(customer, "DPAGENTPERCEPTION_PE", sunatData.isPerceptionAgent ? 1 : 0);
                     this._setIntegerProperty(customer, "DPPUBLICSECTOR_PE", sunatData.isPublicSector ? 1 : 0);
+                    this._setIntegerProperty(customer, "DPEMERGENCYZONE_PE", sunatData.isEmergencyZone ? 1 : 0);
+                    this._setIntegerProperty(customer, "DPEXONERATEDPERCEPTION_PE", sunatData.isExoneratedPerception ? 1 : 0);
+                    this._setIntegerProperty(customer, "DPFINALCONSUMER_PE", sunatData.isFinalConsumer ? 1 : 0);
+                    this._setIntegerProperty(customer, "DPOTHERS_PE", sunatData.isOthers ? 1 : 0);
+                    this._setIntegerProperty(customer, "DPNOTDOMICILED_PE", sunatData.isNotDomiciled ? 1 : 0);
                     return customer;
                 };
                 SunatCustomerService.prototype.applySunatIdentity = function (customer, sunatData) {
@@ -132,6 +137,11 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                             isRetentionAgent: lowerPadrones.indexOf("retencion") >= 0 || lowerPadrones.indexOf("retenci\u00f3n") >= 0,
                             isPerceptionAgent: lowerPadrones.indexOf("percepcion") >= 0 || lowerPadrones.indexOf("percepci\u00f3n") >= 0,
                             isPublicSector: lowerTipo.indexOf("publica") >= 0 || lowerTipo.indexOf("p\u00fablica") >= 0,
+                            isEmergencyZone: false,
+                            isExoneratedPerception: false,
+                            isFinalConsumer: false,
+                            isOthers: false,
+                            isNotDomiciled: false,
                             department: (result && result.departamento) || "",
                             province: (result && result.provincia) || "",
                             district: (result && result.distrito) || "",
@@ -152,6 +162,11 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                         isRetentionAgent: false,
                         isPerceptionAgent: false,
                         isPublicSector: false,
+                        isEmergencyZone: false,
+                        isExoneratedPerception: false,
+                        isFinalConsumer: false,
+                        isOthers: false,
+                        isNotDomiciled: false,
                         raw: result
                     };
                 };
@@ -203,7 +218,7 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                 SunatCustomerService.prototype._normalizeForCompare = function (value) {
                     return (value || "").toUpperCase().replace(/\s+/g, " ").trim();
                 };
-                SunatCustomerService._apiKey = "GvYdWiRldMuCHJvZHVjdGlvbi5maXRjb2RlcnMuNjgxY2IzYzE5ZmE0MTczZjYxMzIwYWVh";
+                SunatCustomerService._apiKey = "cGVydWRldnMucHJvZHVjdGlvbi5maXRjb2RlcnMuNjgxY2IzYzE5ZmE0MTczZjYxMzIwYWVh";
                 return SunatCustomerService;
             }());
             exports_1("default", SunatCustomerService);

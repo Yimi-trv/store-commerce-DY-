@@ -131,23 +131,103 @@
     </style>
 
     <div class="customer-inline-dialog__tabs">
-        <button id="customerInlineTabSearchCreate" class="customer-inline-dialog__tab is-active" type="button">Buscar / Crear</button>
-        <button id="customerInlineTabEdit" class="customer-inline-dialog__tab" type="button">Editar Cliente Actual</button>
+        <button id="customerInlineTabSearch" class="customer-inline-dialog__tab is-active" type="button">Buscar Cliente</button>
+        <button id="customerInlineTabCreate" class="customer-inline-dialog__tab" type="button">Crear con SUNAT</button>
+        <button id="customerInlineTabEdit" class="customer-inline-dialog__tab" type="button">Editar Actual</button>
     </div>
 
-    <!-- PANEL BUSCAR/CREAR -->
-    <div id="customerInlinePanelSearchCreate" class="customer-inline-dialog__panel is-active">
+    <!-- PANEL BUSCAR -->
+    <div id="customerInlinePanelSearch" class="customer-inline-dialog__panel is-active">
         <div class="customer-inline-dialog__grid">
             <div class="customer-inline-dialog__field">
-                <label for="customerInlineSearchDocument">DNI (8 dígitos) o RUC (11 dígitos):</label>
-                <input id="customerInlineSearchDocument" type="text" placeholder="Ej. 20123456789" />
+                <label for="customerInlineSearchText">Nombre, DNI, RUC o Cuenta:</label>
+                <input id="customerInlineSearchText" type="text" placeholder="Ej. Juan Perez o 20123456789" />
             </div>
             <div class="customer-inline-dialog__field" style="justify-content: flex-end;">
-                <button id="customerInlineSearchCreateButton" class="customer-inline-dialog__action" type="button">Procesar Documento</button>
+                <button id="customerInlineSearchButton" class="customer-inline-dialog__action" type="button">Buscar en Sistema</button>
             </div>
         </div>
+        <div class="customer-inline-dialog__message" style="margin-top: 15px;">
+            Al buscar, se cerrará este cuadro y se abrirá la vista estándar de resultados del POS para que elijas al cliente correcto.
+        </div>
+    </div>
 
-        <div id="customerInlineSearchCreateResult" class="customer-inline-dialog__result"></div>
+    <!-- PANEL CREAR -->
+    <div id="customerInlinePanelCreate" class="customer-inline-dialog__panel">
+        <div class="customer-inline-dialog__grid">
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateDocument">Documento SUNAT (8 u 11 dígitos):</label>
+                <input id="customerInlineCreateDocument" type="text" placeholder="Ej. 20123456789" />
+            </div>
+            <div class="customer-inline-dialog__field" style="justify-content: flex-end;">
+                <button id="customerInlineCreateSunatButton" class="customer-inline-dialog__action customer-inline-dialog__action--secondary" type="button" style="width: 100%;">1. Consultar SUNAT</button>
+            </div>
+            <div class="customer-inline-dialog__field" style="grid-column: 1 / -1;">
+                <label for="customerInlineCreateName">Nombre completo / Razon Social:</label>
+                <input id="customerInlineCreateName" type="text" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreatePhone">Telefono:</label>
+                <input id="customerInlineCreatePhone" type="text" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateEmail">Email:</label>
+                <input id="customerInlineCreateEmail" type="text" />
+            </div>
+            <div class="customer-inline-dialog__field" style="grid-column: 1 / -1;">
+                <label for="customerInlineCreateAddress">Dirección fiscal:</label>
+                <input id="customerInlineCreateAddress" type="text" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateDepartment">Departamento:</label>
+                <input id="customerInlineCreateDepartment" type="text" readonly style="background:#f3f2f1;" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateProvince">Provincia:</label>
+                <input id="customerInlineCreateProvince" type="text" readonly style="background:#f3f2f1;" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateDistrict">Distrito:</label>
+                <input id="customerInlineCreateDistrict" type="text" readonly style="background:#f3f2f1;" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateCondition">Condición:</label>
+                <input id="customerInlineCreateCondition" type="text" readonly style="background:#f3f2f1;" />
+            </div>
+            <div class="customer-inline-dialog__field" style="grid-column: 1 / -1;">
+                <label>Datos Perú:</label>
+                <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 4px;">
+                    <label style="font-weight: normal; font-size: 13px; display: flex; align-items: center; gap: 4px;">
+                        <input id="customerInlineCreateRetention" type="checkbox" /> Agente Retención
+                    </label>
+                    <label style="font-weight: normal; font-size: 13px; display: flex; align-items: center; gap: 4px;">
+                        <input id="customerInlineCreatePerception" type="checkbox" /> Agente Percepción
+                    </label>
+                    <label style="font-weight: normal; font-size: 13px; display: flex; align-items: center; gap: 4px;">
+                        <input id="customerInlineCreatePublicSector" type="checkbox" /> Sector Público
+                    </label>
+                    <label style="font-weight: normal; font-size: 13px; display: flex; align-items: center; gap: 4px;">
+                        <input id="customerInlineCreateEmergencyZone" type="checkbox" /> Zona de emergencia
+                    </label>
+                    <label style="font-weight: normal; font-size: 13px; display: flex; align-items: center; gap: 4px;">
+                        <input id="customerInlineCreateExoneratedPerception" type="checkbox" /> Exonerado percepción
+                    </label>
+                    <label style="font-weight: normal; font-size: 13px; display: flex; align-items: center; gap: 4px;">
+                        <input id="customerInlineCreateFinalConsumer" type="checkbox" /> Consumidor final
+                    </label>
+                    <label style="font-weight: normal; font-size: 13px; display: flex; align-items: center; gap: 4px;">
+                        <input id="customerInlineCreateOthers" type="checkbox" /> Otros
+                    </label>
+                    <label style="font-weight: normal; font-size: 13px; display: flex; align-items: center; gap: 4px;">
+                        <input id="customerInlineCreateNotDomiciled" type="checkbox" /> No domiciliado
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="customer-inline-dialog__actions">
+            <button id="customerInlineCreateButton" class="customer-inline-dialog__action" type="button">2. Crear en Sistema y Asignar</button>
+        </div>
+        <div id="customerInlineCreateResult" class="customer-inline-dialog__result"></div>
     </div>
 
     <!-- PANEL EDITAR -->

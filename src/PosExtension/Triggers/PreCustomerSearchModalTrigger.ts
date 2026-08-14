@@ -17,8 +17,11 @@ export default class PreCustomerSearchModalTrigger extends PreCustomerSearchTrig
         let searchText: string = options && options.searchText ? options.searchText : "";
 
         return dialog.open("search", null, searchText)
-            .then((): Commerce.Client.Entities.ICancelable => {
+            .then((result: any): Commerce.Client.Entities.ICancelable => {
                 (window as any)[GUARD_KEY] = false;
+                if (result && result.action === "delegatedToNativeSearch") {
+                    return { canceled: false };
+                }
                 return { canceled: true };
             })
             .catch((reason: any): Commerce.Client.Entities.ICancelable => {

@@ -44,16 +44,20 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 __extends(CustomerInlineDialog, _super);
                 function CustomerInlineDialog() {
                     var _this = _super.call(this) || this;
-                    _this._mode = "searchcreate";
+                    _this._mode = "search";
                     _this._resolve = null;
                     _this._currentCustomer = null;
                     _this._initialSearchText = "";
                     _this._sunatService = new SunatCustomerService_1.default();
+                    _this._lastSunatData = null;
                     return _this;
                 }
                 CustomerInlineDialog.prototype.open = function (mode, customer, initialSearchText) {
                     var _this = this;
-                    this._mode = mode === "edit" ? "edit" : "searchcreate";
+                    this._mode = mode;
+                    if (["search", "create", "edit"].indexOf(this._mode) === -1) {
+                        this._mode = "search";
+                    }
                     this._currentCustomer = customer || null;
                     this._initialSearchText = initialSearchText || "";
                     return new Promise(function (resolve) {
@@ -72,9 +76,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     });
                 };
                 CustomerInlineDialog.prototype.onReady = function (element) {
-                    this._bindTab(element, "searchcreate", "customerInlineTabSearchCreate");
+                    this._bindTab(element, "search", "customerInlineTabSearch");
+                    this._bindTab(element, "create", "customerInlineTabCreate");
                     this._bindTab(element, "edit", "customerInlineTabEdit");
-                    this._bindAction(element, "customerInlineSearchCreateButton", this._processDocument.bind(this));
+                    this._bindAction(element, "customerInlineSearchButton", this._executeSearch.bind(this));
+                    this._bindAction(element, "customerInlineCreateSunatButton", this._lookupSunatForCreate.bind(this));
+                    this._bindAction(element, "customerInlineCreateButton", this._executeCreate.bind(this));
                     this._bindAction(element, "customerInlineEditSunatButton", this._lookupSunatForEdit.bind(this));
                     this._bindAction(element, "customerInlineEditButton", this._updateCustomer.bind(this));
                     if (!this._currentCustomer) {
@@ -114,7 +121,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._prefillInitialValues = function (element) {
                     if (this._initialSearchText) {
-                        this._setValue(element, "customerInlineSearchDocument", this._initialSearchText);
+                        this._setValue(element, "customerInlineSearchText", this._initialSearchText);
+                        this._setValue(element, "customerInlineCreateDocument", this._initialSearchText);
                     }
                     if (this._currentCustomer) {
                         this._setValue(element, "customerInlineEditAccount", this._currentCustomer.AccountNumber || "");
@@ -125,47 +133,88 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this._showTextResult(element, "customerInlineEditResult", this._formatCustomerSummary(this._currentCustomer));
                     }
                 };
-                CustomerInlineDialog.prototype._processDocument = function (element) {
+                CustomerInlineDialog.prototype._executeSearch = function (element) {
+                    window[GUARD_KEY] = false;
+                    if (this._resolve) {
+                        this._resolve({
+                            mode: "search",
+                            action: "delegatedToNativeSearch"
+                        });
+                        this._resolve = null;
+                    }
+                    this.closeDialog();
+                    return Promise.resolve();
+                };
+                CustomerInlineDialog.prototype._lookupSunatForCreate = function (element) {
                     var _this = this;
-                    var rawDocument = this._getValue(element, "customerInlineSearchDocument");
+                    var rawDocument = this._getValue(element, "customerInlineCreateDocument");
                     var documentNumber = this._sunatService.normalizeDocument(rawDocument);
                     if (!this._sunatService.getDocumentType(documentNumber)) {
                         this._showMessage(element, "Ingrese un DNI de 8 dígitos o RUC de 11 dígitos válido.");
                         return Promise.resolve();
                     }
-                    this._showMessage(element, "Paso 1: Buscando cliente en Store Commerce...");
-                    this._showTextResult(element, "customerInlineSearchCreateResult", "");
-                    return this._selectCustomerFromSystem(documentNumber)
-                        .then(function (customer) {
-                        if (customer) {
-                            _this._showMessage(element, "Cliente encontrado en el sistema. Asignando a la venta...");
-                            var accountNumber_1 = customer.AccountNumber || "";
-                            if (!accountNumber_1) {
-                                _this._showMessage(element, "El cliente del sistema no tiene número de cuenta.");
-                                return Promise.resolve();
-                            }
-                            return _this._setCustomerOnCart(accountNumber_1).then(function () {
-                                _this._complete({
-                                    mode: "searchcreate",
-                                    action: "searchAndSetCustomerOnCart",
-                                    customerAccountNumber: accountNumber_1
-                                });
-                            });
-                        }
-                        else {
-                            _this._showMessage(element, "Paso 2: Consultando SUNAT para crear cliente...");
-                            return _this._sunatService.lookup(documentNumber)
-                                .then(function (sunatData) {
-                                _this._showMessage(element, "Paso 3: Resolviendo dirección (Ubigeo)...");
-                                return _this._resolveAndCreateCustomer(element, sunatData);
-                            });
-                        }
+                    this._showMessage(element, "Consultando SUNAT...");
+                    this._showTextResult(element, "customerInlineCreateResult", "");
+                    return this._sunatService.lookup(documentNumber)
+                        .then(function (sunatData) {
+                        _this._lastSunatData = sunatData;
+                        _this._setValue(element, "customerInlineCreateName", sunatData.name || "");
+                        _this._setValue(element, "customerInlineCreateAddress", sunatData.address || "");
+                        _this._setValue(element, "customerInlineCreateDepartment", sunatData.department || "");
+                        _this._setValue(element, "customerInlineCreateProvince", sunatData.province || "");
+                        _this._setValue(element, "customerInlineCreateDistrict", sunatData.district || "");
+                        _this._setValue(element, "customerInlineCreateCondition", (sunatData.raw && sunatData.raw.condicion) || "");
+                        _this._setChecked(element, "customerInlineCreateRetention", sunatData.isRetentionAgent);
+                        _this._setChecked(element, "customerInlineCreatePerception", sunatData.isPerceptionAgent);
+                        _this._setChecked(element, "customerInlineCreatePublicSector", sunatData.isPublicSector);
+                        _this._setChecked(element, "customerInlineCreateEmergencyZone", sunatData.isEmergencyZone);
+                        _this._setChecked(element, "customerInlineCreateExoneratedPerception", sunatData.isExoneratedPerception);
+                        _this._setChecked(element, "customerInlineCreateFinalConsumer", sunatData.isFinalConsumer);
+                        _this._setChecked(element, "customerInlineCreateOthers", sunatData.isOthers);
+                        _this._setChecked(element, "customerInlineCreateNotDomiciled", sunatData.isNotDomiciled);
+                        _this._showTextResult(element, "customerInlineCreateResult", _this._formatSunatSummary(sunatData));
+                        _this._showMessage(element, "Datos obtenidos. Complete si falta algo y presione Crear en Sistema.");
                     });
                 };
-                CustomerInlineDialog.prototype._resolveAndCreateCustomer = function (element, sunatData) {
+                CustomerInlineDialog.prototype._executeCreate = function (element) {
+                    var rawDocument = this._getValue(element, "customerInlineCreateDocument");
+                    var documentNumber = this._sunatService.normalizeDocument(rawDocument);
+                    if (!this._sunatService.getDocumentType(documentNumber)) {
+                        this._showMessage(element, "Ingrese un documento válido.");
+                        return Promise.resolve();
+                    }
+                    var name = this._getValue(element, "customerInlineCreateName");
+                    if (!name) {
+                        this._showMessage(element, "El nombre/razón social es obligatorio.");
+                        return Promise.resolve();
+                    }
+                    this._showMessage(element, "Paso 1: Resolviendo dirección (Ubigeo)...");
+                    var sunatDataToUse = this._lastSunatData || {
+                        documentNumber: documentNumber,
+                        documentType: this._sunatService.getDocumentType(documentNumber),
+                        name: name
+                    };
+                    sunatDataToUse.isRetentionAgent = this._getChecked(element, "customerInlineCreateRetention");
+                    sunatDataToUse.isPerceptionAgent = this._getChecked(element, "customerInlineCreatePerception");
+                    sunatDataToUse.isPublicSector = this._getChecked(element, "customerInlineCreatePublicSector");
+                    sunatDataToUse.isEmergencyZone = this._getChecked(element, "customerInlineCreateEmergencyZone");
+                    sunatDataToUse.isExoneratedPerception = this._getChecked(element, "customerInlineCreateExoneratedPerception");
+                    sunatDataToUse.isFinalConsumer = this._getChecked(element, "customerInlineCreateFinalConsumer");
+                    sunatDataToUse.isOthers = this._getChecked(element, "customerInlineCreateOthers");
+                    sunatDataToUse.isNotDomiciled = this._getChecked(element, "customerInlineCreateNotDomiciled");
+                    sunatDataToUse.address = this._getValue(element, "customerInlineCreateAddress");
+                    sunatDataToUse.department = this._getValue(element, "customerInlineCreateDepartment");
+                    sunatDataToUse.province = this._getValue(element, "customerInlineCreateProvince");
+                    sunatDataToUse.district = this._getValue(element, "customerInlineCreateDistrict");
+                    return this._resolveAndCreateCustomer(element, sunatDataToUse, name, this._getValue(element, "customerInlineCreatePhone"), this._getValue(element, "customerInlineCreateEmail"));
+                };
+                CustomerInlineDialog.prototype._resolveAndCreateCustomer = function (element, sunatData, overrideName, phone, email) {
                     var _this = this;
                     var customer = new Entities_1.ProxyEntities.CustomerClass({});
                     this._sunatService.applySunatIdentity(customer, sunatData);
+                    customer.Name = overrideName || customer.Name;
+                    customer.Phone = phone || "";
+                    customer.Email = email || "";
                     var resolvePromise = Promise.resolve(null);
                     if (sunatData.documentType === "RUC" && (sunatData.department || sunatData.province)) {
                         var request = new DataServiceRequests_g_1.TRU_GeographicData.ResolveUbigeoRequest(sunatData.department || "", sunatData.province || "", sunatData.district || "");
@@ -194,12 +243,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             address.IsPrimary = true;
                             customer.Addresses = [address];
                         }
-                        _this._showMessage(element, "Paso 4: Registrando cliente en D365...");
+                        _this._showMessage(element, "Paso 3: Registrando cliente en D365...");
                         var createRequest = new Customer_1.CreateCustomerServiceRequest(_this._getCorrelationId(), customer);
                         return _this.context.runtime.executeAsync(createRequest)
                             .then(function (response) {
                             if (response.canceled || !response.data || !response.data.customer) {
-                                _this._showMessage(element, "La creación del cliente falló o fue cancelada.");
+                                _this._showMessage(element, "La creación del cliente falló o fue cancelada por el sistema.");
                                 return Promise.resolve();
                             }
                             var createdCustomer = response.data.customer;
@@ -208,28 +257,15 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 _this._showMessage(element, "Cliente creado pero sin número de cuenta.");
                                 return Promise.resolve();
                             }
-                            _this._showMessage(element, "Paso 5: Asignando nuevo cliente a la venta...");
+                            _this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
                             return _this._setCustomerOnCart(accountNumber).then(function () {
                                 _this._complete({
-                                    mode: "searchcreate",
+                                    mode: "create",
                                     action: "createAndSetCustomerOnCart",
                                     customerAccountNumber: accountNumber
                                 });
                             });
                         });
-                    });
-                };
-                CustomerInlineDialog.prototype._selectCustomerFromSystem = function (searchText) {
-                    var request = new Customer_1.SelectCustomerClientRequest(this._getCorrelationId(), searchText);
-                    return this.context.runtime.executeAsync(request)
-                        .then(function (response) {
-                        if (response.canceled || !response.data || !response.data.result) {
-                            return null;
-                        }
-                        return response.data.result;
-                    })
-                        .catch(function () {
-                        return null;
                     });
                 };
                 CustomerInlineDialog.prototype._lookupSunatForEdit = function (element) {
@@ -342,11 +378,21 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._setMode = function (element, mode) {
                     this._mode = mode;
-                    this._toggle(element, "customerInlineTabSearchCreate", mode === "searchcreate");
+                    this._toggle(element, "customerInlineTabSearch", mode === "search");
+                    this._toggle(element, "customerInlineTabCreate", mode === "create");
                     this._toggle(element, "customerInlineTabEdit", mode === "edit");
-                    this._toggle(element, "customerInlinePanelSearchCreate", mode === "searchcreate");
+                    this._toggle(element, "customerInlinePanelSearch", mode === "search");
+                    this._toggle(element, "customerInlinePanelCreate", mode === "create");
                     this._toggle(element, "customerInlinePanelEdit", mode === "edit");
-                    this._showMessage(element, mode === "edit" ? "Edite el cliente actual." : "Si no existe en D365, se consultará en SUNAT automáticamente.");
+                    if (mode === "search") {
+                        this._showMessage(element, "Busque clientes existentes por documento, nombre o cuenta.");
+                    }
+                    else if (mode === "create") {
+                        this._showMessage(element, "El cliente será creado directamente validando la data desde SUNAT.");
+                    }
+                    else {
+                        this._showMessage(element, "Edite el cliente actual.");
+                    }
                 };
                 CustomerInlineDialog.prototype._toggle = function (element, id, active) {
                     var target = element.querySelector("#" + id);
@@ -375,6 +421,15 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     var target = element.querySelector("#" + id);
                     if (target)
                         target.value = value || "";
+                };
+                CustomerInlineDialog.prototype._getChecked = function (element, id) {
+                    var target = element.querySelector("#" + id);
+                    return target ? target.checked : false;
+                };
+                CustomerInlineDialog.prototype._setChecked = function (element, id, value) {
+                    var target = element.querySelector("#" + id);
+                    if (target)
+                        target.checked = value || false;
                 };
                 CustomerInlineDialog.prototype._formatCustomerSummary = function (customer) {
                     if (!customer)
