@@ -387,7 +387,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                     address.State = u.StateId;
                     address.County = u.CountyId;
                     address.City = u.CityName;
-                    address.DistrictName = u.DistrictName;
+                    address.DistrictName = sunatData.district || "";
                 }
                 
                 address.ZipCode = ""; // Algunos entornos requieren que ZipCode no sea nulo

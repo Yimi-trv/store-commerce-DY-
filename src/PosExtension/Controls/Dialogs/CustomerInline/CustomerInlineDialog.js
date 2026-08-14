@@ -48,7 +48,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     _this._entityType = "Customer";
                     _this._method = "";
                     _this._parameters = {
-                        "$filter": "substringof('".concat(keyword, "', Name) or IdentificationNumber eq '").concat(keyword, "' or AccountNumber eq '").concat(keyword, "'"),
+                        "$filter": "(contains(Name, '".concat(keyword, "') or IdentificationNumber eq '").concat(keyword, "' or AccountNumber eq '").concat(keyword, "')"),
                         "$top": top,
                         "$skip": skip
                     };
@@ -358,7 +358,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 address.State = u.StateId;
                                 address.County = u.CountyId;
                                 address.City = u.CityName;
+                                address.DistrictName = sunatData.district || "";
                             }
+                            address.ZipCode = "";
                             customer.Addresses = [address];
                         }
                         _this._showMessage(element, "Paso 3: Registrando cliente en D365...");
