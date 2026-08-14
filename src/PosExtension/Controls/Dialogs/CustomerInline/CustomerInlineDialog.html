@@ -138,17 +138,34 @@
 
     <!-- PANEL BUSCAR -->
     <div id="customerInlinePanelSearch" class="customer-inline-dialog__panel is-active">
-        <div class="customer-inline-dialog__grid">
-            <div class="customer-inline-dialog__field">
-                <label for="customerInlineSearchText">Nombre, DNI, RUC o Cuenta:</label>
-                <input id="customerInlineSearchText" type="text" placeholder="Ej. Juan Perez o 20123456789" />
-            </div>
-            <div class="customer-inline-dialog__field" style="justify-content: flex-end;">
-                <button id="customerInlineSearchButton" class="customer-inline-dialog__action" type="button">Buscar en Sistema</button>
-            </div>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <input type="text" id="customerInlineSearchText" placeholder="Buscar por Nombre, DNI, RUC o Cuenta" style="flex: 1; padding: 6px; border: 1px solid #ccc; font-size: 14px;" />
+            <button id="customerInlineSearchBtn" style="padding: 6px 16px; background: #0063b1; color: white; border: none; cursor: pointer; font-size: 14px;">Buscar</button>
         </div>
-        <div class="customer-inline-dialog__message" style="margin-top: 15px;">
-            Al buscar, se cerrará este cuadro y se abrirá la cuadrícula estándar del POS para que selecciones al cliente. ¡Se agregará automáticamente a la venta!
+        
+        <div id="customerInlineSearchResultsContainer" style="display: none; flex-direction: column;">
+            <div style="max-height: 250px; overflow-y: auto; border: 1px solid #d8d8d8;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+                    <thead style="background: #f3f2f1; position: sticky; top: 0;">
+                        <tr>
+                            <th style="padding: 8px; border-bottom: 1px solid #d8d8d8;">Documento</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #d8d8d8;">Nombre</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #d8d8d8;">Cuenta</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #d8d8d8; width: 80px;">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="customerInlineSearchResultsBody">
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                <span id="customerInlineSearchStatus" style="font-size: 12px; color: #666;"></span>
+                <div style="display: flex; gap: 8px;">
+                    <button id="customerInlineSearchPrevBtn" style="padding: 4px 12px; background: #eee; border: 1px solid #ccc; cursor: pointer; font-size: 12px;" disabled>Anterior</button>
+                    <button id="customerInlineSearchNextBtn" style="padding: 4px 12px; background: #eee; border: 1px solid #ccc; cursor: pointer; font-size: 12px;" disabled>Siguiente</button>
+                </div>
+            </div>
         </div>
     </div>
 
