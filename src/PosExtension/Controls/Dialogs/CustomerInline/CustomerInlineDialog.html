@@ -1,10 +1,9 @@
 <div class="customer-inline-dialog">
     <style>
         .customer-inline-dialog {
-            min-width: 800px;
-            max-width: 1000px;
+            min-width: 280px;
             width: 100%;
-            padding: 16px 20px 20px 20px;
+            padding: 16px;
             box-sizing: border-box;
             font-family: "Segoe UI", Arial, sans-serif;
         }
@@ -25,7 +24,7 @@
             background: transparent;
             color: #333;
             text-align: center;
-            font-size: 16px;
+            font-size: 15px;
             cursor: pointer;
             white-space: nowrap;
         }
@@ -50,12 +49,7 @@
             gap: 12px;
         }
 
-        @media (min-width: 600px) {
-            .customer-inline-dialog__grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 16px 20px;
-            }
-        }
+        /* Forced 1 column layout to fit in narrow POS sidebar dialogs */
 
         .customer-inline-dialog__field {
             display: flex;

@@ -29,14 +29,16 @@ export interface ICustomerInlineDialogResult {
 class CustomCustomerSearchRequest extends Commerce.DataService.DataServiceRequest<Commerce.DataService.DataServiceResponse> {
     constructor(keyword: string, top: number, skip: number) {
         super();
-        (this as any)._entitySet = "Customers";
+        
+        // Codificamos el filtro OData v4 manualmente
+        const filterStr = `(contains(Name, '${keyword}') or IdentificationNumber eq '${keyword}' or AccountNumber eq '${keyword}')`;
+        const encodedFilter = encodeURIComponent(filterStr);
+        
+        // Pasamos el query en el entitySet para que el POS SDK no lo convierta en argumentos de funcion ()
+        (this as any)._entitySet = `Customers?$filter=${encodedFilter}&$top=${top}&$skip=${skip}`;
         (this as any)._entityType = "Customer";
         (this as any)._method = "";
-        (this as any)._parameters = { 
-            "$filter": `(contains(Name, '${keyword}') or IdentificationNumber eq '${keyword}' or AccountNumber eq '${keyword}')`,
-            "$top": top,
-            "$skip": skip
-        };
+        (this as any)._parameters = null;
         (this as any)._isAction = false;
     }
 }
@@ -391,6 +393,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 }
                 
                 address.ZipCode = ""; // Algunos entornos requieren que ZipCode no sea nulo
+                address.ThreeLetterISORegionName = "PER"; // Requerido para resolver Ubigeo y pasar la validacion de D365
                 
                 customer.Addresses = [address];
             }
@@ -665,8 +668,21 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     private _getErrorMessage(reason: any): string {
-        if (reason && reason.message) return reason.message;
-        return "No se pudo completar la acción. Revise el log del POS.";
+        try {
+            if (typeof reason === "string") return reason;
+            if (Array.isArray(reason) && reason.length > 0) {
+                const first = reason[0];
+                if (first && first.message) return first.message;
+                if (first && first.ErrorCode) return "Error Code: " + first.ErrorCode;
+                return JSON.stringify(reason);
+            }
+            if (reason && reason.message) return reason.message;
+            if (reason && reason.ErrorCode) return "Error Code: " + reason.ErrorCode;
+            if (reason) return JSON.stringify(reason);
+        } catch (e) {
+            // ignore
+        }
+        return "Error desconocido. Revise F12.";
     }
 
     private _stringify(value: any): string {
