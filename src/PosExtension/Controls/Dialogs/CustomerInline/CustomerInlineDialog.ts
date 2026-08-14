@@ -26,23 +26,6 @@ export interface ICustomerInlineDialogResult {
     customerAccountNumber?: string;
 }
 
-class CustomCustomerSearchRequest extends Commerce.DataService.DataServiceRequest<Commerce.DataService.DataServiceResponse> {
-    constructor(keyword: string, top: number, skip: number) {
-        super();
-        
-        // Codificamos el filtro OData v4 manualmente
-        const filterStr = `(contains(Name, '${keyword}') or IdentificationNumber eq '${keyword}' or AccountNumber eq '${keyword}')`;
-        const encodedFilter = encodeURIComponent(filterStr);
-        
-        // Pasamos el query en el entitySet para que el POS SDK no lo convierta en argumentos de funcion ()
-        (this as any)._entitySet = `Customers?$filter=${encodedFilter}&$top=${top}&$skip=${skip}`;
-        (this as any)._entityType = "Customer";
-        (this as any)._method = "";
-        (this as any)._parameters = null;
-        (this as any)._isAction = false;
-    }
-}
-
 export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _mode: CustomerInlineDialogMode;
     private _resolve: ((result: ICustomerInlineDialogResult | null) => void) | null;
@@ -50,10 +33,6 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _initialSearchText: string;
     private readonly _sunatService: SunatCustomerService;
     private _lastSunatData: ISunatCustomerData | null;
-    
-    private _searchSkip: number = 0;
-    private _searchTop: number = 20;
-    private _lastSearchText: string = "";
 
     constructor() {
         super();
@@ -168,111 +147,15 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     private _executeSearch(element: HTMLElement, isPagination: boolean = false): Promise<void> {
-        if (!isPagination) {
-            this._searchSkip = 0;
-            this._lastSearchText = this._getValue(element, "customerInlineSearchText");
-        }
-        
-        const searchText: string = this._lastSearchText.trim();
-        if (!searchText) return Promise.resolve();
-
-        const container = element.querySelector("#customerInlineSearchResultsContainer") as HTMLElement;
-        const status = element.querySelector("#customerInlineSearchStatus") as HTMLElement;
-        const tbody = element.querySelector("#customerInlineSearchResultsBody") as HTMLElement;
-        
-        if (container) container.style.display = "flex";
-        if (status) status.innerText = "Buscando...";
-        if (!isPagination && tbody) tbody.innerHTML = "";
-
-        const searchRequest = new CustomCustomerSearchRequest(searchText, this._searchTop, this._searchSkip);
-
-        return this.context.runtime.executeAsync(searchRequest).then((response: any) => {
-            const results = (response.data && response.data.result) || [];
-            this._renderSearchResults(element, results);
-        }).catch((error: any) => {
-            this._logError("Search error: " + this._stringify(error));
-            if (status) status.innerText = "Error en la búsqueda. (Revise conexión o longitud de palabra)";
-        });
-    }
-
-    private _renderSearchResults(element: HTMLElement, results: any[]): void {
-        const tbody = element.querySelector("#customerInlineSearchResultsBody") as HTMLElement;
-        const status = element.querySelector("#customerInlineSearchStatus") as HTMLElement;
-        const nextBtn = element.querySelector("#customerInlineSearchNextBtn") as HTMLButtonElement;
-        const prevBtn = element.querySelector("#customerInlineSearchPrevBtn") as HTMLButtonElement;
-        
-        if (!tbody) return;
-        tbody.innerHTML = "";
-        
-        if (results.length === 0) {
-            if (status) status.innerText = "No se encontraron clientes.";
-        } else {
-            if (status) status.innerText = `Mostrando resultados ${this._searchSkip + 1} - ${this._searchSkip + results.length}`;
-            
-            results.forEach((customer: any) => {
-                const tr = document.createElement("tr");
-                tr.style.borderBottom = "1px solid #f3f2f1";
-                
-                const tdDoc = document.createElement("td");
-                tdDoc.style.padding = "8px";
-                tdDoc.innerText = customer.IdentificationNumber || "";
-                
-                const tdName = document.createElement("td");
-                tdName.style.padding = "8px";
-                tdName.innerText = customer.Name || [customer.FirstName, customer.LastName].join(" ").trim() || "";
-                
-                const tdAccount = document.createElement("td");
-                tdAccount.style.padding = "8px";
-                tdAccount.innerText = customer.AccountNumber || "";
-                
-                const tdAction = document.createElement("td");
-                tdAction.style.padding = "8px";
-                const btn = document.createElement("button");
-                btn.innerText = "Elegir";
-                btn.style.padding = "4px 8px";
-                btn.style.background = "#0063b1";
-                btn.style.color = "white";
-                btn.style.border = "none";
-                btn.style.cursor = "pointer";
-                btn.onclick = () => {
-                    this._selectCustomerFromSearch(customer.AccountNumber);
-                };
-                tdAction.appendChild(btn);
-                
-                tr.appendChild(tdDoc);
-                tr.appendChild(tdName);
-                tr.appendChild(tdAccount);
-                tr.appendChild(tdAction);
-                tbody.appendChild(tr);
-            });
-        }
-        
-        if (prevBtn) {
-            prevBtn.disabled = this._searchSkip === 0;
-            prevBtn.onclick = () => {
-                this._searchSkip = Math.max(0, this._searchSkip - this._searchTop);
-                this._executeSearch(element, true);
-            };
-        }
-        
-        if (nextBtn) {
-            nextBtn.disabled = results.length < this._searchTop;
-            nextBtn.onclick = () => {
-                this._searchSkip += this._searchTop;
-                this._executeSearch(element, true);
-            };
-        }
-    }
-
-    private _selectCustomerFromSearch(accountNumber: string): void {
+        // En su lugar, resolvemos el modal y permitimos que el POS nativo ejecute la busqueda
         this.closeDialog();
-        
-        setTimeout(() => {
-            const cartRequest: SetCustomerOnCartOperationRequest<SetCustomerOnCartOperationResponse> = new SetCustomerOnCartOperationRequest(this._getCorrelationId(), accountNumber);
-            this.context.runtime.executeAsync(cartRequest).catch((error) => {
-                this._logError("Error SetCustomerOnCartOperationRequest: " + this._stringify(error));
+        if (this._resolve) {
+            this._resolve({
+                mode: "search",
+                action: "native_search"
             });
-        }, 500);
+        }
+        return Promise.resolve();
     }
 
     private _lookupSunatForCreate(element: HTMLElement): Promise<void> {
@@ -376,14 +259,30 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         }
 
         return resolvePromise.then((u: Entities.UbigeoResolutionResult | null): Promise<void> => {
-            let addressStreet: string = (sunatData.address || "").trim();
+            let addressStreet = this._getValue(element, "customerInlineCreateAddress");
             
             if ((u && u.IsValid) || addressStreet) {
+                const addressPurpose = this._getValue(element, "customerInlineCreateAddressPurpose") || "Negocio";
+                
                 const address: ProxyEntities.Address = new ProxyEntities.AddressClass();
                 address.ThreeLetterISORegionName = "PER";
-                address.Name = sunatData.documentType === "RUC" ? "DOMICILIO FISCAL" : "DOMICILIO PERSONAL";
+                address.Name = addressPurpose;
                 address.Street = addressStreet;
                 address.IsPrimary = true;
+                
+                if (addressPurpose === "Entrega") {
+                    address.AddressTypeValue = 1; // Delivery
+                } else if (addressPurpose === "Factura") {
+                    address.AddressTypeValue = 4; // Invoice
+                } else if (addressPurpose === "Casa") {
+                    address.AddressTypeValue = 3; // Home
+                } else {
+                    address.AddressTypeValue = 2; // Business / Office / Default
+                }
+                
+                // Forzamos Roles via any por si acaso Retail Server lo espera asi
+                (address as any).Roles = addressPurpose;
+                address.ExtensionProperties = [];
                 
                 if (u && u.IsValid) {
                     address.State = u.StateId;
@@ -391,9 +290,6 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                     address.City = u.CityName;
                     address.DistrictName = sunatData.district || "";
                 }
-                
-                address.ZipCode = ""; // Algunos entornos requieren que ZipCode no sea nulo
-                address.ThreeLetterISORegionName = "PER"; // Requerido para resolver Ubigeo y pasar la validacion de D365
                 
                 customer.Addresses = [address];
             }

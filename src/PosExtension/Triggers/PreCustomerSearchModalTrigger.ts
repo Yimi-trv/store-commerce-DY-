@@ -8,13 +8,12 @@ export default class PreCustomerSearchModalTrigger extends PreCustomerSearchTrig
     public execute(options: IPreCustomerSearchTriggerOptions): Promise<ClientEntities.ICancelable> {
         if ((window as any)[GUARD_KEY] || (window as any)["__customerSearchProgrammatic"]) {
             return Promise.resolve({ canceled: false });
-        }
-
-        let searchText: string = "";
-
         const dialog = new CustomerInlineDialog();
-        return dialog.open("search", null, searchText)
+        return dialog.open("search", null, "")
             .then((result: any): ClientEntities.ICancelable => {
+                if (result && result.action === "native_search") {
+                    return { canceled: false };
+                }
                 return { canceled: true };
             })
             .catch(() => {
