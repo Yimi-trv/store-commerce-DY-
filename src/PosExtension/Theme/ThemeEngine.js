@@ -313,11 +313,11 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     ThemeEngine.establecer("#TotalsPanel", { "right": "auto", "width": "312px", "height": "228px", "min-height": "0px", "max-height": "228px", "transform": "translateY(-20px)", "box-sizing": "border-box", "overflow": "hidden" });
                     ThemeEngine.establecer("#TotalsPanel .fields.row", { "width": "100%", "height": "188px", "min-height": "188px", "max-height": "188px" });
                     ThemeEngine.establecer("#TotalsPanel .panel-footer", { "width": "100%", "height": "40px", "min-height": "40px", "max-height": "40px" });
-                    ThemeEngine.establecer("#TabControl", { "left": "518px", "right": "auto", "width": "452px", "height": "422px" });
+                    ThemeEngine.establecer("#TabControl", { "position": "absolute", "left": "518px", "top": "132px", "right": "auto", "width": "452px", "height": "422px", "transform": "none" });
                     ThemeEngine.establecer("#TabControl .commerceTabControl.righttabs", { "width": "452px", "height": "400px" });
                     ThemeEngine.establecer("#TabControl .commerceTabControl.righttabs > .tabContent", { "width": "340px", "height": "330px" });
-                    ThemeEngine.establecer("#CustomControl1", { "left": "630px", "right": "auto", "width": "340px", "height": "94px", "min-height": "0px", "max-height": "94px", "transform": "translateY(88px)", "padding": "6px 10px 7px", "overflow": "hidden" });
-                    ThemeEngine.establecer("#ButtonGrid4, #ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer", { "left": "630px", "right": "auto", "width": "340px", "height": "127px", "min-height": "0px", "max-height": "127px", "transform": "translateY(77px)" });
+                    ThemeEngine.establecer("#CustomControl1", { "position": "absolute", "left": "630px", "top": "554px", "right": "auto", "width": "340px", "height": "94px", "min-height": "0px", "max-height": "94px", "transform": "none", "padding": "6px 10px 7px", "overflow": "hidden" });
+                    ThemeEngine.establecer("#ButtonGrid4, #ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer", { "position": "absolute", "left": "630px", "top": "644px", "right": "auto", "width": "340px", "height": "127px", "min-height": "0px", "max-height": "127px", "transform": "none" });
                     ThemeEngine.establecer("#ButtonGrid1Control, #ButtonGrid1Control .buttonsContainer", { "width": "316px", "height": "238px" });
                     var botonesC = ThemeEngine.todos("#ButtonGrid1Control .buttonGridButton");
                     for (var i = 0; i < botonesC.length; i++) {
@@ -351,9 +351,9 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     }
                     var botonesP = [[".sct-p0", 0], [".sct-p1", 86], [".sct-p3", 172], [".sct-p4", 258]];
                     for (var m = 0; m < botonesP.length; m++) {
-                        ThemeEngine.establecer("#ButtonGrid4Control " + botonesP[m][0], { "position": "absolute", "left": botonesP[m][1] + "px", "top": "0px", "width": "82px", "height": "64px", "min-height": "0", "max-height": "64px" });
+                        ThemeEngine.establecer("#ButtonGrid4Control " + botonesP[m][0], { "position": "absolute", "left": botonesP[m][1] + "px", "top": "0px", "width": "82px", "height": "64px", "min-height": "0", "max-height": "64px", "transform": "none" });
                     }
-                    ThemeEngine.establecer("#ButtonGrid4Control .sct-p2", { "position": "absolute", "left": "0px", "top": "75px", "width": "340px", "height": "52px", "min-height": "0", "max-height": "52px" });
+                    ThemeEngine.establecer("#ButtonGrid4Control .sct-p2", { "position": "absolute", "left": "0px", "top": "75px", "width": "340px", "height": "52px", "min-height": "0", "max-height": "52px", "transform": "none" });
                     var raiz = ThemeEngine.raiz();
                     if (raiz) {
                         var zCliente = null, zMontos = null;
