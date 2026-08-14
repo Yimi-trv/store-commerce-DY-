@@ -44,14 +44,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 __extends(CustomCustomerSearchRequest, _super);
                 function CustomCustomerSearchRequest(keyword, top, skip) {
                     var _this = _super.call(this) || this;
-                    _this._entitySet = "Customers";
+                    var filterStr = "(contains(Name, '".concat(keyword, "') or IdentificationNumber eq '").concat(keyword, "' or AccountNumber eq '").concat(keyword, "')");
+                    var encodedFilter = encodeURIComponent(filterStr);
+                    _this._entitySet = "Customers?$filter=".concat(encodedFilter, "&$top=").concat(top, "&$skip=").concat(skip);
                     _this._entityType = "Customer";
                     _this._method = "";
-                    _this._parameters = {
-                        "$filter": "(contains(Name, '".concat(keyword, "') or IdentificationNumber eq '").concat(keyword, "' or AccountNumber eq '").concat(keyword, "')"),
-                        "$top": top,
-                        "$skip": skip
-                    };
+                    _this._parameters = null;
                     _this._isAction = false;
                     return _this;
                 }
@@ -361,6 +359,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 address.DistrictName = sunatData.district || "";
                             }
                             address.ZipCode = "";
+                            address.ThreeLetterISORegionName = "PER";
                             customer.Addresses = [address];
                         }
                         _this._showMessage(element, "Paso 3: Registrando cliente en D365...");
@@ -599,9 +598,27 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     return true;
                 };
                 CustomerInlineDialog.prototype._getErrorMessage = function (reason) {
-                    if (reason && reason.message)
-                        return reason.message;
-                    return "No se pudo completar la acción. Revise el log del POS.";
+                    try {
+                        if (typeof reason === "string")
+                            return reason;
+                        if (Array.isArray(reason) && reason.length > 0) {
+                            var first = reason[0];
+                            if (first && first.message)
+                                return first.message;
+                            if (first && first.ErrorCode)
+                                return "Error Code: " + first.ErrorCode;
+                            return JSON.stringify(reason);
+                        }
+                        if (reason && reason.message)
+                            return reason.message;
+                        if (reason && reason.ErrorCode)
+                            return "Error Code: " + reason.ErrorCode;
+                        if (reason)
+                            return JSON.stringify(reason);
+                    }
+                    catch (e) {
+                    }
+                    return "Error desconocido. Revise F12.";
                 };
                 CustomerInlineDialog.prototype._stringify = function (value) {
                     try {

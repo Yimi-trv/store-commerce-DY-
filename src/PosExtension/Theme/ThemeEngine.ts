@@ -427,8 +427,9 @@ export class ThemeEngine {
                     titulo = elemento; break;
                 }
             }
+            if (titulo) {
+                titulo.classList.add("sct-titulo");
             }
-            titulo.classList.add("sct-titulo");
         }
 
 
@@ -456,6 +457,8 @@ export class ThemeEngine {
         }
         var b3 = ThemeEngine.q("#ButtonGrid3Control");
         if (b3) {
+            var titulos3 = ["A Cuenta", "A cuenta de terceros"];
+            var subs3 = ["Empleado Planilla", "RECIBO POR HONORARIOS"];
             ThemeEngine.estilo(b3, { "width": "428px", "height": "316px" });
             var btn3 = ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton");
             for (var i = 0; i < btn3.length; i++) {

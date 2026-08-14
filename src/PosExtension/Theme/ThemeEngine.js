@@ -310,36 +310,22 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     if (ThemeEngine.altoOriginalLineas && ThemeEngine.altoOriginalLineas > 120)
                         propLineas["height"] = (ThemeEngine.altoOriginalLineas - 8) + "px";
                     ThemeEngine.establecer("#TransactionGrid", propLineas);
-                    ThemeEngine.establecer("#TotalsPanel", { "right": "auto", "width": "312px", "height": "228px", "min-height": "0px", "max-height": "228px", "transform": "translateY(-20px)", "box-sizing": "border-box", "overflow": "hidden" });
-                    ThemeEngine.establecer("#TotalsPanel .fields.row", { "width": "100%", "height": "188px", "min-height": "188px", "max-height": "188px" });
-                    ThemeEngine.establecer("#TotalsPanel .panel-footer", { "width": "100%", "height": "40px", "min-height": "40px", "max-height": "40px" });
-                    ThemeEngine.establecer("#TabControl", { "right": "auto" });
-                    ThemeEngine.establecer("#CustomControl1", { "position": "absolute", "left": "630px", "top": "554px", "right": "auto", "width": "340px", "height": "94px", "min-height": "0px", "max-height": "94px", "transform": "none", "padding": "6px 10px 7px", "overflow": "hidden" });
-                    ThemeEngine.establecer("#ButtonGrid4, #ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer", { "position": "absolute", "left": "630px", "top": "644px", "right": "auto", "width": "340px", "height": "127px", "min-height": "0px", "max-height": "127px", "transform": "none" });
-                    ThemeEngine.establecer("#ButtonGrid1Control, #ButtonGrid1Control .buttonsContainer", { "width": "316px", "height": "238px" });
                     var botonesC = ThemeEngine.todos("#ButtonGrid1Control .buttonGridButton");
                     for (var i = 0; i < botonesC.length; i++) {
                         botonesC[i].classList.add("sct-cbtn");
                         botonesC[i].classList.add(i === 0 ? "sct-cbtn-primary" : "sct-cbtn-dark");
-                        ThemeEngine.estilo(botonesC[i], { "position": "absolute", "left": "0px", "top": (i * 82) + "px", "width": "316px", "height": "74px", "min-height": "0", "max-height": "74px", "color": "#FFFFFF", "background-image": "none", "background-color": i === 0 ? "#C8102E" : "#1B1A19", "transform": "none" });
                         ThemeEngine.icono(botonesC[i], "sct-ic-c" + (i + 1));
                     }
-                    ThemeEngine.establecer("#ButtonGrid2Control, #ButtonGrid2Control .buttonsContainer", { "width": "316px", "height": "254px" });
-                    var columnasT = [0, 108, 216];
-                    var filasT = [0, 132];
                     var botonesT = ThemeEngine.todos("#ButtonGrid2Control .buttonGridButton");
                     for (var j = 0; j < botonesT.length; j++) {
                         botonesT[j].classList.add("sct-tbtn", "sct-t" + (j + 1));
-                        ThemeEngine.estilo(botonesT[j], { "position": "absolute", "left": columnasT[j % 3] + "px", "top": (filasT[Math.floor(j / 3)] || 0) + "px", "width": "100px", "height": "122px", "min-height": "0", "max-height": "122px", "color": "#FFFFFF", "background-image": "none", "background-color": j === 4 ? "#C8102E" : "#1B1A19", "transform": "none" });
                         ThemeEngine.icono(botonesT[j], "sct-ic-t" + (j + 1));
                     }
-                    ThemeEngine.establecer("#ButtonGrid3Control, #ButtonGrid3Control .buttonsContainer", { "width": "316px", "height": "236px" });
                     var botonesB = ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton");
                     var titulos = ["A Cuenta", "A cuenta de terceros"];
                     var subtitulos = ["Empleado Planilla", "RECIBO POR HONORARIOS"];
                     for (var k = 0; k < botonesB.length; k++) {
                         botonesB[k].classList.add("sct-bbtn", "sct-b" + (k + 1));
-                        ThemeEngine.estilo(botonesB[k], { "position": "absolute", "left": "0px", "top": (k * 124) + "px", "width": "316px", "height": "112px", "min-height": "0", "max-height": "112px", "background-color": "#1B1A19", "color": "#FFFFFF", "background-image": "none", "transform": "none" });
                         ThemeEngine.icono(botonesB[k], "sct-ic-b" + (k + 1));
                         var etiqueta = botonesB[k].querySelector("div");
                         if (etiqueta && !etiqueta.querySelector(".sct-b-t") && k < titulos.length) {
@@ -347,11 +333,6 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             destino.innerHTML = "<span class=\"sct-b-t\">" + titulos[k] + "</span><span class=\"sct-b-s\">" + subtitulos[k] + "</span>";
                         }
                     }
-                    var botonesP = [[".sct-p0", 0], [".sct-p1", 86], [".sct-p3", 172], [".sct-p4", 258]];
-                    for (var m = 0; m < botonesP.length; m++) {
-                        ThemeEngine.establecer("#ButtonGrid4Control " + botonesP[m][0], { "position": "absolute", "left": botonesP[m][1] + "px", "top": "0px", "width": "82px", "height": "64px", "min-height": "0", "max-height": "64px", "transform": "none" });
-                    }
-                    ThemeEngine.establecer("#ButtonGrid4Control .sct-p2", { "position": "absolute", "left": "0px", "top": "75px", "width": "340px", "height": "52px", "min-height": "0", "max-height": "52px", "transform": "none" });
                     var raiz = ThemeEngine.raiz();
                     if (raiz) {
                         var zCliente = null, zMontos = null;
@@ -363,10 +344,8 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             if (hijo.querySelector(".sct-cli-card, .sct-dom-card") || /Agregue un cliente|CLIENTE DESCRIPTIVO/i.test(hijo.textContent || ""))
                                 zCliente = hijo;
                         }
-                        ThemeEngine.estilo(zCliente, { "height": "228px", "min-height": "0", "max-height": "228px", "margin-top": "0px", "transform": "translateY(-20px)", "overflow": "hidden", "box-sizing": "border-box" });
                         if (zCliente)
                             zCliente.classList.add("sct-live-zona-cliente");
-                        ThemeEngine.estilo(zMontos, { "height": "228px", "min-height": "0", "max-height": "228px", "margin-top": "0px", "overflow": "hidden", "box-sizing": "border-box" });
                         if (zMontos)
                             zMontos.classList.add("sct-live-zona-montos");
                         var dom = ThemeEngine.q(".sct-dom-card");
@@ -405,15 +384,15 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         if (/Agregue un cliente|CLIENTE DESCRIPTIVO/i.test(hijo.textContent || ""))
                             zonaCliente = hijo;
                     }
-                    ThemeEngine.estilo(zonaPagos, { "transform": "translateY(114px)", "height": "146px", "width": "452px" });
-                    ThemeEngine.estilo(zonaMontos, { "transform": "translateY(-20px)", "height": "276px" });
-                    if (zonaCliente) {
-                        zonaCliente.classList.add("sct-cliente");
-                        ThemeEngine.estilo(zonaCliente, { "transform": "translateY(-16px)", "height": "276px" });
-                    }
+                    if (zonaPagos)
+                        zonaPagos.classList.add("sct-live-zona-pagos");
+                    if (zonaMontos)
+                        zonaMontos.classList.add("sct-live-zona-montos");
+                    if (zonaCliente)
+                        zonaCliente.classList.add("sct-cliente", "sct-live-zona-cliente");
                     var zonaBoleta = ThemeEngine.zona(/Seleccionar una preferencia/);
                     if (zonaBoleta) {
-                        ThemeEngine.estilo(zonaBoleta, { "transform": "translateY(108px)", "height": "116px", "max-height": "116px", "min-height": "0", "width": "452px", "padding": "10px 14px 12px 14px", "border": "1px solid rgba(255,255,255,0.12)", "border-radius": "14px", "background": "rgba(22,21,20,0.6)", "box-sizing": "border-box", "overflow": "hidden" });
+                        zonaBoleta.classList.add("sct-live-zona-boleta");
                         var titulo = null;
                         var posibles = zonaBoleta.querySelectorAll("*");
                         for (var j = 0; j < posibles.length; j++) {
@@ -424,62 +403,42 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                                 break;
                             }
                         }
-                        ThemeEngine.estilo(titulo, { "font-size": "17px", "font-weight": "600", "color": "#FFFFFF" });
+                        if (titulo) {
+                            titulo.classList.add("sct-titulo");
+                        }
                     }
-                    ThemeEngine.estilo(grilla, { "width": "452px", "height": "146px", "padding": "0", "background": "rgba(22,21,20,0.6)" });
-                    ThemeEngine.estilo(grilla.querySelector(".buttonsContainer"), { "width": "452px", "height": "146px" });
                     var b1 = ThemeEngine.q("#ButtonGrid1Control");
                     if (b1) {
-                        ThemeEngine.estilo(b1, { "width": "428px", "height": "300px" });
-                        ThemeEngine.estilo(b1.querySelector(".buttonsContainer"), { "position": "relative", "width": "428px", "height": "300px" });
                         var btn1 = ThemeEngine.todos("#ButtonGrid1Control .buttonGridButton");
                         for (var i = 0; i < btn1.length; i++) {
                             btn1[i].classList.add("sct-cbtn", i === 0 ? "sct-cbtn-primary" : "sct-cbtn-dark");
-                            ThemeEngine.estilo(btn1[i], { "position": "absolute", "left": "0px", "top": (i * 104) + "px", "width": "428px", "min-height": "0", "height": "92px", "max-height": "92px", "color": "#FFFFFF", "background-image": "none", "background-color": i === 0 ? "#C8102E" : "#1B1A19" });
                             ThemeEngine.icono(btn1[i], "sct-ic-c" + (i + 1));
                         }
                     }
                     var b2 = ThemeEngine.q("#ButtonGrid2Control");
                     if (b2) {
-                        ThemeEngine.estilo(b2, { "width": "428px", "height": "350px" });
-                        ThemeEngine.estilo(b2.querySelector(".buttonsContainer"), { "position": "relative", "width": "428px", "height": "350px" });
-                        var cols2 = [0, 146, 292], fils2 = [0, 180];
                         var btn2 = ThemeEngine.todos("#ButtonGrid2Control .buttonGridButton");
                         for (var i = 0; i < btn2.length; i++) {
                             btn2[i].classList.add("sct-tbtn", "sct-t" + (i + 1));
                             btn2[i].classList.remove("sct-tbtn-dark", "sct-tbtn-outline", "sct-tbtn-fill");
                             btn2[i].classList.add(i === 4 ? "sct-tbtn-fill" : (i === 3 ? "sct-tbtn-outline" : "sct-tbtn-dark"));
-                            ThemeEngine.estilo(btn2[i], { "position": "absolute", "left": cols2[i % 3] + "px", "top": fils2[Math.floor(i / 3)] + "px", "width": "136px", "min-height": "0", "height": "170px", "max-height": "170px", "color": "#FFFFFF", "background-image": "none", "background-color": i === 4 ? "#C8102E" : "#1B1A19" });
                             ThemeEngine.icono(btn2[i], "sct-ic-t" + (i + 1));
                         }
                     }
                     var b3 = ThemeEngine.q("#ButtonGrid3Control");
                     if (b3) {
-                        ThemeEngine.estilo(b3, { "width": "428px", "height": "316px" });
-                        ThemeEngine.estilo(b3.querySelector(".buttonsContainer"), { "position": "relative", "width": "428px", "height": "316px" });
                         var titulos3 = ["A Cuenta", "A cuenta de terceros"];
                         var subs3 = ["Empleado Planilla", "RECIBO POR HONORARIOS"];
+                        ThemeEngine.estilo(b3, { "width": "428px", "height": "316px" });
                         var btn3 = ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton");
                         for (var i = 0; i < btn3.length; i++) {
                             btn3[i].classList.add("sct-bbtn", "sct-b" + (i + 1));
-                            ThemeEngine.estilo(btn3[i], { "position": "absolute", "left": "0px", "top": (i * 166) + "px", "width": "428px", "min-height": "0", "height": "150px", "max-height": "150px", "background-color": "#1B1A19", "color": "#FFFFFF", "background-image": "none" });
                             ThemeEngine.icono(btn3[i], "sct-ic-b" + (i + 1));
                             var et = btn3[i].querySelector("div");
                             if (et && !et.querySelector(".sct-b-t") && i < titulos3.length) {
                                 var dst = et.querySelector(".h4") || et;
                                 dst.innerHTML = "<span class=\"sct-b-t\">" + titulos3[i] + "</span><span class=\"sct-b-s\">" + subs3[i] + "</span>";
                             }
-                        }
-                    }
-                    var cols4 = [0, 114, 228, 342, 0];
-                    var fils4 = [0, 0, 0, 0, 84];
-                    var anchos4 = [110, 110, 110, 110, 452];
-                    var altos4 = [78, 78, 78, 78, 62];
-                    var keysIds = ["p0", "p1", "p3", "p4", "p2"];
-                    for (var i = 0; i < keysIds.length; i++) {
-                        var pb = ThemeEngine.q("#ButtonGrid4Control .sct-" + keysIds[i]);
-                        if (pb) {
-                            ThemeEngine.estilo(pb, { "left": cols4[i] + "px", "top": fils4[i] + "px", "width": anchos4[i] + "px", "min-height": "0", "height": altos4[i] + "px", "max-height": altos4[i] + "px", "background-image": "none", "background-color": "rgba(22,21,20,0.6)", "border": "1px solid rgba(255,255,255,0.16)", "border-radius": "12px", "color": "#FFFFFF" });
                         }
                     }
                 };
