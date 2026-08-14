@@ -126,7 +126,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                     if (this._currentCustomer) {
                         this._setValue(element, "customerInlineEditAccount", this._currentCustomer.AccountNumber || "");
-                        this._setValue(element, "customerInlineEditDocument", this._sunatService.getDocumentNumber(this._currentCustomer));
+                        this._setValue(element, "customerInlineEditDocument", this._sunatService.getDocumentNumber(this._currentCustomer) || "");
                         this._setValue(element, "customerInlineEditName", this._currentCustomer.Name || "");
                         this._setValue(element, "customerInlineEditPhone", this._currentCustomer.Phone || "");
                         this._setValue(element, "customerInlineEditEmail", this._currentCustomer.Email || "");
@@ -134,16 +134,32 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                 };
                 CustomerInlineDialog.prototype._executeSearch = function (element) {
-                    window[GUARD_KEY] = false;
-                    if (this._resolve) {
-                        this._resolve({
-                            mode: "search",
-                            action: "delegatedToNativeSearch"
-                        });
-                        this._resolve = null;
-                    }
-                    this.closeDialog();
-                    return Promise.resolve();
+                    var _this = this;
+                    var searchText = this._getValue(element, "customerInlineSearchText");
+                    window[GUARD_KEY] = true;
+                    var request = new Customer_1.SelectCustomerClientRequest(this._getCorrelationId(), searchText);
+                    return this.context.runtime.executeAsync(request).then(function (response) {
+                        window[GUARD_KEY] = false;
+                        if (!response.canceled && response.data && response.data.result) {
+                            if (_this._resolve) {
+                                _this._resolve({ mode: "search", action: "customerAdded" });
+                            }
+                            _this.closeDialog();
+                            return new Promise(function (resolve) {
+                                setTimeout(function () {
+                                    var cartRequest = new Cart_1.SetCustomerOnCartOperationRequest(_this._getCorrelationId(), response.data.result.AccountNumber);
+                                    _this.context.runtime.executeAsync(cartRequest).then(resolve).catch(resolve);
+                                }, 500);
+                            });
+                        }
+                        else {
+                            if (_this._resolve) {
+                                _this._resolve({ mode: "search", action: "canceled" });
+                            }
+                            _this.closeDialog();
+                            return Promise.resolve();
+                        }
+                    });
                 };
                 CustomerInlineDialog.prototype._lookupSunatForCreate = function (element) {
                     var _this = this;
@@ -216,7 +232,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     customer.Phone = phone || "";
                     customer.Email = email || "";
                     var resolvePromise = Promise.resolve(null);
-                    if (sunatData.documentType === "RUC" && (sunatData.department || sunatData.province)) {
+                    if (sunatData.department || sunatData.province || sunatData.district) {
                         var request = new DataServiceRequests_g_1.TRU_GeographicData.ResolveUbigeoRequest(sunatData.department || "", sunatData.province || "", sunatData.district || "");
                         resolvePromise = this.context.runtime.executeAsync(request)
                             .then(function (response) {
@@ -231,15 +247,19 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         });
                     }
                     return resolvePromise.then(function (u) {
-                        if (u && u.IsValid) {
+                        var addressStreet = (sunatData.address || "").trim();
+                        if ((u && u.IsValid) || addressStreet) {
                             var address = new Entities_1.ProxyEntities.AddressClass();
-                            address.AddressTypeValue = 2;
+                            address.AddressTypeValue = sunatData.documentType === "RUC" ? 2 : 1;
                             address.ThreeLetterISORegionName = "PER";
-                            address.Name = "DOMICILIO FISCAL";
-                            address.Street = (sunatData.address || "").trim();
-                            address.State = u.StateId;
-                            address.County = u.CountyId;
-                            address.City = u.CityName;
+                            address.CountryRegionId = "PER";
+                            address.Name = sunatData.documentType === "RUC" ? "DOMICILIO FISCAL" : "DOMICILIO PERSONAL";
+                            address.Street = addressStreet;
+                            if (u && u.IsValid) {
+                                address.State = u.StateId;
+                                address.County = u.CountyId;
+                                address.City = u.CityName;
+                            }
                             address.IsPrimary = true;
                             customer.Addresses = [address];
                         }
@@ -258,12 +278,15 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 return Promise.resolve();
                             }
                             _this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
-                            return _this._setCustomerOnCart(accountNumber).then(function () {
-                                _this._complete({
-                                    mode: "create",
-                                    action: "createAndSetCustomerOnCart",
-                                    customerAccountNumber: accountNumber
-                                });
+                            _this._complete({
+                                mode: "create",
+                                action: "createAndSetCustomerOnCart",
+                                customerAccountNumber: accountNumber
+                            });
+                            return new Promise(function (resolve) {
+                                setTimeout(function () {
+                                    _this._setCustomerOnCart(accountNumber).then(resolve);
+                                }, 500);
                             });
                         });
                     });
@@ -302,12 +325,15 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 }
                                 var updatedCustomer = response.data.customer;
                                 var accountNumber = updatedCustomer.AccountNumber || _this._getValue(element, "customerInlineEditAccount");
-                                return _this._setCustomerOnCart(accountNumber).then(function () {
-                                    _this._complete({
-                                        mode: "edit",
-                                        action: "updateAndSetCustomerOnCart",
-                                        customerAccountNumber: accountNumber
-                                    });
+                                _this._complete({
+                                    mode: "edit",
+                                    action: "updateAndSetCustomerOnCart",
+                                    customerAccountNumber: accountNumber
+                                });
+                                return new Promise(function (resolve) {
+                                    setTimeout(function () {
+                                        _this._setCustomerOnCart(accountNumber).then(resolve);
+                                    }, 500);
                                 });
                             });
                         };

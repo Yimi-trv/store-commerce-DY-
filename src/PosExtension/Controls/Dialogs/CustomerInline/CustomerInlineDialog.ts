@@ -6,12 +6,17 @@ import {
     CreateCustomerServiceRequest,
     GetCustomerClientRequest,
     GetCustomerClientResponse,
+    SelectCustomerClientRequest,
+    SelectCustomerClientResponse,
     UpdateCustomerServiceRequest,
 } from "PosApi/Consume/Customer";
 import {
     SetCustomerOnCartOperationRequest,
     SetCustomerOnCartOperationResponse
 } from "PosApi/Consume/Cart";
+import {
+    ClientEntities
+} from "PosApi/Entities";
 import { ProxyEntities } from "PosApi/Entities";
 import SunatCustomerService, { ISunatCustomerData } from "../../../Services/SunatCustomerService";
 import { TRU_GeographicData, Entities } from "../../../DataService/DataServiceRequests.g";
@@ -132,7 +137,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
         if (this._currentCustomer) {
             this._setValue(element, "customerInlineEditAccount", this._currentCustomer.AccountNumber || "");
-            this._setValue(element, "customerInlineEditDocument", this._sunatService.getDocumentNumber(this._currentCustomer));
+            this._setValue(element, "customerInlineEditDocument", this._sunatService.getDocumentNumber(this._currentCustomer) || "");
             this._setValue(element, "customerInlineEditName", this._currentCustomer.Name || "");
             this._setValue(element, "customerInlineEditPhone", this._currentCustomer.Phone || "");
             this._setValue(element, "customerInlineEditEmail", this._currentCustomer.Email || "");
@@ -141,17 +146,34 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     private _executeSearch(element: HTMLElement): Promise<void> {
-        (window as any)[GUARD_KEY] = false;
+        let searchText: string = this._getValue(element, "customerInlineSearchText");
         
-        if (this._resolve) {
-            this._resolve({
-                mode: "search",
-                action: "delegatedToNativeSearch"
-            });
-            this._resolve = null;
-        }
-        this.closeDialog();
-        return Promise.resolve();
+        (window as any)[GUARD_KEY] = true;
+        const request: SelectCustomerClientRequest<SelectCustomerClientResponse> = new SelectCustomerClientRequest(this._getCorrelationId(), searchText);
+        
+        return this.context.runtime.executeAsync(request).then((response: ClientEntities.ICancelableDataResult<SelectCustomerClientResponse>) => {
+            (window as any)[GUARD_KEY] = false;
+            
+            if (!response.canceled && response.data && response.data.result) {
+                if (this._resolve) {
+                    this._resolve({ mode: "search", action: "customerAdded" });
+                }
+                this.closeDialog();
+                
+                return new Promise((resolve) => {
+                    setTimeout(() => {
+                        const cartRequest: SetCustomerOnCartOperationRequest<SetCustomerOnCartOperationResponse> = new SetCustomerOnCartOperationRequest(this._getCorrelationId(), response.data!.result.AccountNumber);
+                        this.context.runtime.executeAsync(cartRequest).then(resolve as any).catch(resolve as any);
+                    }, 500);
+                });
+            } else {
+                if (this._resolve) {
+                    this._resolve({ mode: "search", action: "canceled" });
+                }
+                this.closeDialog();
+                return Promise.resolve();
+            }
+        });
     }
 
     private _lookupSunatForCreate(element: HTMLElement): Promise<void> {
@@ -237,7 +259,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         
         let resolvePromise: Promise<Entities.UbigeoResolutionResult | null> = Promise.resolve(null);
 
-        if (sunatData.documentType === "RUC" && (sunatData.department || sunatData.province)) {
+        if (sunatData.department || sunatData.province || sunatData.district) {
             const request: TRU_GeographicData.ResolveUbigeoRequest<TRU_GeographicData.ResolveUbigeoResponse> =
                 new TRU_GeographicData.ResolveUbigeoRequest(sunatData.department || "", sunatData.province || "", sunatData.district || "");
             
@@ -255,17 +277,23 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         }
 
         return resolvePromise.then((u: Entities.UbigeoResolutionResult | null): Promise<void> => {
-            if (u && u.IsValid) {
+            let addressStreet: string = (sunatData.address || "").trim();
+            
+            if ((u && u.IsValid) || addressStreet) {
                 const address: ProxyEntities.Address = new ProxyEntities.AddressClass();
-                address.AddressTypeValue = 2; // Negocio
+                address.AddressTypeValue = sunatData.documentType === "RUC" ? 2 : 1; // 2=Negocio, 1=Casa
                 address.ThreeLetterISORegionName = "PER";
-                address.Name = "DOMICILIO FISCAL";
-                address.Street = (sunatData.address || "").trim();
-                address.State = u.StateId;
-                address.County = u.CountyId;
-                address.City = u.CityName;
-                address.IsPrimary = true;
+                (address as any).CountryRegionId = "PER";
+                address.Name = sunatData.documentType === "RUC" ? "DOMICILIO FISCAL" : "DOMICILIO PERSONAL";
+                address.Street = addressStreet;
                 
+                if (u && u.IsValid) {
+                    address.State = u.StateId;
+                    address.County = u.CountyId;
+                    address.City = u.CityName;
+                }
+                
+                address.IsPrimary = true;
                 customer.Addresses = [address];
             }
 
@@ -288,12 +316,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                     }
 
                     this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
-                    return this._setCustomerOnCart(accountNumber).then((): void => {
-                        this._complete({
-                            mode: "create",
-                            action: "createAndSetCustomerOnCart",
-                            customerAccountNumber: accountNumber
-                        });
+                    this._complete({
+                        mode: "create",
+                        action: "createAndSetCustomerOnCart",
+                        customerAccountNumber: accountNumber
+                    });
+                    
+                    return new Promise((resolve) => {
+                        setTimeout(() => {
+                            this._setCustomerOnCart(accountNumber).then(resolve);
+                        }, 500);
                     });
                 });
         });
@@ -344,12 +376,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                                 const updatedCustomer: ProxyEntities.Customer = response.data.customer;
                                 const accountNumber: string = updatedCustomer.AccountNumber || this._getValue(element, "customerInlineEditAccount");
 
-                                return this._setCustomerOnCart(accountNumber).then((): void => {
-                                    this._complete({
-                                        mode: "edit",
-                                        action: "updateAndSetCustomerOnCart",
-                                        customerAccountNumber: accountNumber
-                                    });
+                                this._complete({
+                                    mode: "edit",
+                                    action: "updateAndSetCustomerOnCart",
+                                    customerAccountNumber: accountNumber
+                                });
+                                
+                                return new Promise((resolve) => {
+                                    setTimeout(() => {
+                                        this._setCustomerOnCart(accountNumber).then(resolve);
+                                    }, 500);
                                 });
                             });
                     };

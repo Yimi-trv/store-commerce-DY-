@@ -34,25 +34,17 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
                     return _super !== null && _super.apply(this, arguments) || this;
                 }
                 PreCustomerSearchModalTrigger.prototype.execute = function (options) {
-                    var _this = this;
                     if (window[GUARD_KEY]) {
                         return Promise.resolve({ canceled: false });
                     }
-                    window[GUARD_KEY] = true;
+                    var searchText = "";
                     var dialog = new CustomerInlineDialog_1.default();
-                    var searchText = options && options.searchText ? options.searchText : "";
                     return dialog.open("search", null, searchText)
                         .then(function (result) {
-                        window[GUARD_KEY] = false;
-                        if (result && result.action === "delegatedToNativeSearch") {
-                            return { canceled: false };
-                        }
                         return { canceled: true };
                     })
-                        .catch(function (reason) {
-                        window[GUARD_KEY] = false;
-                        _this.context.logger.logError("PreCustomerSearchModalTrigger error: " + JSON.stringify(reason));
-                        return { canceled: false };
+                        .catch(function () {
+                        return { canceled: true };
                     });
                 };
                 return PreCustomerSearchModalTrigger;
