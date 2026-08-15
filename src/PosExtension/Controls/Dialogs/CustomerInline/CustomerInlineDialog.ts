@@ -355,7 +355,18 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
         return resolvePromise.then((u: Entities.UbigeoResolutionResult | null): Promise<void> => {
             let addressStreet = this._getValue(element, "customerInlineCreateAddress");
-            
+
+            // ResolveUbigeo devuelve 200 tanto si resolvió como si no: IsValid es el único dato
+            // que distingue una dirección completa de una que D365 descartará en silencio por
+            // no traer State/County/City. Se registra siempre para no tener que adivinar.
+            this._logChunked("=== ResolveUbigeo ===", u
+                ? "IsValid=" + u.IsValid
+                + " | StateId=" + (u.StateId || "(vacio)")
+                + " | CountyId=" + (u.CountyId || "(vacio)")
+                + " | CityName=" + (u.CityName || "(vacio)")
+                + " | Notes=" + (u.Notes || "")
+                : "sin resultado (no se consultó o falló)");
+
             if ((u && u.IsValid) || addressStreet) {
                 const addressPurpose = this._getValue(element, "customerInlineCreateAddressPurpose") || "Negocio";
                 
@@ -385,6 +396,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 }
                 
                 customer.Addresses = [address];
+
+                this._logChunked("=== Address enviada ===", this._stringify(address));
+            } else {
+                this._logChunked("=== Address NO enviada ===",
+                    "ubigeo invalido y calle vacia — el cliente se crea sin direccion");
             }
 
             this._showMessage(element, "Paso 2: Aplicando valores por defecto del canal...");
@@ -402,6 +418,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
                         const createdCustomer: ProxyEntities.Customer = response.data.customer;
                         const accountNumber: string = createdCustomer.AccountNumber || "";
+
+                        // Si el servidor aceptó el alta pero descartó la dirección, aquí se ve:
+                        // el cliente vuelve con Addresses vacío.
+                        const savedAddresses: any[] = createdCustomer.Addresses || [];
+                        this._logChunked("=== Cliente creado ===",
+                            "AccountNumber=" + accountNumber
+                            + " | CustomerGroup=" + (createdCustomer.CustomerGroup || "(vacio)")
+                            + " | CurrencyCode=" + (createdCustomer.CurrencyCode || "(vacio)")
+                            + " | Addresses devueltas=" + savedAddresses.length
+                            + (savedAddresses.length > 0 ? "\n" + this._stringify(savedAddresses) : ""));
 
                         if (!accountNumber) {
                             this._showMessage(element, "Cliente creado pero sin número de cuenta.");

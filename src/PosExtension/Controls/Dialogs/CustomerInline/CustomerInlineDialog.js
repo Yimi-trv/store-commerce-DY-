@@ -289,6 +289,13 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                     return resolvePromise.then(function (u) {
                         var addressStreet = _this._getValue(element, "customerInlineCreateAddress");
+                        _this._logChunked("=== ResolveUbigeo ===", u
+                            ? "IsValid=" + u.IsValid
+                                + " | StateId=" + (u.StateId || "(vacio)")
+                                + " | CountyId=" + (u.CountyId || "(vacio)")
+                                + " | CityName=" + (u.CityName || "(vacio)")
+                                + " | Notes=" + (u.Notes || "")
+                            : "sin resultado (no se consultó o falló)");
                         if ((u && u.IsValid) || addressStreet) {
                             var addressPurpose = _this._getValue(element, "customerInlineCreateAddressPurpose") || "Negocio";
                             var address = new Entities_1.ProxyEntities.AddressClass();
@@ -316,6 +323,10 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 address.DistrictName = sunatData.district || "";
                             }
                             customer.Addresses = [address];
+                            _this._logChunked("=== Address enviada ===", _this._stringify(address));
+                        }
+                        else {
+                            _this._logChunked("=== Address NO enviada ===", "ubigeo invalido y calle vacia — el cliente se crea sin direccion");
                         }
                         _this._showMessage(element, "Paso 2: Aplicando valores por defecto del canal...");
                         return _this._applyChannelDefaults(customer).then(function () {
@@ -329,6 +340,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 }
                                 var createdCustomer = response.data.customer;
                                 var accountNumber = createdCustomer.AccountNumber || "";
+                                var savedAddresses = createdCustomer.Addresses || [];
+                                _this._logChunked("=== Cliente creado ===", "AccountNumber=" + accountNumber
+                                    + " | CustomerGroup=" + (createdCustomer.CustomerGroup || "(vacio)")
+                                    + " | CurrencyCode=" + (createdCustomer.CurrencyCode || "(vacio)")
+                                    + " | Addresses devueltas=" + savedAddresses.length
+                                    + (savedAddresses.length > 0 ? "\n" + _this._stringify(savedAddresses) : ""));
                                 if (!accountNumber) {
                                     _this._showMessage(element, "Cliente creado pero sin número de cuenta.");
                                     return Promise.resolve();
