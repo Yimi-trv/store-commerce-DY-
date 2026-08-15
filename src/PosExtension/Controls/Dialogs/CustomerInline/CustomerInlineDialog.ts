@@ -434,29 +434,94 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                             return Promise.resolve();
                         }
 
-                        // El cliente se asigna al carrito ANTES de cerrar el diálogo. Si se cierra
-                        // primero, este request corre sobre un diálogo destruido y cualquier fallo
-                        // se pierde en silencio (el cliente queda creado pero no asignado).
-                        this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
-
-                        return this._setCustomerOnCart(accountNumber)
-                            .then((): void => {
-                                this._complete({
-                                    mode: "create",
-                                    action: "createAndSetCustomerOnCart",
-                                    customerAccountNumber: accountNumber
-                                });
-                            })
-                            .catch((reason: any): void => {
-                                this._logError("SetCustomerOnCart error: " + this._stringify(reason));
-                                this._showMessage(
-                                    element,
-                                    "Cliente " + accountNumber + " creado, pero no se pudo asignar a la venta: "
-                                    + this._getErrorMessage(reason));
+                        return this._ensureAddressPersisted(element, accountNumber, customer.Addresses || [])
+                            .then((): Promise<void> => {
+                                // El cliente se asigna al carrito ANTES de cerrar el diálogo. Si se cierra
+                                // primero, este request corre sobre un diálogo destruido y cualquier fallo
+                                // se pierde en silencio (el cliente queda creado pero no asignado).
+                                this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
+                                return this._setCustomerOnCartAndClose(element, accountNumber);
                             });
                     });
             });
         });
+    }
+
+    /**
+     * Con la creación asíncrona de clientes activa (RetailEnhancedAsyncCustCreationFeature),
+     * Retail Server responde 201 al alta pero devuelve el cliente sin direcciones, aunque la
+     * dirección viaje completa y con los códigos de ubigeo correctos (verificado en UAT: el
+     * cliente queda con "Agregar dirección" en el POS).
+     *
+     * El cliente ya existe en ese punto, así que se reintenta la dirección por la vía de
+     * actualización, que sigue el camino normal y no el asíncrono.
+     *
+     * Nunca bloquea la venta: si el reintento falla, se registra y el cajero puede cargar la
+     * dirección a mano.
+     */
+    private _ensureAddressPersisted(
+        element: HTMLElement,
+        accountNumber: string,
+        intendedAddresses: ProxyEntities.Address[]
+    ): Promise<void> {
+        if (!intendedAddresses || intendedAddresses.length === 0) {
+            return Promise.resolve();
+        }
+
+        return this._getCustomerByAccount(accountNumber)
+            .then((persisted: ProxyEntities.Customer | null): Promise<void> => {
+                const existing: any[] = (persisted && persisted.Addresses) || [];
+
+                this._logChunked("=== Direccion tras releer el cliente ===",
+                    "Addresses=" + existing.length
+                    + (existing.length > 0 ? "\n" + this._stringify(existing) : ""));
+
+                // Si el alta sí guardó la dirección y el 0 anterior era solo que la respuesta
+                // no la devolvía, no hay nada que reintentar.
+                if (!persisted || existing.length > 0) {
+                    return Promise.resolve();
+                }
+
+                this._showMessage(element, "La dirección no quedó en el alta; reintentando...");
+
+                const retryCustomer: ProxyEntities.Customer = this._cloneCustomer(persisted);
+                retryCustomer.Addresses = intendedAddresses;
+
+                const updateRequest: UpdateCustomerServiceRequest =
+                    new UpdateCustomerServiceRequest(this._getCorrelationId(), retryCustomer);
+
+                return this.context.runtime.executeAsync(updateRequest)
+                    .then((response: any): void => {
+                        const updated: any = response && response.data && response.data.customer;
+                        const after: any[] = (updated && updated.Addresses) || [];
+
+                        this._logChunked("=== Reintento de direccion ===",
+                            "Addresses=" + after.length
+                            + (after.length > 0 ? "\n" + this._stringify(after) : " (el reintento tampoco la guardó)"));
+                    });
+            })
+            .catch((reason: any): void => {
+                this._logError("_ensureAddressPersisted error: " + this._stringify(reason));
+                this._logChunked("=== Reintento de direccion FALLO ===", this._getErrorMessage(reason));
+            });
+    }
+
+    private _setCustomerOnCartAndClose(element: HTMLElement, accountNumber: string): Promise<void> {
+        return this._setCustomerOnCart(accountNumber)
+            .then((): void => {
+                this._complete({
+                    mode: "create",
+                    action: "createAndSetCustomerOnCart",
+                    customerAccountNumber: accountNumber
+                });
+            })
+            .catch((reason: any): void => {
+                this._logError("SetCustomerOnCart error: " + this._stringify(reason));
+                this._showMessage(
+                    element,
+                    "Cliente " + accountNumber + " creado, pero no se pudo asignar a la venta: "
+                    + this._getErrorMessage(reason));
+            });
     }
 
     /**

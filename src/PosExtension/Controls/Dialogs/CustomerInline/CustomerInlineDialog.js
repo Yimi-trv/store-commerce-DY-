@@ -350,22 +350,59 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                     _this._showMessage(element, "Cliente creado pero sin número de cuenta.");
                                     return Promise.resolve();
                                 }
-                                _this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
-                                return _this._setCustomerOnCart(accountNumber)
+                                return _this._ensureAddressPersisted(element, accountNumber, customer.Addresses || [])
                                     .then(function () {
-                                    _this._complete({
-                                        mode: "create",
-                                        action: "createAndSetCustomerOnCart",
-                                        customerAccountNumber: accountNumber
-                                    });
-                                })
-                                    .catch(function (reason) {
-                                    _this._logError("SetCustomerOnCart error: " + _this._stringify(reason));
-                                    _this._showMessage(element, "Cliente " + accountNumber + " creado, pero no se pudo asignar a la venta: "
-                                        + _this._getErrorMessage(reason));
+                                    _this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
+                                    return _this._setCustomerOnCartAndClose(element, accountNumber);
                                 });
                             });
                         });
+                    });
+                };
+                CustomerInlineDialog.prototype._ensureAddressPersisted = function (element, accountNumber, intendedAddresses) {
+                    var _this = this;
+                    if (!intendedAddresses || intendedAddresses.length === 0) {
+                        return Promise.resolve();
+                    }
+                    return this._getCustomerByAccount(accountNumber)
+                        .then(function (persisted) {
+                        var existing = (persisted && persisted.Addresses) || [];
+                        _this._logChunked("=== Direccion tras releer el cliente ===", "Addresses=" + existing.length
+                            + (existing.length > 0 ? "\n" + _this._stringify(existing) : ""));
+                        if (!persisted || existing.length > 0) {
+                            return Promise.resolve();
+                        }
+                        _this._showMessage(element, "La dirección no quedó en el alta; reintentando...");
+                        var retryCustomer = _this._cloneCustomer(persisted);
+                        retryCustomer.Addresses = intendedAddresses;
+                        var updateRequest = new Customer_1.UpdateCustomerServiceRequest(_this._getCorrelationId(), retryCustomer);
+                        return _this.context.runtime.executeAsync(updateRequest)
+                            .then(function (response) {
+                            var updated = response && response.data && response.data.customer;
+                            var after = (updated && updated.Addresses) || [];
+                            _this._logChunked("=== Reintento de direccion ===", "Addresses=" + after.length
+                                + (after.length > 0 ? "\n" + _this._stringify(after) : " (el reintento tampoco la guardó)"));
+                        });
+                    })
+                        .catch(function (reason) {
+                        _this._logError("_ensureAddressPersisted error: " + _this._stringify(reason));
+                        _this._logChunked("=== Reintento de direccion FALLO ===", _this._getErrorMessage(reason));
+                    });
+                };
+                CustomerInlineDialog.prototype._setCustomerOnCartAndClose = function (element, accountNumber) {
+                    var _this = this;
+                    return this._setCustomerOnCart(accountNumber)
+                        .then(function () {
+                        _this._complete({
+                            mode: "create",
+                            action: "createAndSetCustomerOnCart",
+                            customerAccountNumber: accountNumber
+                        });
+                    })
+                        .catch(function (reason) {
+                        _this._logError("SetCustomerOnCart error: " + _this._stringify(reason));
+                        _this._showMessage(element, "Cliente " + accountNumber + " creado, pero no se pudo asignar a la venta: "
+                            + _this._getErrorMessage(reason));
                     });
                 };
                 CustomerInlineDialog.prototype._applyChannelDefaults = function (customer) {
