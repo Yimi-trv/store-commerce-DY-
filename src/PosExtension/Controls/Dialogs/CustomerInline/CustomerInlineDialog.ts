@@ -21,6 +21,7 @@ import {
 import { ProxyEntities } from "PosApi/Entities";
 import SunatCustomerService, { ISunatCustomerData } from "../../../Services/SunatCustomerService";
 import { TRU_Diagnostics, TRU_GeographicData, Entities } from "../../../DataService/DataServiceRequests.g";
+import { GetAddressPurposesRequest, GetAddressPurposesResponse } from "../../../DataService/AddressPurposesRequest";
 
 const GUARD_KEY: string = "__customerInlineDialogActive";
 
@@ -120,6 +121,69 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
         this._prefillInitialValues(element);
         this._setMode(element, this._mode);
+        this._loadAddressPurposes(element);
+    }
+
+    /**
+     * Llena el combo de propósito de dirección. Primero intenta los propósitos configurados en
+     * el canal (los mismos que muestra la pantalla nativa); si Retail Server no responde, cae a
+     * la lista del enum AddressType de D365.
+     *
+     * En ambos casos el value de cada opción es el AddressType numérico, así que la dirección
+     * nunca viaja con un propósito inventado.
+     */
+    private _loadAddressPurposes(element: HTMLElement): Promise<void> {
+        const fallback: Array<{ value: number; label: string }> = [
+            { value: ProxyEntities.AddressType.Business, label: "Negocio" },
+            { value: ProxyEntities.AddressType.Delivery, label: "Entrega" },
+            { value: ProxyEntities.AddressType.Invoice, label: "Factura" },
+            { value: ProxyEntities.AddressType.Home, label: "Casa" },
+            { value: ProxyEntities.AddressType.Other, label: "Otros" }
+        ];
+
+        return this.context.runtime
+            .executeAsync(new GetAddressPurposesRequest<GetAddressPurposesResponse>())
+            .then((response: any): void => {
+                const purposes: any[] = (response && response.data && response.data.result) || [];
+
+                if (purposes.length === 0) {
+                    this._logChunked("=== Propositos de direccion ===", "el canal no devolvio ninguno; se usa el enum AddressType");
+                    this._fillPurposeSelect(element, fallback);
+                    return;
+                }
+
+                const fromChannel: Array<{ value: number; label: string }> = [];
+                for (let i: number = 0; i < purposes.length; i++) {
+                    const purpose: any = purposes[i];
+                    fromChannel.push({
+                        value: purpose.AddressType,
+                        label: purpose.Description || purpose.Name || String(purpose.AddressType)
+                    });
+                }
+
+                this._logChunked("=== Propositos de direccion (del canal) ===", this._stringify(fromChannel));
+                this._fillPurposeSelect(element, fromChannel);
+            })
+            .catch((reason: any): void => {
+                this._logChunked("=== Propositos de direccion ===",
+                    "GetAddressPurposes fallo, se usa el enum AddressType: " + this._getErrorMessage(reason));
+                this._fillPurposeSelect(element, fallback);
+            });
+    }
+
+    private _fillPurposeSelect(element: HTMLElement, options: Array<{ value: number; label: string }>): void {
+        const select: HTMLSelectElement = element.querySelector("#customerInlineCreateAddressPurpose") as HTMLSelectElement;
+        if (!select) {
+            return;
+        }
+
+        select.innerHTML = "";
+        for (let i: number = 0; i < options.length; i++) {
+            const option: HTMLOptionElement = document.createElement("option");
+            option.value = String(options[i].value);
+            option.text = options[i].label;
+            select.appendChild(option);
+        }
     }
 
     private _bindTab(element: HTMLElement, mode: CustomerInlineDialogMode, buttonId: string): void {
@@ -368,33 +432,27 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 : "sin resultado (no se consultó o falló)");
 
             if ((u && u.IsValid) || addressStreet) {
-                const addressPurpose = this._getValue(element, "customerInlineCreateAddressPurpose") || "Negocio";
-                
+                // El combo ya trae el AddressType numérico como value: no hay que traducir
+                // etiquetas, que es donde estaban los cuatro valores equivocados.
+                const purposeSelect: HTMLSelectElement =
+                    element.querySelector("#customerInlineCreateAddressPurpose") as HTMLSelectElement;
+                const purposeValue: number = purposeSelect && purposeSelect.value
+                    ? parseInt(purposeSelect.value, 10)
+                    : ProxyEntities.AddressType.Business;
+                const purposeLabel: string = purposeSelect && purposeSelect.selectedIndex >= 0
+                    ? purposeSelect.options[purposeSelect.selectedIndex].text
+                    : "Negocio";
+
                 const address: ProxyEntities.Address = new ProxyEntities.AddressClass();
                 address.ThreeLetterISORegionName = "PER";
-                address.Name = addressPurpose;
+                address.Name = purposeLabel;
                 address.Street = addressStreet;
-                address.IsPrimary = true;
+                address.AddressTypeValue = purposeValue;
+                address.IsPrimary = this._getChecked(element, "customerInlineCreateAddressPrimary");
                 // Construido a mano: los numéricos se fijan explícitamente para no viajar como
                 // undefined, que es lo que hacía reventar el alta del cliente.
                 address.RecordId = 0;
                 address.Deactivate = false;
-
-                // Los valores del propósito son los del enum ProxyEntities.AddressType, NO una
-                // numeración propia. Estaban adivinados y los cuatro estaban mal: "Negocio"
-                // viajaba como 2 (Delivery) en vez de 9 (Business), "Factura" como 4 (SWIFT),
-                // "Casa" como 3 (AltDlv). Un propósito que el canal no admite hace que D365
-                // descarte la dirección sin avisar.
-                if (addressPurpose === "Entrega") {
-                    address.AddressTypeValue = ProxyEntities.AddressType.Delivery;
-                } else if (addressPurpose === "Factura") {
-                    address.AddressTypeValue = ProxyEntities.AddressType.Invoice;
-                } else if (addressPurpose === "Casa") {
-                    address.AddressTypeValue = ProxyEntities.AddressType.Home;
-                } else {
-                    // Negocio y Oficina: el enum no distingue oficina.
-                    address.AddressTypeValue = ProxyEntities.AddressType.Business;
-                }
 
                 address.ExtensionProperties = [];
                 

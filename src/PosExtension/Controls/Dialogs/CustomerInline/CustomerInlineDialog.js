@@ -1,4 +1,4 @@
-System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g"], function (exports_1, context_1) {
+System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest"], function (exports_1, context_1) {
     "use strict";
     var __extends = (this && this.__extends) || (function () {
         var extendStatics = function (d, b) {
@@ -15,7 +15,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
+    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -39,6 +39,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             },
             function (DataServiceRequests_g_1_1) {
                 DataServiceRequests_g_1 = DataServiceRequests_g_1_1;
+            },
+            function (AddressPurposesRequest_1_1) {
+                AddressPurposesRequest_1 = AddressPurposesRequest_1_1;
             }
         ],
         execute: function () {
@@ -102,6 +105,54 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                     this._prefillInitialValues(element);
                     this._setMode(element, this._mode);
+                    this._loadAddressPurposes(element);
+                };
+                CustomerInlineDialog.prototype._loadAddressPurposes = function (element) {
+                    var _this = this;
+                    var fallback = [
+                        { value: Entities_1.ProxyEntities.AddressType.Business, label: "Negocio" },
+                        { value: Entities_1.ProxyEntities.AddressType.Delivery, label: "Entrega" },
+                        { value: Entities_1.ProxyEntities.AddressType.Invoice, label: "Factura" },
+                        { value: Entities_1.ProxyEntities.AddressType.Home, label: "Casa" },
+                        { value: Entities_1.ProxyEntities.AddressType.Other, label: "Otros" }
+                    ];
+                    return this.context.runtime
+                        .executeAsync(new AddressPurposesRequest_1.GetAddressPurposesRequest())
+                        .then(function (response) {
+                        var purposes = (response && response.data && response.data.result) || [];
+                        if (purposes.length === 0) {
+                            _this._logChunked("=== Propositos de direccion ===", "el canal no devolvio ninguno; se usa el enum AddressType");
+                            _this._fillPurposeSelect(element, fallback);
+                            return;
+                        }
+                        var fromChannel = [];
+                        for (var i = 0; i < purposes.length; i++) {
+                            var purpose = purposes[i];
+                            fromChannel.push({
+                                value: purpose.AddressType,
+                                label: purpose.Description || purpose.Name || String(purpose.AddressType)
+                            });
+                        }
+                        _this._logChunked("=== Propositos de direccion (del canal) ===", _this._stringify(fromChannel));
+                        _this._fillPurposeSelect(element, fromChannel);
+                    })
+                        .catch(function (reason) {
+                        _this._logChunked("=== Propositos de direccion ===", "GetAddressPurposes fallo, se usa el enum AddressType: " + _this._getErrorMessage(reason));
+                        _this._fillPurposeSelect(element, fallback);
+                    });
+                };
+                CustomerInlineDialog.prototype._fillPurposeSelect = function (element, options) {
+                    var select = element.querySelector("#customerInlineCreateAddressPurpose");
+                    if (!select) {
+                        return;
+                    }
+                    select.innerHTML = "";
+                    for (var i = 0; i < options.length; i++) {
+                        var option = document.createElement("option");
+                        option.value = String(options[i].value);
+                        option.text = options[i].label;
+                        select.appendChild(option);
+                    }
                 };
                 CustomerInlineDialog.prototype._bindTab = function (element, mode, buttonId) {
                     var _this = this;
@@ -297,26 +348,21 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 + " | Notes=" + (u.Notes || "")
                             : "sin resultado (no se consultó o falló)");
                         if ((u && u.IsValid) || addressStreet) {
-                            var addressPurpose = _this._getValue(element, "customerInlineCreateAddressPurpose") || "Negocio";
+                            var purposeSelect = element.querySelector("#customerInlineCreateAddressPurpose");
+                            var purposeValue = purposeSelect && purposeSelect.value
+                                ? parseInt(purposeSelect.value, 10)
+                                : Entities_1.ProxyEntities.AddressType.Business;
+                            var purposeLabel = purposeSelect && purposeSelect.selectedIndex >= 0
+                                ? purposeSelect.options[purposeSelect.selectedIndex].text
+                                : "Negocio";
                             var address = new Entities_1.ProxyEntities.AddressClass();
                             address.ThreeLetterISORegionName = "PER";
-                            address.Name = addressPurpose;
+                            address.Name = purposeLabel;
                             address.Street = addressStreet;
-                            address.IsPrimary = true;
+                            address.AddressTypeValue = purposeValue;
+                            address.IsPrimary = _this._getChecked(element, "customerInlineCreateAddressPrimary");
                             address.RecordId = 0;
                             address.Deactivate = false;
-                            if (addressPurpose === "Entrega") {
-                                address.AddressTypeValue = Entities_1.ProxyEntities.AddressType.Delivery;
-                            }
-                            else if (addressPurpose === "Factura") {
-                                address.AddressTypeValue = Entities_1.ProxyEntities.AddressType.Invoice;
-                            }
-                            else if (addressPurpose === "Casa") {
-                                address.AddressTypeValue = Entities_1.ProxyEntities.AddressType.Home;
-                            }
-                            else {
-                                address.AddressTypeValue = Entities_1.ProxyEntities.AddressType.Business;
-                            }
                             address.ExtensionProperties = [];
                             if (u && u.IsValid) {
                                 address.State = u.StateId;

@@ -171,13 +171,15 @@
             </div>
             <div class="customer-inline-dialog__field">
                 <label for="customerInlineCreateAddressPurpose">Propósito de la dirección:</label>
-                <select id="customerInlineCreateAddressPurpose">
-                    <option value="Negocio">Negocio</option>
-                    <option value="Oficina">Oficina</option>
-                    <option value="Entrega">Entrega</option>
-                    <option value="Factura">Factura</option>
-                    <option value="Casa">Casa</option>
-                </select>
+                <!-- Las opciones se cargan en onReady desde los propósitos del canal, o desde
+                     el enum AddressType de D365 si el canal no los expone. El value es el
+                     AddressType numérico, no una etiqueta. -->
+                <select id="customerInlineCreateAddressPurpose"></select>
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label style="font-weight: normal; font-size: 14px; display: flex; align-items: center; gap: 6px; margin-top: 22px;">
+                    <input id="customerInlineCreateAddressPrimary" type="checkbox" checked /> Dirección principal
+                </label>
             </div>
             <div class="customer-inline-dialog__field" style="grid-column: 1 / -1;">
                 <label for="customerInlineCreateAddress">Dirección fiscal:</label>
