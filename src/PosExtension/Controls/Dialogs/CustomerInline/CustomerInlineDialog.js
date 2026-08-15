@@ -303,17 +303,19 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             address.Name = addressPurpose;
                             address.Street = addressStreet;
                             address.IsPrimary = true;
+                            address.RecordId = 0;
+                            address.Deactivate = false;
                             if (addressPurpose === "Entrega") {
-                                address.AddressTypeValue = 1;
+                                address.AddressTypeValue = Entities_1.ProxyEntities.AddressType.Delivery;
                             }
                             else if (addressPurpose === "Factura") {
-                                address.AddressTypeValue = 4;
+                                address.AddressTypeValue = Entities_1.ProxyEntities.AddressType.Invoice;
                             }
                             else if (addressPurpose === "Casa") {
-                                address.AddressTypeValue = 3;
+                                address.AddressTypeValue = Entities_1.ProxyEntities.AddressType.Home;
                             }
                             else {
-                                address.AddressTypeValue = 2;
+                                address.AddressTypeValue = Entities_1.ProxyEntities.AddressType.Business;
                             }
                             address.ExtensionProperties = [];
                             if (u && u.IsValid) {

@@ -375,17 +375,27 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 address.Name = addressPurpose;
                 address.Street = addressStreet;
                 address.IsPrimary = true;
-                
+                // Construido a mano: los numéricos se fijan explícitamente para no viajar como
+                // undefined, que es lo que hacía reventar el alta del cliente.
+                address.RecordId = 0;
+                address.Deactivate = false;
+
+                // Los valores del propósito son los del enum ProxyEntities.AddressType, NO una
+                // numeración propia. Estaban adivinados y los cuatro estaban mal: "Negocio"
+                // viajaba como 2 (Delivery) en vez de 9 (Business), "Factura" como 4 (SWIFT),
+                // "Casa" como 3 (AltDlv). Un propósito que el canal no admite hace que D365
+                // descarte la dirección sin avisar.
                 if (addressPurpose === "Entrega") {
-                    address.AddressTypeValue = 1; // Delivery
+                    address.AddressTypeValue = ProxyEntities.AddressType.Delivery;
                 } else if (addressPurpose === "Factura") {
-                    address.AddressTypeValue = 4; // Invoice
+                    address.AddressTypeValue = ProxyEntities.AddressType.Invoice;
                 } else if (addressPurpose === "Casa") {
-                    address.AddressTypeValue = 3; // Home
+                    address.AddressTypeValue = ProxyEntities.AddressType.Home;
                 } else {
-                    address.AddressTypeValue = 2; // Business / Office / Default
+                    // Negocio y Oficina: el enum no distingue oficina.
+                    address.AddressTypeValue = ProxyEntities.AddressType.Business;
                 }
-                
+
                 address.ExtensionProperties = [];
                 
                 if (u && u.IsValid) {
