@@ -9,9 +9,15 @@ import {
     UpdateCustomerServiceRequest,
 } from "PosApi/Consume/Customer";
 import {
+    GetCurrentCartClientRequest,
+    GetCurrentCartClientResponse,
     SetCustomerOnCartOperationRequest,
     SetCustomerOnCartOperationResponse
 } from "PosApi/Consume/Cart";
+import {
+    GetChannelConfigurationClientRequest,
+    GetChannelConfigurationClientResponse
+} from "PosApi/Consume/Device";
 import { ProxyEntities } from "PosApi/Entities";
 import SunatCustomerService, { ISunatCustomerData } from "../../../Services/SunatCustomerService";
 import { TRU_GeographicData, Entities } from "../../../DataService/DataServiceRequests.g";
@@ -24,6 +30,8 @@ export interface ICustomerInlineDialogResult {
     mode: CustomerInlineDialogMode;
     action: string;
     customerAccountNumber?: string;
+    /** Texto que el cajero escribió en la pestaña Buscar; lo consume el trigger que abrió el modal. */
+    searchText?: string;
 }
 
 export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
@@ -146,14 +154,24 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         }
     }
 
+    /**
+     * El SDK del POS no expone una búsqueda de clientes que devuelva datos sin abrir UI
+     * (`SelectCustomerClientRequest` siempre dibuja la grilla nativa). Por eso el modal no
+     * resuelve la búsqueda: cierra y delega en el trigger que lo abrió, pasándole el texto
+     * escrito. El trigger es quien sigue vivo después de cerrar el diálogo y puede ejecutar
+     * la búsqueda y la asignación al carrito sin trabajar sobre un DOM ya destruido.
+     */
     private _executeSearch(element: HTMLElement, isPagination: boolean = false): Promise<void> {
-        // En su lugar, resolvemos el modal y permitimos que el POS nativo ejecute la busqueda
+        const searchText: string = this._getValue(element, "customerInlineSearchText") || this._initialSearchText;
+
         this.closeDialog();
         if (this._resolve) {
             this._resolve({
                 mode: "search",
-                action: "native_search"
+                action: "native_search",
+                searchText: searchText
             });
+            this._resolve = null;
         }
         return Promise.resolve();
     }
@@ -292,38 +310,127 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 customer.Addresses = [address];
             }
 
-            this._showMessage(element, "Paso 3: Registrando cliente en D365...");
-            const createRequest: CreateCustomerServiceRequest = new CreateCustomerServiceRequest(this._getCorrelationId(), customer);
+            this._showMessage(element, "Paso 2: Aplicando valores por defecto del canal...");
 
-            return this.context.runtime.executeAsync(createRequest)
-                .then((response: any): Promise<void> => {
-                    if (response.canceled || !response.data || !response.data.customer) {
-                        this._showMessage(element, "La creación del cliente falló o fue cancelada por el sistema.");
-                        return Promise.resolve();
-                    }
+            return this._applyChannelDefaults(customer).then((): Promise<void> => {
+                this._showMessage(element, "Paso 3: Registrando cliente en D365...");
+                const createRequest: CreateCustomerServiceRequest = new CreateCustomerServiceRequest(this._getCorrelationId(), customer);
 
-                    const createdCustomer: ProxyEntities.Customer = response.data.customer;
-                    const accountNumber: string = createdCustomer.AccountNumber || "";
+                return this.context.runtime.executeAsync(createRequest)
+                    .then((response: any): Promise<void> => {
+                        if (response.canceled || !response.data || !response.data.customer) {
+                            this._showMessage(element, "La creación del cliente falló o fue cancelada por el sistema.");
+                            return Promise.resolve();
+                        }
 
-                    if (!accountNumber) {
-                        this._showMessage(element, "Cliente creado pero sin número de cuenta.");
-                        return Promise.resolve();
-                    }
+                        const createdCustomer: ProxyEntities.Customer = response.data.customer;
+                        const accountNumber: string = createdCustomer.AccountNumber || "";
 
-                    this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
-                    this._complete({
-                        mode: "create",
-                        action: "createAndSetCustomerOnCart",
-                        customerAccountNumber: accountNumber
+                        if (!accountNumber) {
+                            this._showMessage(element, "Cliente creado pero sin número de cuenta.");
+                            return Promise.resolve();
+                        }
+
+                        // El cliente se asigna al carrito ANTES de cerrar el diálogo. Si se cierra
+                        // primero, este request corre sobre un diálogo destruido y cualquier fallo
+                        // se pierde en silencio (el cliente queda creado pero no asignado).
+                        this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
+
+                        return this._setCustomerOnCart(accountNumber)
+                            .then((): void => {
+                                this._complete({
+                                    mode: "create",
+                                    action: "createAndSetCustomerOnCart",
+                                    customerAccountNumber: accountNumber
+                                });
+                            })
+                            .catch((reason: any): void => {
+                                this._logError("SetCustomerOnCart error: " + this._stringify(reason));
+                                this._showMessage(
+                                    element,
+                                    "Cliente " + accountNumber + " creado, pero no se pudo asignar a la venta: "
+                                    + this._getErrorMessage(reason));
+                            });
                     });
-                    
-                    return new Promise((resolve) => {
-                        setTimeout(() => {
-                            this._setCustomerOnCart(accountNumber).then(resolve);
-                        }, 500);
-                    });
-                });
+            });
         });
+    }
+
+    /**
+     * Rellena los campos que la pantalla estándar CustomerAddEditView completa desde la
+     * configuración del canal antes de guardar. Un Customer construido a mano con
+     * `new CustomerClass({})` los deja en undefined y Retail Server revienta con una
+     * excepción no manejada (HTTP 400 + "Server exception is not in expected format",
+     * string_29274) en lugar de un error de validación legible.
+     *
+     * AccountNumber es el único campo NO opcional de la entidad Customer: para un alta
+     * debe viajar como cadena vacía, nunca ausente.
+     *
+     * Best-effort: si alguna consulta de configuración falla, se continúa con lo que se
+     * haya podido resolver — el alta con datos incompletos es preferible a bloquear la venta.
+     */
+    private _applyChannelDefaults(customer: ProxyEntities.Customer): Promise<void> {
+        if (!customer.AccountNumber) {
+            customer.AccountNumber = "";
+        }
+
+        const channelPromise: Promise<void> = this.context.runtime
+            .executeAsync(new GetChannelConfigurationClientRequest<GetChannelConfigurationClientResponse>(this._getCorrelationId()))
+            .then((response: any): void => {
+                const config: any = response && response.data && response.data.result;
+                if (!config) {
+                    return;
+                }
+                if (!customer.CurrencyCode && config.Currency) {
+                    customer.CurrencyCode = config.Currency;
+                }
+                if (!customer.Language && config.DefaultLanguageId) {
+                    customer.Language = config.DefaultLanguageId;
+                }
+                if (!customer.ReceiptSettings && config.ReceiptSettingsValue) {
+                    customer.ReceiptSettings = config.ReceiptSettingsValue;
+                }
+            })
+            .catch((reason: any): void => {
+                this._logError("GetChannelConfiguration error: " + this._stringify(reason));
+            });
+
+        // CustomerGroup no viaja en ChannelConfiguration. Se toma del cliente que la venta
+        // ya tiene asignado (el cliente por defecto del canal cuando el cajero no eligió otro),
+        // que por definición es un cliente válido de este canal.
+        return channelPromise
+            .then((): Promise<ProxyEntities.Customer | null> => {
+                if (customer.CustomerGroup) {
+                    return Promise.resolve(null);
+                }
+                return this.context.runtime
+                    .executeAsync(new GetCurrentCartClientRequest<GetCurrentCartClientResponse>(this._getCorrelationId()))
+                    .then((response: any): Promise<ProxyEntities.Customer | null> => {
+                        const cart: any = response && response.data && response.data.result;
+                        const templateAccount: string = (cart && cart.CustomerId) || "";
+                        if (!templateAccount) {
+                            return Promise.resolve(null);
+                        }
+                        return this._getCustomerByAccount(templateAccount);
+                    });
+            })
+            .then((template: ProxyEntities.Customer | null): void => {
+                if (!template) {
+                    return;
+                }
+                if (!customer.CustomerGroup && template.CustomerGroup) {
+                    customer.CustomerGroup = template.CustomerGroup;
+                }
+                if (!customer.CurrencyCode && template.CurrencyCode) {
+                    customer.CurrencyCode = template.CurrencyCode;
+                }
+                if (!customer.Language && template.Language) {
+                    customer.Language = template.Language;
+                }
+            })
+            .catch((reason: any): void => {
+                this._logError("Channel defaults (template customer) error: " + this._stringify(reason));
+            });
     }
 
     private _lookupSunatForEdit(element: HTMLElement): Promise<void> {
@@ -371,17 +478,21 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                                 const updatedCustomer: ProxyEntities.Customer = response.data.customer;
                                 const accountNumber: string = updatedCustomer.AccountNumber || this._getValue(element, "customerInlineEditAccount");
 
-                                this._complete({
-                                    mode: "edit",
-                                    action: "updateAndSetCustomerOnCart",
-                                    customerAccountNumber: accountNumber
-                                });
-                                
-                                return new Promise((resolve) => {
-                                    setTimeout(() => {
-                                        this._setCustomerOnCart(accountNumber).then(resolve);
-                                    }, 500);
-                                });
+                                return this._setCustomerOnCart(accountNumber)
+                                    .then((): void => {
+                                        this._complete({
+                                            mode: "edit",
+                                            action: "updateAndSetCustomerOnCart",
+                                            customerAccountNumber: accountNumber
+                                        });
+                                    })
+                                    .catch((reason: any): void => {
+                                        this._logError("SetCustomerOnCart error: " + this._stringify(reason));
+                                        this._showMessage(
+                                            element,
+                                            "Cliente actualizado, pero no se pudo asignar a la venta: "
+                                            + this._getErrorMessage(reason));
+                                    });
                             });
                     };
 

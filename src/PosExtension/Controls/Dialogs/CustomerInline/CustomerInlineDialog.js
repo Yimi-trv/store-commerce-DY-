@@ -1,4 +1,4 @@
-System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g"], function (exports_1, context_1) {
+System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g"], function (exports_1, context_1) {
     "use strict";
     var __extends = (this && this.__extends) || (function () {
         var extendStatics = function (d, b) {
@@ -15,7 +15,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Dialogs_1, Customer_1, Cart_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, GUARD_KEY, CustomerInlineDialog;
+    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, GUARD_KEY, CustomerInlineDialog;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -27,6 +27,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             },
             function (Cart_1_1) {
                 Cart_1 = Cart_1_1;
+            },
+            function (Device_1_1) {
+                Device_1 = Device_1_1;
             },
             function (Entities_1_1) {
                 Entities_1 = Entities_1_1;
@@ -141,12 +144,15 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._executeSearch = function (element, isPagination) {
                     if (isPagination === void 0) { isPagination = false; }
+                    var searchText = this._getValue(element, "customerInlineSearchText") || this._initialSearchText;
                     this.closeDialog();
                     if (this._resolve) {
                         this._resolve({
                             mode: "search",
-                            action: "native_search"
+                            action: "native_search",
+                            searchText: searchText
                         });
+                        this._resolve = null;
                     }
                     return Promise.resolve();
                 };
@@ -265,32 +271,97 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             }
                             customer.Addresses = [address];
                         }
-                        _this._showMessage(element, "Paso 3: Registrando cliente en D365...");
-                        var createRequest = new Customer_1.CreateCustomerServiceRequest(_this._getCorrelationId(), customer);
-                        return _this.context.runtime.executeAsync(createRequest)
-                            .then(function (response) {
-                            if (response.canceled || !response.data || !response.data.customer) {
-                                _this._showMessage(element, "La creación del cliente falló o fue cancelada por el sistema.");
-                                return Promise.resolve();
-                            }
-                            var createdCustomer = response.data.customer;
-                            var accountNumber = createdCustomer.AccountNumber || "";
-                            if (!accountNumber) {
-                                _this._showMessage(element, "Cliente creado pero sin número de cuenta.");
-                                return Promise.resolve();
-                            }
-                            _this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
-                            _this._complete({
-                                mode: "create",
-                                action: "createAndSetCustomerOnCart",
-                                customerAccountNumber: accountNumber
-                            });
-                            return new Promise(function (resolve) {
-                                setTimeout(function () {
-                                    _this._setCustomerOnCart(accountNumber).then(resolve);
-                                }, 500);
+                        _this._showMessage(element, "Paso 2: Aplicando valores por defecto del canal...");
+                        return _this._applyChannelDefaults(customer).then(function () {
+                            _this._showMessage(element, "Paso 3: Registrando cliente en D365...");
+                            var createRequest = new Customer_1.CreateCustomerServiceRequest(_this._getCorrelationId(), customer);
+                            return _this.context.runtime.executeAsync(createRequest)
+                                .then(function (response) {
+                                if (response.canceled || !response.data || !response.data.customer) {
+                                    _this._showMessage(element, "La creación del cliente falló o fue cancelada por el sistema.");
+                                    return Promise.resolve();
+                                }
+                                var createdCustomer = response.data.customer;
+                                var accountNumber = createdCustomer.AccountNumber || "";
+                                if (!accountNumber) {
+                                    _this._showMessage(element, "Cliente creado pero sin número de cuenta.");
+                                    return Promise.resolve();
+                                }
+                                _this._showMessage(element, "Paso 4: Asignando nuevo cliente a la venta...");
+                                return _this._setCustomerOnCart(accountNumber)
+                                    .then(function () {
+                                    _this._complete({
+                                        mode: "create",
+                                        action: "createAndSetCustomerOnCart",
+                                        customerAccountNumber: accountNumber
+                                    });
+                                })
+                                    .catch(function (reason) {
+                                    _this._logError("SetCustomerOnCart error: " + _this._stringify(reason));
+                                    _this._showMessage(element, "Cliente " + accountNumber + " creado, pero no se pudo asignar a la venta: "
+                                        + _this._getErrorMessage(reason));
+                                });
                             });
                         });
+                    });
+                };
+                CustomerInlineDialog.prototype._applyChannelDefaults = function (customer) {
+                    var _this = this;
+                    if (!customer.AccountNumber) {
+                        customer.AccountNumber = "";
+                    }
+                    var channelPromise = this.context.runtime
+                        .executeAsync(new Device_1.GetChannelConfigurationClientRequest(this._getCorrelationId()))
+                        .then(function (response) {
+                        var config = response && response.data && response.data.result;
+                        if (!config) {
+                            return;
+                        }
+                        if (!customer.CurrencyCode && config.Currency) {
+                            customer.CurrencyCode = config.Currency;
+                        }
+                        if (!customer.Language && config.DefaultLanguageId) {
+                            customer.Language = config.DefaultLanguageId;
+                        }
+                        if (!customer.ReceiptSettings && config.ReceiptSettingsValue) {
+                            customer.ReceiptSettings = config.ReceiptSettingsValue;
+                        }
+                    })
+                        .catch(function (reason) {
+                        _this._logError("GetChannelConfiguration error: " + _this._stringify(reason));
+                    });
+                    return channelPromise
+                        .then(function () {
+                        if (customer.CustomerGroup) {
+                            return Promise.resolve(null);
+                        }
+                        return _this.context.runtime
+                            .executeAsync(new Cart_1.GetCurrentCartClientRequest(_this._getCorrelationId()))
+                            .then(function (response) {
+                            var cart = response && response.data && response.data.result;
+                            var templateAccount = (cart && cart.CustomerId) || "";
+                            if (!templateAccount) {
+                                return Promise.resolve(null);
+                            }
+                            return _this._getCustomerByAccount(templateAccount);
+                        });
+                    })
+                        .then(function (template) {
+                        if (!template) {
+                            return;
+                        }
+                        if (!customer.CustomerGroup && template.CustomerGroup) {
+                            customer.CustomerGroup = template.CustomerGroup;
+                        }
+                        if (!customer.CurrencyCode && template.CurrencyCode) {
+                            customer.CurrencyCode = template.CurrencyCode;
+                        }
+                        if (!customer.Language && template.Language) {
+                            customer.Language = template.Language;
+                        }
+                    })
+                        .catch(function (reason) {
+                        _this._logError("Channel defaults (template customer) error: " + _this._stringify(reason));
                     });
                 };
                 CustomerInlineDialog.prototype._lookupSunatForEdit = function (element) {
@@ -327,15 +398,18 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 }
                                 var updatedCustomer = response.data.customer;
                                 var accountNumber = updatedCustomer.AccountNumber || _this._getValue(element, "customerInlineEditAccount");
-                                _this._complete({
-                                    mode: "edit",
-                                    action: "updateAndSetCustomerOnCart",
-                                    customerAccountNumber: accountNumber
-                                });
-                                return new Promise(function (resolve) {
-                                    setTimeout(function () {
-                                        _this._setCustomerOnCart(accountNumber).then(resolve);
-                                    }, 500);
+                                return _this._setCustomerOnCart(accountNumber)
+                                    .then(function () {
+                                    _this._complete({
+                                        mode: "edit",
+                                        action: "updateAndSetCustomerOnCart",
+                                        customerAccountNumber: accountNumber
+                                    });
+                                })
+                                    .catch(function (reason) {
+                                    _this._logError("SetCustomerOnCart error: " + _this._stringify(reason));
+                                    _this._showMessage(element, "Cliente actualizado, pero no se pudo asignar a la venta: "
+                                        + _this._getErrorMessage(reason));
                                 });
                             });
                         };

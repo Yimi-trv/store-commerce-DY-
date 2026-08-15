@@ -3,9 +3,8 @@ import {
     PreCustomerEditTrigger
 } from "PosApi/Extend/Triggers/CustomerTriggers";
 import { ProxyEntities } from "PosApi/Entities";
-import CustomerInlineDialog from "../Controls/Dialogs/CustomerInline/CustomerInlineDialog";
-
-const GUARD_KEY: string = "__customerInlineDialogActive";
+import CustomerInlineDialog, { ICustomerInlineDialogResult } from "../Controls/Dialogs/CustomerInline/CustomerInlineDialog";
+import { GUARD_KEY, searchAndAssignCustomer } from "./CustomerModalHelper";
 
 export default class PreCustomerEditModalTrigger extends PreCustomerEditTrigger {
     public execute(options: IPreCustomerEditTriggerOptions): Promise<Commerce.Client.Entities.ICancelable> {
@@ -18,9 +17,12 @@ export default class PreCustomerEditModalTrigger extends PreCustomerEditTrigger 
         let customer: ProxyEntities.Customer | null = options && options.customer ? options.customer as ProxyEntities.Customer : null;
 
         return dialog.open("edit", customer)
-            .then((): Commerce.Client.Entities.ICancelable => {
+            .then((result: ICustomerInlineDialogResult | null): Promise<Commerce.Client.Entities.ICancelable> => {
+                if (result && result.action === "native_search") {
+                    return searchAndAssignCustomer(this.context, result.searchText || "");
+                }
                 (window as any)[GUARD_KEY] = false;
-                return { canceled: true };
+                return Promise.resolve({ canceled: true });
             })
             .catch((reason: any): Commerce.Client.Entities.ICancelable => {
                 (window as any)[GUARD_KEY] = false;

@@ -133,14 +133,18 @@
 
     <!-- PANEL BUSCAR -->
     <div id="customerInlinePanelSearch" class="customer-inline-dialog__panel is-active">
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px 0; gap: 16px;">
-            <p style="font-size: 15px; color: #333; text-align: center; margin: 0;">
-                Utilice el buscador nativo de D365 para encontrar clientes por nombre, cuenta o número de documento.
-            </p>
-            <button id="customerInlineSearchBtn" type="button" style="padding: 10px 24px; background: #0063b1; color: white; border: none; cursor: pointer; font-size: 15px; font-weight: 600;">
-                Abrir Buscador Avanzado
+        <div class="customer-inline-dialog__grid">
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineSearchText">Nombre, cuenta o número de documento:</label>
+                <input id="customerInlineSearchText" type="text" placeholder="Ej. 20123456789 o PEREZ" />
+            </div>
+        </div>
+        <div class="customer-inline-dialog__actions">
+            <button id="customerInlineSearchBtn" type="button" class="customer-inline-dialog__action">
+                Buscar y asignar
             </button>
         </div>
+        <div id="customerInlineSearchResult" class="customer-inline-dialog__result">El resultado se abre en la grilla de clientes del POS. Al elegir uno, se asigna a esta venta automáticamente.</div>
     </div>
 
     <!-- PANEL CREAR -->

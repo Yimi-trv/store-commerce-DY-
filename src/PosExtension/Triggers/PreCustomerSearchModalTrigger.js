@@ -1,4 +1,4 @@
-System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs/CustomerInline/CustomerInlineDialog"], function (exports_1, context_1) {
+System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs/CustomerInline/CustomerInlineDialog", "./CustomerModalHelper"], function (exports_1, context_1) {
     "use strict";
     var __extends = (this && this.__extends) || (function () {
         var extendStatics = function (d, b) {
@@ -15,7 +15,7 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var CustomerTriggers_1, CustomerInlineDialog_1, GUARD_KEY, PreCustomerSearchModalTrigger;
+    var CustomerTriggers_1, CustomerInlineDialog_1, CustomerModalHelper_1, PreCustomerSearchModalTrigger;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -24,26 +24,36 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
             },
             function (CustomerInlineDialog_1_1) {
                 CustomerInlineDialog_1 = CustomerInlineDialog_1_1;
+            },
+            function (CustomerModalHelper_1_1) {
+                CustomerModalHelper_1 = CustomerModalHelper_1_1;
             }
         ],
         execute: function () {
-            GUARD_KEY = "__customerInlineDialogActive";
             PreCustomerSearchModalTrigger = (function (_super) {
                 __extends(PreCustomerSearchModalTrigger, _super);
                 function PreCustomerSearchModalTrigger() {
                     return _super !== null && _super.apply(this, arguments) || this;
                 }
                 PreCustomerSearchModalTrigger.prototype.execute = function (options) {
-                    if (window[GUARD_KEY] || window["__customerSearchProgrammatic"]) {
+                    var _this = this;
+                    if (window[CustomerModalHelper_1.GUARD_KEY] || window[CustomerModalHelper_1.PROGRAMMATIC_KEY]) {
                         return Promise.resolve({ canceled: false });
                     }
-                    var searchText = "";
+                    var initialSearchText = (options && options.searchText) || "";
+                    window[CustomerModalHelper_1.GUARD_KEY] = true;
                     var dialog = new CustomerInlineDialog_1.default();
-                    return dialog.open("search", null, searchText)
+                    return dialog.open("search", null, initialSearchText)
                         .then(function (result) {
-                        return { canceled: true };
+                        if (result && result.action === "native_search") {
+                            return CustomerModalHelper_1.searchAndAssignCustomer(_this.context, result.searchText || initialSearchText);
+                        }
+                        window[CustomerModalHelper_1.GUARD_KEY] = false;
+                        return Promise.resolve({ canceled: true });
                     })
-                        .catch(function () {
+                        .catch(function (reason) {
+                        window[CustomerModalHelper_1.GUARD_KEY] = false;
+                        _this.context.logger.logError("PreCustomerSearchModalTrigger error: " + JSON.stringify(reason));
                         return { canceled: true };
                     });
                 };

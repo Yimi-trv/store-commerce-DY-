@@ -2,9 +2,8 @@ import {
     IPreCustomerAddTriggerOptions,
     PreCustomerAddTrigger
 } from "PosApi/Extend/Triggers/CustomerTriggers";
-import CustomerInlineDialog from "../Controls/Dialogs/CustomerInline/CustomerInlineDialog";
-
-const GUARD_KEY: string = "__customerInlineDialogActive";
+import CustomerInlineDialog, { ICustomerInlineDialogResult } from "../Controls/Dialogs/CustomerInline/CustomerInlineDialog";
+import { GUARD_KEY, searchAndAssignCustomer } from "./CustomerModalHelper";
 
 export default class PreCustomerAddModalTrigger extends PreCustomerAddTrigger {
     public execute(options: IPreCustomerAddTriggerOptions): Promise<Commerce.Client.Entities.ICancelable> {
@@ -16,9 +15,15 @@ export default class PreCustomerAddModalTrigger extends PreCustomerAddTrigger {
         let dialog: CustomerInlineDialog = new CustomerInlineDialog();
 
         return dialog.open("create")
-            .then((): Commerce.Client.Entities.ICancelable => {
+            .then((result: ICustomerInlineDialogResult | null): Promise<Commerce.Client.Entities.ICancelable> => {
+                // Sin esto la pestaña Buscar era un callejón sin salida cuando el modal se abría
+                // desde "Customer add" (operación 612): el diálogo cerraba, el trigger devolvía
+                // canceled y no ocurría ninguna búsqueda.
+                if (result && result.action === "native_search") {
+                    return searchAndAssignCustomer(this.context, result.searchText || "");
+                }
                 (window as any)[GUARD_KEY] = false;
-                return { canceled: true };
+                return Promise.resolve({ canceled: true });
             })
             .catch((reason: any): Commerce.Client.Entities.ICancelable => {
                 (window as any)[GUARD_KEY] = false;
