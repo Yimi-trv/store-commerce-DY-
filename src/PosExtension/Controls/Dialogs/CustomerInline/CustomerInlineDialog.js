@@ -15,7 +15,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Dialogs_1, Customer_1, Cart_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, GUARD_KEY, CustomCustomerSearchRequest, CustomerInlineDialog;
+    var Dialogs_1, Customer_1, Cart_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, GUARD_KEY, CustomerInlineDialog;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -40,28 +40,10 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
         ],
         execute: function () {
             GUARD_KEY = "__customerInlineDialogActive";
-            CustomCustomerSearchRequest = (function (_super) {
-                __extends(CustomCustomerSearchRequest, _super);
-                function CustomCustomerSearchRequest(keyword, top, skip) {
-                    var _this = _super.call(this) || this;
-                    var filterStr = "(contains(Name, '".concat(keyword, "') or IdentificationNumber eq '").concat(keyword, "' or AccountNumber eq '").concat(keyword, "')");
-                    var encodedFilter = encodeURIComponent(filterStr);
-                    _this._entitySet = "Customers?$filter=".concat(encodedFilter, "&$top=").concat(top, "&$skip=").concat(skip);
-                    _this._entityType = "Customer";
-                    _this._method = "";
-                    _this._parameters = null;
-                    _this._isAction = false;
-                    return _this;
-                }
-                return CustomCustomerSearchRequest;
-            }(Commerce.DataService.DataServiceRequest));
             CustomerInlineDialog = (function (_super) {
                 __extends(CustomerInlineDialog, _super);
                 function CustomerInlineDialog() {
                     var _this = _super.call(this) || this;
-                    _this._searchSkip = 0;
-                    _this._searchTop = 20;
-                    _this._lastSearchText = "";
                     _this._mode = "search";
                     _this._resolve = null;
                     _this._currentCustomer = null;
@@ -158,106 +140,15 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                 };
                 CustomerInlineDialog.prototype._executeSearch = function (element, isPagination) {
-                    var _this = this;
                     if (isPagination === void 0) { isPagination = false; }
-                    if (!isPagination) {
-                        this._searchSkip = 0;
-                        this._lastSearchText = this._getValue(element, "customerInlineSearchText");
-                    }
-                    var searchText = this._lastSearchText.trim();
-                    if (!searchText)
-                        return Promise.resolve();
-                    var container = element.querySelector("#customerInlineSearchResultsContainer");
-                    var status = element.querySelector("#customerInlineSearchStatus");
-                    var tbody = element.querySelector("#customerInlineSearchResultsBody");
-                    if (container)
-                        container.style.display = "flex";
-                    if (status)
-                        status.innerText = "Buscando...";
-                    if (!isPagination && tbody)
-                        tbody.innerHTML = "";
-                    var searchRequest = new CustomCustomerSearchRequest(searchText, this._searchTop, this._searchSkip);
-                    return this.context.runtime.executeAsync(searchRequest).then(function (response) {
-                        var results = (response.data && response.data.result) || [];
-                        _this._renderSearchResults(element, results);
-                    }).catch(function (error) {
-                        _this._logError("Search error: " + _this._stringify(error));
-                        if (status)
-                            status.innerText = "Error en la búsqueda. (Revise conexión o longitud de palabra)";
-                    });
-                };
-                CustomerInlineDialog.prototype._renderSearchResults = function (element, results) {
-                    var _this = this;
-                    var tbody = element.querySelector("#customerInlineSearchResultsBody");
-                    var status = element.querySelector("#customerInlineSearchStatus");
-                    var nextBtn = element.querySelector("#customerInlineSearchNextBtn");
-                    var prevBtn = element.querySelector("#customerInlineSearchPrevBtn");
-                    if (!tbody)
-                        return;
-                    tbody.innerHTML = "";
-                    if (results.length === 0) {
-                        if (status)
-                            status.innerText = "No se encontraron clientes.";
-                    }
-                    else {
-                        if (status)
-                            status.innerText = "Mostrando resultados ".concat(this._searchSkip + 1, " - ").concat(this._searchSkip + results.length);
-                        results.forEach(function (customer) {
-                            var tr = document.createElement("tr");
-                            tr.style.borderBottom = "1px solid #f3f2f1";
-                            var tdDoc = document.createElement("td");
-                            tdDoc.style.padding = "8px";
-                            tdDoc.innerText = customer.IdentificationNumber || "";
-                            var tdName = document.createElement("td");
-                            tdName.style.padding = "8px";
-                            tdName.innerText = customer.Name || [customer.FirstName, customer.LastName].join(" ").trim() || "";
-                            var tdAccount = document.createElement("td");
-                            tdAccount.style.padding = "8px";
-                            tdAccount.innerText = customer.AccountNumber || "";
-                            var tdAction = document.createElement("td");
-                            tdAction.style.padding = "8px";
-                            var btn = document.createElement("button");
-                            btn.innerText = "Elegir";
-                            btn.style.padding = "4px 8px";
-                            btn.style.background = "#0063b1";
-                            btn.style.color = "white";
-                            btn.style.border = "none";
-                            btn.style.cursor = "pointer";
-                            btn.onclick = function () {
-                                _this._selectCustomerFromSearch(customer.AccountNumber);
-                            };
-                            tdAction.appendChild(btn);
-                            tr.appendChild(tdDoc);
-                            tr.appendChild(tdName);
-                            tr.appendChild(tdAccount);
-                            tr.appendChild(tdAction);
-                            tbody.appendChild(tr);
-                        });
-                    }
-                    if (prevBtn) {
-                        prevBtn.disabled = this._searchSkip === 0;
-                        prevBtn.onclick = function () {
-                            _this._searchSkip = Math.max(0, _this._searchSkip - _this._searchTop);
-                            _this._executeSearch(element, true);
-                        };
-                    }
-                    if (nextBtn) {
-                        nextBtn.disabled = results.length < this._searchTop;
-                        nextBtn.onclick = function () {
-                            _this._searchSkip += _this._searchTop;
-                            _this._executeSearch(element, true);
-                        };
-                    }
-                };
-                CustomerInlineDialog.prototype._selectCustomerFromSearch = function (accountNumber) {
-                    var _this = this;
                     this.closeDialog();
-                    setTimeout(function () {
-                        var cartRequest = new Cart_1.SetCustomerOnCartOperationRequest(_this._getCorrelationId(), accountNumber);
-                        _this.context.runtime.executeAsync(cartRequest).catch(function (error) {
-                            _this._logError("Error SetCustomerOnCartOperationRequest: " + _this._stringify(error));
+                    if (this._resolve) {
+                        this._resolve({
+                            mode: "search",
+                            action: "native_search"
                         });
-                    }, 500);
+                    }
+                    return Promise.resolve();
                 };
                 CustomerInlineDialog.prototype._lookupSunatForCreate = function (element) {
                     var _this = this;
@@ -345,21 +236,34 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         });
                     }
                     return resolvePromise.then(function (u) {
-                        var addressStreet = (sunatData.address || "").trim();
+                        var addressStreet = _this._getValue(element, "customerInlineCreateAddress");
                         if ((u && u.IsValid) || addressStreet) {
+                            var addressPurpose = _this._getValue(element, "customerInlineCreateAddressPurpose") || "Negocio";
                             var address = new Entities_1.ProxyEntities.AddressClass();
                             address.ThreeLetterISORegionName = "PER";
-                            address.Name = sunatData.documentType === "RUC" ? "DOMICILIO FISCAL" : "DOMICILIO PERSONAL";
+                            address.Name = addressPurpose;
                             address.Street = addressStreet;
                             address.IsPrimary = true;
+                            if (addressPurpose === "Entrega") {
+                                address.AddressTypeValue = 1;
+                            }
+                            else if (addressPurpose === "Factura") {
+                                address.AddressTypeValue = 4;
+                            }
+                            else if (addressPurpose === "Casa") {
+                                address.AddressTypeValue = 3;
+                            }
+                            else {
+                                address.AddressTypeValue = 2;
+                            }
+                            address.Roles = addressPurpose;
+                            address.ExtensionProperties = [];
                             if (u && u.IsValid) {
                                 address.State = u.StateId;
                                 address.County = u.CountyId;
                                 address.City = u.CityName;
                                 address.DistrictName = sunatData.district || "";
                             }
-                            address.ZipCode = "";
-                            address.ThreeLetterISORegionName = "PER";
                             customer.Addresses = [address];
                         }
                         _this._showMessage(element, "Paso 3: Registrando cliente en D365...");

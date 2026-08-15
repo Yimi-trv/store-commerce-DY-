@@ -280,8 +280,6 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                     address.AddressTypeValue = 2; // Business / Office / Default
                 }
                 
-                // Forzamos Roles via any por si acaso Retail Server lo espera asi
-                (address as any).Roles = addressPurpose;
                 address.ExtensionProperties = [];
                 
                 if (u && u.IsValid) {
