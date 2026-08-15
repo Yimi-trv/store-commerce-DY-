@@ -256,7 +256,6 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             else {
                                 address.AddressTypeValue = 2;
                             }
-                            address.Roles = addressPurpose;
                             address.ExtensionProperties = [];
                             if (u && u.IsValid) {
                                 address.State = u.StateId;
