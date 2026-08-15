@@ -66,11 +66,15 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
             {
                 result = await RunGeoMastersAsync(request).ConfigureAwait(false);
             }
+            else if (mode.Equals("Columns", StringComparison.OrdinalIgnoreCase))
+            {
+                result = await RunColumnsAsync(request).ConfigureAwait(false);
+            }
             else
             {
                 result = new ElectronicDocumentResult { Id = 1 };
                 result.Success = false;
-                result.ErrorMessage = "Unknown mode '" + mode + "'. Valid: Views | ProbeTables | Inventory | AddressDiag | ViewDef | GeoMasters.";
+                result.ErrorMessage = "Unknown mode '" + mode + "'. Valid: Views | ProbeTables | Inventory | AddressDiag | ViewDef | GeoMasters | Columns.";
             }
 
             return new RunDiagnosticResponse(result);
@@ -222,6 +226,97 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
             result.Success = true;
             result.FileName = "table-probe.txt";
             return result;
+        }
+
+        /// <summary>
+        /// Lista el ESQUEMA (nombres y tipos de columna) de las tablas/vistas cuyo nombre contiene
+        /// el patrón recibido en ReceiptId. Necesario para escribir la búsqueda de clientes contra
+        /// el channel DB sin adivinar nombres de columna — adivinarlos cuesta un ciclo de deploy
+        /// completo por cada intento fallido.
+        ///
+        /// PRIVACIDAD: consulta INFORMATION_SCHEMA.COLUMNS, que solo contiene METADATOS. No lee ni
+        /// devuelve una sola fila de las tablas inspeccionadas, así que respeta el guardrail del
+        /// controller (ningún modo debe volcar PII de clientes ni datos transaccionales).
+        ///
+        /// El patrón se restringe a alfanuméricos y '_' antes de interpolarlo: los literales de
+        /// SqlPagedQuery.Where no son parametrizables con LIKE en este runtime.
+        /// </summary>
+        private async Task<ElectronicDocumentResult> RunColumnsAsync(RunDiagnosticRequest request)
+        {
+            var result = new ElectronicDocumentResult { Id = 1 };
+            var sb = new StringBuilder();
+
+            string pattern = SanitizePattern(request.ReceiptId);
+            if (pattern.Length == 0)
+            {
+                result.Success = false;
+                result.ErrorMessage = "Columns requiere un patrón en receiptId (ej. CUST, DPCUST, DIRPARTY).";
+                return result;
+            }
+
+            sb.Append("=== COLUMNAS DE OBJETOS QUE CONTIENEN '" + pattern + "' ===\n");
+            sb.Append("(solo metadatos: no se lee ninguna fila de datos)\n\n");
+
+            try
+            {
+                var q = new SqlPagedQuery(QueryResultSettings.AllRecords)
+                {
+                    DatabaseSchema = "INFORMATION_SCHEMA",
+                    Select = new ColumnSet(new[] { "TABLE_SCHEMA", "TABLE_NAME", "COLUMN_NAME", "DATA_TYPE" }),
+                    From = "COLUMNS",
+                    Where = "TABLE_NAME LIKE '%" + pattern + "%' "
+                          + "AND TABLE_SCHEMA IN ('ax','ext','crt','dbo')",
+                    // Paging.Top sin OrderBy falla en silencio en este runtime (gotcha conocido).
+                    OrderBy = "TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
+                };
+                q.Paging.Top = 4000;
+
+                string current = "";
+                int rows = 0;
+                using (var db = new DatabaseContext(request.RequestContext))
+                {
+                    foreach (ExtensionsEntity row in await db.ReadEntityAsync<ExtensionsEntity>(q).ConfigureAwait(false))
+                    {
+                        string owner = GetStr(row, "TABLE_SCHEMA") + "." + GetStr(row, "TABLE_NAME");
+                        if (owner != current)
+                        {
+                            sb.Append("\n" + owner + "\n");
+                            current = owner;
+                        }
+                        sb.Append("    " + GetStr(row, "COLUMN_NAME") + "  (" + GetStr(row, "DATA_TYPE") + ")\n");
+                        rows++;
+                    }
+                }
+
+                sb.Append("\n--- " + rows + " columnas en total ---\n");
+                if (rows == 0)
+                {
+                    sb.Append("Ningún objeto coincide. Probá otro patrón, o usá mode=Inventory para listar todo.\n");
+                }
+                result.Success = true;
+            }
+            catch (Exception ex)
+            {
+                sb.Append("INFORMATION_SCHEMA.COLUMNS falló: " + DeepError(ex) + "\n");
+                result.Success = false;
+                result.ErrorMessage = "No se pudo leer INFORMATION_SCHEMA.COLUMNS.";
+            }
+
+            result.TxtContent = sb.ToString();
+            result.FileName = "columns-" + pattern + ".txt";
+            return result;
+        }
+
+        /// <summary>Solo letras, dígitos y '_' — el patrón se interpola en el WHERE.</summary>
+        private static string SanitizePattern(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+            var sb = new StringBuilder(value.Length);
+            foreach (char c in value.Trim())
+            {
+                if (char.IsLetterOrDigit(c) || c == '_') sb.Append(c);
+            }
+            return sb.ToString();
         }
 
         private async Task<ElectronicDocumentResult> RunInventoryAsync(RunDiagnosticRequest request)

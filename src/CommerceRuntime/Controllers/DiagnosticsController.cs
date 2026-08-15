@@ -13,6 +13,8 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Controllers
     // Employee/Device/Application token is required; it is NOT anonymously reachable.
     // Guardrail: do NOT add modes that dump customer/PII or transactional data without
     // revisiting this access policy first.
+    // The 'Columns' mode reads INFORMATION_SCHEMA.COLUMNS only — object and column names,
+    // never a data row — so it stays within the guardrail above.
     [RoutePrefix("TRU_Diagnostics")]
     [BindEntity(typeof(ElectronicDocumentResult))]
     public class DiagnosticsController : IController
