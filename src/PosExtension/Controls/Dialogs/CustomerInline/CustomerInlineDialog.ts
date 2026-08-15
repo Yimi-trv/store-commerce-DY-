@@ -171,6 +171,42 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             });
     }
 
+    /**
+     * Preselecciona el tipo de dirección según el documento, siguiendo el criterio funcional
+     * de Terranova: RUC (organización) va a Negocio y DNI (persona) va a Inicio.
+     *
+     * Sin esto el combo se quedaba en la primera opción que devuelve el canal —"Factura"— y las
+     * empresas quedaban con la dirección clasificada como factura en vez de negocio.
+     */
+    private _resolveAddressName(documentType: string, purposeValue: number, purposeLabel: string): string {
+        if (documentType === "RUC" && purposeValue === ProxyEntities.AddressType.Business) {
+            return "OFICINA";
+        }
+        if (documentType !== "RUC" && purposeValue === ProxyEntities.AddressType.Home) {
+            return "DOMICILIO";
+        }
+        return purposeLabel;
+    }
+
+    private _selectPurposeForDocumentType(element: HTMLElement, documentType: string): void {
+        const select: HTMLSelectElement =
+            element.querySelector("#customerInlineCreateAddressPurpose") as HTMLSelectElement;
+        if (!select) {
+            return;
+        }
+
+        const wanted: number = documentType === "RUC"
+            ? ProxyEntities.AddressType.Business
+            : ProxyEntities.AddressType.Home;
+
+        for (let i: number = 0; i < select.options.length; i++) {
+            if (parseInt(select.options[i].value, 10) === wanted) {
+                select.selectedIndex = i;
+                return;
+            }
+        }
+    }
+
     private _fillPurposeSelect(element: HTMLElement, options: Array<{ value: number; label: string }>): void {
         const select: HTMLSelectElement = element.querySelector("#customerInlineCreateAddressPurpose") as HTMLSelectElement;
         if (!select) {
@@ -346,6 +382,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 this._setChecked(element, "customerInlineCreateFinalConsumer", sunatData.isFinalConsumer);
                 this._setChecked(element, "customerInlineCreateOthers", sunatData.isOthers);
                 this._setChecked(element, "customerInlineCreateNotDomiciled", sunatData.isNotDomiciled);
+                this._selectPurposeForDocumentType(element, sunatData.documentType);
                 this._showTextResult(element, "customerInlineCreateResult", this._formatSunatSummary(sunatData));
                 this._showMessage(element, "Datos obtenidos. Complete si falta algo y presione Crear en Sistema.");
             });
@@ -445,7 +482,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
                 const address: ProxyEntities.Address = new ProxyEntities.AddressClass();
                 address.ThreeLetterISORegionName = "PER";
-                address.Name = purposeLabel;
+                // Criterio funcional de Terranova para "info de contacto": OFICINA en empresas,
+                // DOMICILIO en personas. Si el cajero eligió un propósito distinto al que
+                // corresponde al documento, manda su elección.
+                address.Name = this._resolveAddressName(sunatData.documentType, purposeValue, purposeLabel);
                 address.Street = addressStreet;
                 address.AddressTypeValue = purposeValue;
                 address.IsPrimary = this._getChecked(element, "customerInlineCreateAddressPrimary");

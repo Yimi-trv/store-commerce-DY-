@@ -163,8 +163,8 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                         isPerceptionAgent: false,
                         isPublicSector: false,
                         isEmergencyZone: false,
+                        isFinalConsumer: true,
                         isExoneratedPerception: false,
-                        isFinalConsumer: false,
                         isOthers: false,
                         isNotDomiciled: false,
                         raw: result

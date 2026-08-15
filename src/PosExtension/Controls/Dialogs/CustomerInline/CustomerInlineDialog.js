@@ -141,6 +141,30 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._fillPurposeSelect(element, fallback);
                     });
                 };
+                CustomerInlineDialog.prototype._resolveAddressName = function (documentType, purposeValue, purposeLabel) {
+                    if (documentType === "RUC" && purposeValue === Entities_1.ProxyEntities.AddressType.Business) {
+                        return "OFICINA";
+                    }
+                    if (documentType !== "RUC" && purposeValue === Entities_1.ProxyEntities.AddressType.Home) {
+                        return "DOMICILIO";
+                    }
+                    return purposeLabel;
+                };
+                CustomerInlineDialog.prototype._selectPurposeForDocumentType = function (element, documentType) {
+                    var select = element.querySelector("#customerInlineCreateAddressPurpose");
+                    if (!select) {
+                        return;
+                    }
+                    var wanted = documentType === "RUC"
+                        ? Entities_1.ProxyEntities.AddressType.Business
+                        : Entities_1.ProxyEntities.AddressType.Home;
+                    for (var i = 0; i < select.options.length; i++) {
+                        if (parseInt(select.options[i].value, 10) === wanted) {
+                            select.selectedIndex = i;
+                            return;
+                        }
+                    }
+                };
                 CustomerInlineDialog.prototype._fillPurposeSelect = function (element, options) {
                     var select = element.querySelector("#customerInlineCreateAddressPurpose");
                     if (!select) {
@@ -280,6 +304,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._setChecked(element, "customerInlineCreateFinalConsumer", sunatData.isFinalConsumer);
                         _this._setChecked(element, "customerInlineCreateOthers", sunatData.isOthers);
                         _this._setChecked(element, "customerInlineCreateNotDomiciled", sunatData.isNotDomiciled);
+                        _this._selectPurposeForDocumentType(element, sunatData.documentType);
                         _this._showTextResult(element, "customerInlineCreateResult", _this._formatSunatSummary(sunatData));
                         _this._showMessage(element, "Datos obtenidos. Complete si falta algo y presione Crear en Sistema.");
                     });
@@ -357,7 +382,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 : "Negocio";
                             var address = new Entities_1.ProxyEntities.AddressClass();
                             address.ThreeLetterISORegionName = "PER";
-                            address.Name = purposeLabel;
+                            address.Name = _this._resolveAddressName(sunatData.documentType, purposeValue, purposeLabel);
                             address.Street = addressStreet;
                             address.AddressTypeValue = purposeValue;
                             address.IsPrimary = _this._getChecked(element, "customerInlineCreateAddressPrimary");

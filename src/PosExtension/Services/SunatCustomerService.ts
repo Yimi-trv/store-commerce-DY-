@@ -212,8 +212,10 @@ export default class SunatCustomerService {
             isPerceptionAgent: false,
             isPublicSector: false,
             isEmergencyZone: false,
+            // Criterio funcional de Terranova: una persona natural (DNI) es consumidor final.
+            // Para RUC la casilla depende de la consulta y queda en manos del cajero.
+            isFinalConsumer: true,
             isExoneratedPerception: false,
-            isFinalConsumer: false,
             isOthers: false,
             isNotDomiciled: false,
             raw: result
