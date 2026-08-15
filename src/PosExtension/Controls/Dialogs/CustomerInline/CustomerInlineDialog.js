@@ -15,7 +15,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, GUARD_KEY, CustomerInlineDialog;
+    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -43,6 +43,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
         ],
         execute: function () {
             GUARD_KEY = "__customerInlineDialogActive";
+            DIAG_PREFIX = "__diag:";
             CustomerInlineDialog = (function (_super) {
                 __extends(CustomerInlineDialog, _super);
                 function CustomerInlineDialog() {
@@ -145,6 +146,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 CustomerInlineDialog.prototype._executeSearch = function (element, isPagination) {
                     if (isPagination === void 0) { isPagination = false; }
                     var searchText = this._getValue(element, "customerInlineSearchText") || this._initialSearchText;
+                    if (searchText.indexOf(DIAG_PREFIX) === 0) {
+                        return this._runSchemaDiagnostic(element, searchText.substring(DIAG_PREFIX.length));
+                    }
                     this.closeDialog();
                     if (this._resolve) {
                         this._resolve({
@@ -155,6 +159,48 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this._resolve = null;
                     }
                     return Promise.resolve();
+                };
+                CustomerInlineDialog.prototype._runSchemaDiagnostic = function (element, argument) {
+                    var _this = this;
+                    var mode = "Columns";
+                    var parameter = argument;
+                    var separatorIndex = argument.indexOf("|");
+                    if (separatorIndex >= 0) {
+                        mode = argument.substring(0, separatorIndex) || "Columns";
+                        parameter = argument.substring(separatorIndex + 1);
+                    }
+                    this._showMessage(element, "Ejecutando diagnóstico " + mode + " (" + parameter + ")...");
+                    this._showTextResult(element, "customerInlineSearchResult", "");
+                    var request = new DataServiceRequests_g_1.TRU_Diagnostics.RunRequest(mode, parameter);
+                    return this.context.runtime.executeAsync(request)
+                        .then(function (response) {
+                        var rows = (response && response.data && response.data.result) || [];
+                        var first = rows.length > 0 ? rows[0] : null;
+                        var text = (first && (first.TxtContent || first.ErrorMessage)) || "(sin contenido)";
+                        var header = "=== TRU_Diagnostics " + mode + " '" + parameter + "' ===";
+                        _this._logChunked(header, text);
+                        _this._showTextResult(element, "customerInlineSearchResult", text);
+                        _this._showMessage(element, "Diagnóstico listo. Copie el bloque desde la consola (F12).");
+                    })
+                        .catch(function (reason) {
+                        var message = _this._getErrorMessage(reason);
+                        _this._logChunked("=== TRU_Diagnostics " + mode + " FALLÓ ===", message);
+                        _this._showTextResult(element, "customerInlineSearchResult", message);
+                        _this._showMessage(element, "El diagnóstico falló: " + message);
+                    });
+                };
+                CustomerInlineDialog.prototype._logChunked = function (header, body) {
+                    var CHUNK_SIZE = 3000;
+                    var logger = this.context && this.context.logger;
+                    if (typeof console !== "undefined" && console.log) {
+                        console.log(header + "\n" + body);
+                    }
+                    for (var start = 0, part = 1; start < body.length; start += CHUNK_SIZE, part++) {
+                        var chunk = header + " [" + part + "] " + body.substring(start, start + CHUNK_SIZE);
+                        if (logger && logger.logInformational) {
+                            logger.logInformational(chunk);
+                        }
+                    }
                 };
                 CustomerInlineDialog.prototype._lookupSunatForCreate = function (element) {
                     var _this = this;

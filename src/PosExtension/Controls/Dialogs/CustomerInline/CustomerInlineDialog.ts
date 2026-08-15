@@ -20,9 +20,20 @@ import {
 } from "PosApi/Consume/Device";
 import { ProxyEntities } from "PosApi/Entities";
 import SunatCustomerService, { ISunatCustomerData } from "../../../Services/SunatCustomerService";
-import { TRU_GeographicData, Entities } from "../../../DataService/DataServiceRequests.g";
+import { TRU_Diagnostics, TRU_GeographicData, Entities } from "../../../DataService/DataServiceRequests.g";
 
 const GUARD_KEY: string = "__customerInlineDialogActive";
+
+/**
+ * Prefijo de soporte. Escribirlo en el campo de búsqueda ejecuta un diagnóstico de esquema
+ * en vez de una búsqueda: `__diag:CUST` lista las columnas de los objetos del channel DB que
+ * contienen "CUST". Es la única vía para inspeccionar el esquema en entornos donde no se
+ * pueden lanzar peticiones a Retail Server a mano.
+ *
+ * Deliberadamente sin UI propia: no debe aparecerle al cajero. Eliminar cuando la búsqueda
+ * de clientes dentro del modal esté terminada.
+ */
+const DIAG_PREFIX: string = "__diag:";
 
 export type CustomerInlineDialogMode = "search" | "create" | "edit";
 
@@ -164,6 +175,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _executeSearch(element: HTMLElement, isPagination: boolean = false): Promise<void> {
         const searchText: string = this._getValue(element, "customerInlineSearchText") || this._initialSearchText;
 
+        if (searchText.indexOf(DIAG_PREFIX) === 0) {
+            return this._runSchemaDiagnostic(element, searchText.substring(DIAG_PREFIX.length));
+        }
+
         this.closeDialog();
         if (this._resolve) {
             this._resolve({
@@ -174,6 +189,68 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             this._resolve = null;
         }
         return Promise.resolve();
+    }
+
+    /**
+     * Ejecuta un modo del endpoint TRU_Diagnostics y vuelca el resultado en la consola del
+     * navegador, que es de donde el soporte puede copiarlo cuando no hay acceso para lanzar
+     * peticiones contra Retail Server.
+     *
+     * Sintaxis: `__diag:CUST` (modo Columns, patrón CUST) o `__diag:Views|` (modo explícito,
+     * parámetro tras la barra).
+     *
+     * La salida se parte en bloques: el logger del POS trunca a 8192 caracteres y el listado
+     * de columnas del channel DB los supera con holgura.
+     */
+    private _runSchemaDiagnostic(element: HTMLElement, argument: string): Promise<void> {
+        let mode: string = "Columns";
+        let parameter: string = argument;
+
+        const separatorIndex: number = argument.indexOf("|");
+        if (separatorIndex >= 0) {
+            mode = argument.substring(0, separatorIndex) || "Columns";
+            parameter = argument.substring(separatorIndex + 1);
+        }
+
+        this._showMessage(element, "Ejecutando diagnóstico " + mode + " (" + parameter + ")...");
+        this._showTextResult(element, "customerInlineSearchResult", "");
+
+        const request: TRU_Diagnostics.RunRequest<TRU_Diagnostics.RunResponse> =
+            new TRU_Diagnostics.RunRequest(mode, parameter);
+
+        return this.context.runtime.executeAsync(request)
+            .then((response: any): void => {
+                const rows: any[] = (response && response.data && response.data.result) || [];
+                const first: any = rows.length > 0 ? rows[0] : null;
+                const text: string = (first && (first.TxtContent || first.ErrorMessage)) || "(sin contenido)";
+                const header: string = "=== TRU_Diagnostics " + mode + " '" + parameter + "' ===";
+
+                this._logChunked(header, text);
+                this._showTextResult(element, "customerInlineSearchResult", text);
+                this._showMessage(element, "Diagnóstico listo. Copie el bloque desde la consola (F12).");
+            })
+            .catch((reason: any): void => {
+                const message: string = this._getErrorMessage(reason);
+                this._logChunked("=== TRU_Diagnostics " + mode + " FALLÓ ===", message);
+                this._showTextResult(element, "customerInlineSearchResult", message);
+                this._showMessage(element, "El diagnóstico falló: " + message);
+            });
+    }
+
+    private _logChunked(header: string, body: string): void {
+        const CHUNK_SIZE: number = 3000;
+        const logger: any = this.context && this.context.logger;
+
+        if (typeof console !== "undefined" && console.log) {
+            console.log(header + "\n" + body);
+        }
+
+        for (let start: number = 0, part: number = 1; start < body.length; start += CHUNK_SIZE, part++) {
+            const chunk: string = header + " [" + part + "] " + body.substring(start, start + CHUNK_SIZE);
+            if (logger && logger.logInformational) {
+                logger.logInformational(chunk);
+            }
+        }
     }
 
     private _lookupSunatForCreate(element: HTMLElement): Promise<void> {
