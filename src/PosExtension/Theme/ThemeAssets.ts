@@ -216,7 +216,23 @@ export function construirCss(): string {
 
     // CSS COMPACTO (1024x768)
     var cssCompacto: string = ""
-        + "#TabControl{position:absolute !important;left:518px !important;top:132px !important;right:auto !important;width:452px !important;height:422px !important;transform:none !important;pointer-events:none !important;}\n"
+        // Reparto vertical de la columna derecha en 768px de alto (medido en vivo):
+        //   pestanas 108-170 | tarjeta numpad hasta 508 | Boleta 516-610 | tiles 618-745
+        // top 132->48: las pestanas arrancan a la MISMA altura que el carrito (y=108), como en
+        // la vista amplia. height 422->400 para que quepan las pestanas ARRIBA y el Enter entero.
+        + "#TabControl{position:absolute !important;left:518px !important;top:48px !important;right:auto !important;width:452px !important;height:400px !important;transform:none !important;pointer-events:none !important;}\n"
+        // El carrito perdia su tarjeta en compacto (borde 0, radio 0) mientras el resto de
+        // paneles si la tenian.
+        + ".transactionLinesPane{border:1px solid rgba(255,255,255,0.12) !important;border-radius:14px !important;box-sizing:border-box !important;overflow:hidden !important;}\n"
+        // Las pestanas van ENCIMA del numpad (en fila). Sin esto el rail se queda en fila y las
+        // manda a x=1092: fuera de una pantalla de 1024.
+        + ".commerceTabControl.righttabs{flex-direction:column !important;}\n"
+        + ".commerceTabControl.righttabs .tabsContainer{order:-1 !important;display:flex !important;flex-direction:row !important;gap:6px !important;width:340px !important;height:62px !important;margin:0 0 8px auto !important;}\n"
+        + ".commerceTabControl.righttabs .tabsContainer .tab{width:80px !important;height:58px !important;margin:0 !important;}\n"
+        // El bloque de teclas trae altura propia (304px) y no cabia: se fija junto al tamano de tecla.
+        + "#TabControl .numpad-control-buttons{height:224px !important;max-height:224px !important;min-height:0 !important;}\n"
+        + "#TabControl .numpad-control-buttons button,#TabControl .numpad-control-buttons .enter{height:32px !important;min-height:32px !important;max-height:32px !important;}\n"
+        + "#TabControl .numpad-control-buttons button *{font-size:20px !important;}\n"
         + "#TabControl .commerceTabControl.righttabs{width:452px !important;height:400px !important;overflow:visible !important;box-sizing:border-box !important;}\n"
         + "#TabControl .commerceTabControl.righttabs .tabsContainer{display:flex !important;flex-direction:row !important;justify-content:flex-start !important;align-items:flex-start !important;width:340px !important;min-width:340px !important;max-width:340px !important;height:62px !important;gap:6px !important;padding:0 !important;margin:0 0 8px 112px !important;left:0 !important;right:auto !important;transform:none !important;overflow:visible !important;box-sizing:border-box !important;pointer-events:auto !important;}\n"
         + "#TabControl .commerceTabControl.righttabs .tabsContainer .tab{position:relative !important;flex:0 0 80px !important;width:80px !important;min-width:80px !important;max-width:80px !important;height:58px !important;left:auto !important;right:auto !important;top:auto !important;margin:0 !important;transform:none !important;border-radius:9px !important;box-sizing:border-box !important;border:1px solid rgba(255,255,255,0.25) !important;background:#161514 !important;}\n"
@@ -251,6 +267,13 @@ export function construirCss(): string {
         + "#ButtonGrid3Control .sct-b-t{font-size:16px !important;}\n"
         + "#ButtonGrid3Control .sct-b-s{font-size:12px !important;}\n"
         + "#CustomControl1{width:340px !important;height:94px !important;min-height:0 !important;max-height:94px !important;padding:6px 10px 7px !important;box-sizing:border-box !important;overflow:hidden !important;border:1px solid rgba(255,255,255,0.12) !important;border-radius:14px !important;background:rgba(22,21,20,0.6) !important;}\n"
+        // El titulo de la tarjeta ("Boleta"/"Factura") solo tenia regla en el bloque AMPLIO
+        // (.sct-live-zona-boleta .sct-titulo, 17px). En compacto se quedaba con el h3 nativo del
+        // POS dentro de una tarjeta de 94px, que es casi un tercio del alto disponible.
+        // Se ancla por las DOS vias: por id y por la clase que el motor pone en la zona. Si algun
+        // dia la zona resulta ser un envoltorio de #CustomControl1 en vez del control mismo, el
+        // ancla por id dejaria de casar y la regla pareceria aplicada sin estarlo.
+        + "#CustomControl1 .sct-titulo,.sct-boleta .sct-titulo{font-size:12px !important;font-weight:600 !important;color:#FFFFFF !important;line-height:1.1 !important;margin:0 !important;}\n"
         + "#CustomControl1 select{width:100% !important;height:24px !important;min-height:24px !important;font-size:11px !important;}\n"
         + "#CustomControl1 #btnToggle{width:100% !important;height:26px !important;min-height:26px !important;max-height:26px !important;font-size:11px !important;line-height:1 !important;}\n"
         + "#ButtonGrid4, #ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer{width:340px !important;height:127px !important;min-height:0 !important;max-height:127px !important;overflow:hidden !important;padding:0 !important;}\n"
@@ -279,26 +302,45 @@ export function construirCss(): string {
         + "#TotalsPanel{right:auto !important;width:312px !important;height:228px !important;min-height:0px !important;max-height:228px !important;transform:translateY(-20px) !important;box-sizing:border-box !important;overflow:hidden !important;}\n"
         + "#TotalsPanel .fields.row{width:100% !important;height:188px !important;min-height:188px !important;max-height:188px !important;}\n"
         + "#TotalsPanel .panel-footer{width:100% !important;height:40px !important;min-height:40px !important;max-height:40px !important;}\n"
-        + "#CustomControl1{position:absolute !important;left:630px !important;top:554px !important;right:auto !important;width:340px !important;height:94px !important;min-height:0px !important;max-height:94px !important;transform:none !important;padding:6px 10px 7px !important;overflow:hidden !important;}\n"
-        + "#ButtonGrid4, #ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer{position:absolute !important;left:630px !important;top:644px !important;right:auto !important;width:340px !important;height:127px !important;min-height:0px !important;max-height:127px !important;transform:none !important;}\n"
+        // top ajustado (554 -> 456) para que Boleta y los tiles quepan en 768px de alto.
+        + "#CustomControl1{position:absolute !important;left:630px !important;top:456px !important;right:auto !important;width:340px !important;height:94px !important;min-height:0px !important;max-height:94px !important;transform:none !important;padding:6px 10px 7px !important;overflow:hidden !important;}\n"
+        // BUG CORREGIDO (1024x768): esta regla aplicaba la MISMA posicion absoluta a tres
+        // elementos ANIDADOS (#ButtonGrid4 > #ButtonGrid4Control > .buttonsContainer). Como cada
+        // uno se posiciona respecto al anterior, los desplazamientos se SUMABAN
+        // (630+630+630 / 644+644+644) y los tiles de pago acababan en x=1910, y=1961:
+        // completamente fuera de la pantalla. Solo la ZONA exterior lleva left/top.
+        + "#ButtonGrid4{position:absolute !important;left:630px !important;top:558px !important;right:auto !important;width:340px !important;height:127px !important;min-height:0px !important;max-height:127px !important;transform:none !important;}\n"
+        + "#ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer{position:absolute !important;left:0 !important;top:0 !important;right:auto !important;width:340px !important;height:127px !important;min-height:0px !important;max-height:127px !important;transform:none !important;}\n"
+        // El contenedor nativo del teclado mide 256px con overflow:hidden y recortaba la 4a
+        // columna (Retroceso, Mas/Menos, Veces, abc), que llega hasta los 316px del bloque.
+        + "#NumberPad, #NumberPad .numpad{width:316px !important;max-width:316px !important;}\n"
+        // BUG CORREGIDO (1024x768) "botones entrecortados": la ZONA exterior que HQ dibuja
+        // (#ButtonGridN, clase layoutControl) mide 300px y trae overflow:hidden, pero el control
+        // interior lo ensanchamos a 316px. La zona recortaba los 16px de la derecha, que es
+        // justo donde caen las esquinas redondeadas: los botones se veian cortados a la derecha
+        // y redondeados solo a la izquierda. Se libera el recorte de la zona (los botones ya
+        // quedan dentro de la tarjeta por posicionamiento propio).
+        + "#ButtonGrid1, #ButtonGrid2, #ButtonGrid3{overflow:visible !important;}\n"
         + "#ButtonGrid1Control, #ButtonGrid1Control .buttonsContainer{width:316px !important;height:238px !important;}\n"
-        + ".sct-cbtn{position:absolute !important;left:0px !important;width:316px !important;height:74px !important;min-height:0 !important;max-height:74px !important;transform:none !important;color:#FFFFFF !important;background-image:none !important;}\n"
+        // 302 + left 7 deja margen simetrico respecto a la tarjeta (20px izq / 18px der).
+        + ".sct-cbtn{position:absolute !important;left:7px !important;width:302px !important;height:74px !important;min-height:0 !important;max-height:74px !important;transform:none !important;color:#FFFFFF !important;background-image:none !important;}\n"
         + ".sct-cbtn-primary{background-color:#C8102E !important;}\n"
         + ".sct-cbtn-dark{background-color:#1B1A19 !important;}\n"
         + ".sct-cbtn:nth-child(1){top:0px !important;}\n"
         + ".sct-cbtn:nth-child(2){top:82px !important;}\n"
         + ".sct-cbtn:nth-child(3){top:164px !important;}\n"
         + "#ButtonGrid2Control, #ButtonGrid2Control .buttonsContainer{width:316px !important;height:254px !important;}\n"
-        + ".sct-tbtn{position:absolute !important;width:100px !important;height:122px !important;min-height:0 !important;max-height:122px !important;transform:none !important;color:#FFFFFF !important;background-image:none !important;background-color:#1B1A19 !important;}\n"
+        // 100px x3 llegaba al borde interno de la tarjeta: 96 + margen de 7 a cada lado.
+        + ".sct-tbtn{position:absolute !important;width:96px !important;height:122px !important;min-height:0 !important;max-height:122px !important;transform:none !important;color:#FFFFFF !important;background-image:none !important;background-color:#1B1A19 !important;}\n"
         + ".sct-tbtn.sct-t5{background-color:#C8102E !important;}\n"
-        + ".sct-tbtn.sct-t1{left:0px !important;top:0px !important;}\n"
-        + ".sct-tbtn.sct-t2{left:108px !important;top:0px !important;}\n"
-        + ".sct-tbtn.sct-t3{left:216px !important;top:0px !important;}\n"
-        + ".sct-tbtn.sct-t4{left:0px !important;top:132px !important;}\n"
-        + ".sct-tbtn.sct-t5{left:108px !important;top:132px !important;}\n"
-        + ".sct-tbtn.sct-t6{left:216px !important;top:132px !important;}\n"
+        + ".sct-tbtn.sct-t1{left:7px !important;top:0px !important;}\n"
+        + ".sct-tbtn.sct-t2{left:110px !important;top:0px !important;}\n"
+        + ".sct-tbtn.sct-t3{left:213px !important;top:0px !important;}\n"
+        + ".sct-tbtn.sct-t4{left:7px !important;top:132px !important;}\n"
+        + ".sct-tbtn.sct-t5{left:110px !important;top:132px !important;}\n"
+        + ".sct-tbtn.sct-t6{left:213px !important;top:132px !important;}\n"
         + "#ButtonGrid3Control, #ButtonGrid3Control .buttonsContainer{width:316px !important;height:236px !important;}\n"
-        + ".sct-bbtn{position:absolute !important;left:0px !important;width:316px !important;height:112px !important;min-height:0 !important;max-height:112px !important;transform:none !important;background-color:#1B1A19 !important;color:#FFFFFF !important;background-image:none !important;}\n"
+        + ".sct-bbtn{position:absolute !important;left:7px !important;width:302px !important;height:112px !important;min-height:0 !important;max-height:112px !important;transform:none !important;background-color:#1B1A19 !important;color:#FFFFFF !important;background-image:none !important;}\n"
         + ".sct-bbtn.sct-b1{top:0px !important;}\n"
         + ".sct-bbtn.sct-b2{top:124px !important;}\n"
         + "#ButtonGrid4Control .sct-pbtn{position:absolute !important;top:0px !important;width:82px !important;height:64px !important;min-height:0 !important;max-height:64px !important;transform:none !important;}\n"
