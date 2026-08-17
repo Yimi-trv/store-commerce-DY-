@@ -107,8 +107,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _initialSearchText: string;
     private readonly _sunatService: SunatCustomerService;
     private _lastSunatData: ISunatCustomerData | null;
-    private readonly _searchTop: number = 50;
+    // 25 en vez de 50: el cajero no revisa 50 filas, y menos payload es menos render.
+    private readonly _searchTop: number = 25;
     private _searchSkip: number = 0;
+    private _searchInFlight: boolean = false;
+
+    /**
+     * Resultados por término de búsqueda, compartidos entre aperturas del modal — que crea una
+     * instancia nueva cada vez. Vive en memoria y se pierde al recargar el POS.
+     */
+    private static _searchCache: { [key: string]: any[] } = {};
 
     constructor() {
         super();
@@ -194,10 +202,47 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             }
         }
 
+        this._widenHostDialog(element);
         this._prefillInitialValues(element);
         this._setMode(element, this._mode);
         this._loadAddressPurposes(element);
         this._loadCustomerGroups(element);
+    }
+
+    /**
+     * Ensancha el contenedor del diálogo del POS.
+     *
+     * Poner un ancho grande en el CSS propio NO sirve: el contenedor del POS tiene ancho fijo
+     * y el contenido simplemente se desborda y queda cortado — verificado en UAT, la tabla de
+     * resultados salía recortada por la derecha. Hay que subir por el DOM y ensanchar el
+     * contenedor real.
+     *
+     * Se recorren varios ancestros porque la estructura del diálogo cambia entre versiones del
+     * POS: se ensancha el primero que ya tenga un ancho acotado. Si no se encuentra ninguno,
+     * el modal queda angosto pero funcional — nunca se rompe por esto.
+     */
+    private _widenHostDialog(element: HTMLElement): void {
+        const TARGET_WIDTH: number = 900;
+        const applied: string[] = [];
+
+        let node: HTMLElement = element.parentElement;
+        for (let depth: number = 0; node && depth < 6; depth++) {
+            const width: number = node.offsetWidth;
+
+            // Solo interesan los contenedores que hoy limitan el ancho. Por encima del diálogo
+            // están el overlay y el body, que ya ocupan toda la pantalla.
+            if (width > 0 && width < TARGET_WIDTH) {
+                node.style.width = TARGET_WIDTH + "px";
+                node.style.maxWidth = "95vw";
+                applied.push(depth + ":" + (node.className || node.tagName) + " (" + width + "px)");
+            }
+
+            node = node.parentElement;
+        }
+
+        this._logChunked("=== Ancho del dialogo ===", applied.length > 0
+            ? "ensanchados -> " + applied.join(" | ")
+            : "no se encontro contenedor acotado; el modal queda con el ancho por defecto");
     }
 
     /**
@@ -421,12 +466,31 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             this._searchSkip = 0;
         }
 
-        this._showMessage(element, "Buscando...");
+        // Retail Server tarda ~3 s en esta consulta — el buscador nativo del POS tarda lo mismo,
+        // así que es del servidor. Repetir el mismo término es habitual en caja (el cajero
+        // vuelve atrás y busca de nuevo), y ahí la caché sí ahorra la espera completa.
+        const cacheKey: string = searchText.toUpperCase() + "#" + this._searchSkip;
+        const cachedResults: any[] = CustomerInlineDialog._searchCache[cacheKey];
+        if (cachedResults) {
+            this._renderSearchResults(element, cachedResults);
+            this._showMessage(element, cachedResults.length + " resultado(s) (de la última búsqueda). Toque uno para asignarlo.");
+            return Promise.resolve();
+        }
+
+        // Sin esto, tocar el botón dos veces lanza dos consultas de 3 s en paralelo.
+        if (this._searchInFlight) {
+            return Promise.resolve();
+        }
+        this._searchInFlight = true;
+        this._setSearchBusy(element, true);
+        this._showMessage(element, "Buscando en el sistema... puede tardar unos segundos.");
 
         return this.context.runtime
             .executeAsync(new CustomerSearchRequest<CustomerSearchResponse>(searchText, this._searchTop, this._searchSkip))
             .then((response: any): void => {
                 const results: any[] = (response && response.data && response.data.result) || [];
+                CustomerInlineDialog._searchCache[cacheKey] = results;
+
                 this._renderSearchResults(element, results);
 
                 if (results.length === 0) {
@@ -443,7 +507,20 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 this._showMessage(element,
                     "No se pudo buscar: " + this._getErrorMessage(reason)
                     + " Puede usar el buscador del POS.");
+            })
+            .then((): void => {
+                this._searchInFlight = false;
+                this._setSearchBusy(element, false);
             });
+    }
+
+    private _setSearchBusy(element: HTMLElement, busy: boolean): void {
+        const button: HTMLButtonElement =
+            element.querySelector("#customerInlineSearchBtn") as HTMLButtonElement;
+        if (button) {
+            button.disabled = busy;
+            button.textContent = busy ? "Buscando..." : "Buscar";
+        }
     }
 
     /**
@@ -474,10 +551,19 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         for (let i: number = 0; i < results.length; i++) {
             const customer: any = results[i];
             const row: HTMLTableRowElement = body.insertRow();
-            row.insertCell().textContent = customer.AccountNumber || "";
-            row.insertCell().textContent = customer.FullName || "";
-            row.insertCell().textContent = customer.FullAddress || "";
-            row.insertCell().textContent = customer.Phone || "";
+            const values: string[] = [
+                customer.AccountNumber || "",
+                customer.FullName || "",
+                customer.FullAddress || "",
+                customer.Phone || ""
+            ];
+            for (let v: number = 0; v < values.length; v++) {
+                const cell: HTMLTableCellElement = row.insertCell();
+                cell.textContent = values[v];
+                // Las celdas recortan con puntos suspensivos; el título deja ver el valor
+                // completo al pasar el mouse sin necesidad de ensanchar la columna.
+                cell.title = values[v];
+            }
 
             // El accountNumber se captura por closure: en ES5 `customer` es de la iteración
             // actual porque se declara dentro del for, pero se guarda explícito por claridad.

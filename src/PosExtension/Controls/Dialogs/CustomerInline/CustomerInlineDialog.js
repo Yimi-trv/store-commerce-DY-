@@ -57,8 +57,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 __extends(CustomerInlineDialog, _super);
                 function CustomerInlineDialog() {
                     var _this = _super.call(this) || this;
-                    _this._searchTop = 50;
+                    _this._searchTop = 25;
                     _this._searchSkip = 0;
+                    _this._searchInFlight = false;
                     _this._mode = "search";
                     _this._resolve = null;
                     _this._currentCustomer = null;
@@ -126,10 +127,28 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             editTab.style.display = "none";
                         }
                     }
+                    this._widenHostDialog(element);
                     this._prefillInitialValues(element);
                     this._setMode(element, this._mode);
                     this._loadAddressPurposes(element);
                     this._loadCustomerGroups(element);
+                };
+                CustomerInlineDialog.prototype._widenHostDialog = function (element) {
+                    var TARGET_WIDTH = 900;
+                    var applied = [];
+                    var node = element.parentElement;
+                    for (var depth = 0; node && depth < 6; depth++) {
+                        var width = node.offsetWidth;
+                        if (width > 0 && width < TARGET_WIDTH) {
+                            node.style.width = TARGET_WIDTH + "px";
+                            node.style.maxWidth = "95vw";
+                            applied.push(depth + ":" + (node.className || node.tagName) + " (" + width + "px)");
+                        }
+                        node = node.parentElement;
+                    }
+                    this._logChunked("=== Ancho del dialogo ===", applied.length > 0
+                        ? "ensanchados -> " + applied.join(" | ")
+                        : "no se encontro contenedor acotado; el modal queda con el ancho por defecto");
                 };
                 CustomerInlineDialog.prototype._loadCustomerGroups = function (element) {
                     var _this = this;
@@ -299,11 +318,24 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (!isPagination) {
                         this._searchSkip = 0;
                     }
-                    this._showMessage(element, "Buscando...");
+                    var cacheKey = searchText.toUpperCase() + "#" + this._searchSkip;
+                    var cachedResults = CustomerInlineDialog._searchCache[cacheKey];
+                    if (cachedResults) {
+                        this._renderSearchResults(element, cachedResults);
+                        this._showMessage(element, cachedResults.length + " resultado(s) (de la última búsqueda). Toque uno para asignarlo.");
+                        return Promise.resolve();
+                    }
+                    if (this._searchInFlight) {
+                        return Promise.resolve();
+                    }
+                    this._searchInFlight = true;
+                    this._setSearchBusy(element, true);
+                    this._showMessage(element, "Buscando en el sistema... puede tardar unos segundos.");
                     return this.context.runtime
                         .executeAsync(new CustomerSearchRequest_1.CustomerSearchRequest(searchText, this._searchTop, this._searchSkip))
                         .then(function (response) {
                         var results = (response && response.data && response.data.result) || [];
+                        CustomerInlineDialog._searchCache[cacheKey] = results;
                         _this._renderSearchResults(element, results);
                         if (results.length === 0) {
                             _this._showMessage(element, _this._searchSkip > 0
@@ -319,7 +351,18 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._renderSearchResults(element, []);
                         _this._showMessage(element, "No se pudo buscar: " + _this._getErrorMessage(reason)
                             + " Puede usar el buscador del POS.");
+                    })
+                        .then(function () {
+                        _this._searchInFlight = false;
+                        _this._setSearchBusy(element, false);
                     });
+                };
+                CustomerInlineDialog.prototype._setSearchBusy = function (element, busy) {
+                    var button = element.querySelector("#customerInlineSearchBtn");
+                    if (button) {
+                        button.disabled = busy;
+                        button.textContent = busy ? "Buscando..." : "Buscar";
+                    }
                 };
                 CustomerInlineDialog.prototype._renderSearchResults = function (element, results) {
                     var _this = this;
@@ -343,10 +386,17 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     var _loop_1 = function (i) {
                         var customer = results[i];
                         var row = body.insertRow();
-                        row.insertCell().textContent = customer.AccountNumber || "";
-                        row.insertCell().textContent = customer.FullName || "";
-                        row.insertCell().textContent = customer.FullAddress || "";
-                        row.insertCell().textContent = customer.Phone || "";
+                        var values = [
+                            customer.AccountNumber || "",
+                            customer.FullName || "",
+                            customer.FullAddress || "",
+                            customer.Phone || ""
+                        ];
+                        for (var v = 0; v < values.length; v++) {
+                            var cell = row.insertCell();
+                            cell.textContent = values[v];
+                            cell.title = values[v];
+                        }
                         var accountNumber = customer.AccountNumber || "";
                         row.onclick = function () {
                             _this._selectCustomerFromSearch(element, accountNumber);
@@ -969,6 +1019,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (this.context && this.context.logger)
                         this.context.logger.logError(message);
                 };
+                CustomerInlineDialog._searchCache = {};
                 return CustomerInlineDialog;
             }(Dialogs_1.ExtensionTemplatedDialogBase));
             exports_1("default", CustomerInlineDialog);

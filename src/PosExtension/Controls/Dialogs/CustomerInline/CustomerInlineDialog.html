@@ -24,8 +24,11 @@
             border: 1px solid #d8d8d8;
         }
 
+        /* table-layout fijo + anchos por columna: sin esto la columna Cuenta se angosta,
+           "TRV-018284" parte en dos líneas y las líneas se enciman. */
         .customer-inline-dialog__results table {
             width: 100%;
+            table-layout: fixed;
             border-collapse: collapse;
             font-size: 14px;
         }
@@ -43,7 +46,18 @@
         .customer-inline-dialog__results td {
             padding: 8px 10px;
             border-bottom: 1px solid #ededed;
+            /* Una sola línea por celda: recortar es preferible a que el texto se encime. */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
+
+        .customer-inline-dialog__results th:nth-child(1),
+        .customer-inline-dialog__results td:nth-child(1) { width: 120px; }
+        .customer-inline-dialog__results th:nth-child(2),
+        .customer-inline-dialog__results td:nth-child(2) { width: 34%; }
+        .customer-inline-dialog__results th:nth-child(4),
+        .customer-inline-dialog__results td:nth-child(4) { width: 110px; }
 
         .customer-inline-dialog__results tbody tr {
             cursor: pointer;
