@@ -1363,12 +1363,39 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
             return this._applyChannelDefaults(customer).then((): Promise<void> => {
                 this._showMessage(element, "Paso 3: Registrando cliente en D365...");
+
+                // Volcado del cliente EXACTO que se envía. Crear como persona falla con "datos
+                // incompletos" mientras que como organización funciona, así que hay que ver qué
+                // campo difiere en lugar de suponerlo.
+                this._logChunked("=== Cliente que se envia ===", this._stringify({
+                    AccountNumber: customer.AccountNumber,
+                    CustomerTypeValue: customer.CustomerTypeValue,
+                    Name: customer.Name,
+                    FirstName: customer.FirstName,
+                    MiddleName: customer.MiddleName,
+                    LastName: customer.LastName,
+                    CustomerGroup: customer.CustomerGroup,
+                    CurrencyCode: customer.CurrencyCode,
+                    Language: customer.Language,
+                    ReceiptSettings: customer.ReceiptSettings,
+                    IdentificationNumber: customer.IdentificationNumber,
+                    Phone: customer.Phone,
+                    Email: customer.Email,
+                    Addresses: (customer.Addresses || []).length,
+                    ExtensionProperties: (customer.ExtensionProperties || []).length
+                }));
+
                 const createRequest: CreateCustomerServiceRequest = new CreateCustomerServiceRequest(this._getCorrelationId(), customer);
 
                 return this.context.runtime.executeAsync(createRequest)
                     .then((response: any): Promise<void> => {
                         if (response.canceled || !response.data || !response.data.customer) {
-                            this._showMessage(element, "La creación del cliente falló o fue cancelada por el sistema.");
+                            // El motivo suele venir en la respuesta y hasta ahora se descartaba,
+                            // dejando al cajero con un mensaje genérico.
+                            this._logChunked("=== Alta cancelada por el sistema ===", this._stringify(response));
+                            this._showMessage(element,
+                                "La creación del cliente falló o fue cancelada por el sistema. "
+                                + "Revise la consola (F12) para el detalle.");
                             return Promise.resolve();
                         }
 

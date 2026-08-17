@@ -952,11 +952,30 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._showMessage(element, "Paso 2: Aplicando valores por defecto del canal...");
                         return _this._applyChannelDefaults(customer).then(function () {
                             _this._showMessage(element, "Paso 3: Registrando cliente en D365...");
+                            _this._logChunked("=== Cliente que se envia ===", _this._stringify({
+                                AccountNumber: customer.AccountNumber,
+                                CustomerTypeValue: customer.CustomerTypeValue,
+                                Name: customer.Name,
+                                FirstName: customer.FirstName,
+                                MiddleName: customer.MiddleName,
+                                LastName: customer.LastName,
+                                CustomerGroup: customer.CustomerGroup,
+                                CurrencyCode: customer.CurrencyCode,
+                                Language: customer.Language,
+                                ReceiptSettings: customer.ReceiptSettings,
+                                IdentificationNumber: customer.IdentificationNumber,
+                                Phone: customer.Phone,
+                                Email: customer.Email,
+                                Addresses: (customer.Addresses || []).length,
+                                ExtensionProperties: (customer.ExtensionProperties || []).length
+                            }));
                             var createRequest = new Customer_1.CreateCustomerServiceRequest(_this._getCorrelationId(), customer);
                             return _this.context.runtime.executeAsync(createRequest)
                                 .then(function (response) {
                                 if (response.canceled || !response.data || !response.data.customer) {
-                                    _this._showMessage(element, "La creación del cliente falló o fue cancelada por el sistema.");
+                                    _this._logChunked("=== Alta cancelada por el sistema ===", _this._stringify(response));
+                                    _this._showMessage(element, "La creación del cliente falló o fue cancelada por el sistema. "
+                                        + "Revise la consola (F12) para el detalle.");
                                     return Promise.resolve();
                                 }
                                 var createdCustomer = response.data.customer;
