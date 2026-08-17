@@ -465,8 +465,14 @@ export default class SunatCustomerService {
             customerTypeValue: 1,
             name: (result && result.nombre_completo) || this._joinName(result && result.nombres, result && result.apellido_paterno, result && result.apellido_materno),
             firstName: (result && result.nombres) || "",
-            lastName: (result && result.apellido_paterno) || "",
-            middleName: (result && result.apellido_materno) || "",
+            // LOS DOS APELLIDOS VAN JUNTOS EN LastName.
+            // La API los entrega separados y el materno se copiaba a MiddleName, así que en el
+            // formulario "Apellidos" salía solo el paterno. Peor: D365 compone el nombre de una
+            // persona como FirstName + MiddleName + LastName, o sea "DANILO LEONARDO MELGAREJO
+            // MARCHENA" — los apellidos al revés en el comprobante. MiddleName es un segundo
+            // NOMBRE, no el apellido materno; se deja vacío.
+            lastName: this._joinName(result && result.apellido_paterno, result && result.apellido_materno),
+            middleName: "",
             padronesText: "",
             isRetentionAgent: false,
             isPerceptionAgent: false,
@@ -535,7 +541,7 @@ export default class SunatCustomerService {
         customer.ExtensionProperties.push(property);
     }
 
-    private _joinName(first: string, middle: string, last: string): string {
+    private _joinName(first: string, middle: string, last?: string): string {
         return [first || "", middle || "", last || ""].join(" ").replace(/\s+/g, " ").trim();
     }
 

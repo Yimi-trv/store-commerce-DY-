@@ -145,8 +145,14 @@ export default class SunatLookupCommand extends CustomerAddEditExtensionCommandB
         } else {
             // DNI
             updatedCustomer.FirstName = resultado.nombres || "";
-            updatedCustomer.LastName = resultado.apellido_paterno || "";
-            updatedCustomer.MiddleName = resultado.apellido_materno || "";
+            // Los DOS apellidos van en LastName. El materno estaba en MiddleName, que es un
+            // segundo NOMBRE: D365 compone la persona como FirstName + MiddleName + LastName y
+            // el comprobante salía con los apellidos invertidos. Mismo criterio que el modal
+            // (SunatCustomerService), para que un cliente no quede distinto según por dónde se
+            // haya creado.
+            updatedCustomer.LastName = [resultado.apellido_paterno || "", resultado.apellido_materno || ""]
+                .join(" ").replace(/\s+/g, " ").trim();
+            updatedCustomer.MiddleName = "";
             updatedCustomer.Name = resultado.nombre_completo || "";
             updatedCustomer.CustomerTypeValue = 1; // Person
 

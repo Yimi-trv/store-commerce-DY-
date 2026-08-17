@@ -140,8 +140,9 @@ System.register(["PosApi/Extend/Views/CustomerAddEditView", "PosApi/Consume/Dial
                     }
                     else {
                         updatedCustomer.FirstName = resultado.nombres || "";
-                        updatedCustomer.LastName = resultado.apellido_paterno || "";
-                        updatedCustomer.MiddleName = resultado.apellido_materno || "";
+                        updatedCustomer.LastName = [resultado.apellido_paterno || "", resultado.apellido_materno || ""]
+                            .join(" ").replace(/\s+/g, " ").trim();
+                        updatedCustomer.MiddleName = "";
                         updatedCustomer.Name = resultado.nombre_completo || "";
                         updatedCustomer.CustomerTypeValue = 1;
                         this._setExtProp(updatedCustomer, "DPTYPEDOCID_PE", "1");
