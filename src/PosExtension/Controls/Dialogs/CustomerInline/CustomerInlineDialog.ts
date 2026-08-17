@@ -1,3 +1,55 @@
+/**
+ * MODAL DE CLIENTE EN VENTAS
+ * ==========================
+ *
+ * Permite buscar, crear y editar clientes sin salir de la pantalla de venta. Lo abren los
+ * triggers PreCustomerSearch / PreCustomerAdd / PreCustomerEdit.
+ *
+ * ---------------------------------------------------------------------------------------
+ * DECISIONES NO OBVIAS — leer antes de modificar. Cada una viene de un bug verificado en UAT.
+ * ---------------------------------------------------------------------------------------
+ *
+ * 1. `_applyChannelDefaults` NO es opcional.
+ *    Un Customer construido con `new CustomerClass({})` deja AccountNumber, CustomerGroup y
+ *    CurrencyCode en undefined, y Retail Server responde HTTP 400 con "Server exception is not
+ *    in expected format" — una excepción .NET no manejada, no un error de validación.
+ *    AccountNumber es el ÚNICO campo no opcional de la entidad Customer.
+ *    CustomerGroup no viaja en la configuración del canal: se copia del cliente que el carrito
+ *    ya tiene asignado.
+ *
+ * 2. `_ensureAddressPersisted` existe porque el alta asíncrona descarta la dirección.
+ *    Con RetailEnhancedAsyncCustCreationFeature activo el cliente recibe cuenta GUID y la
+ *    dirección se pierde, aunque viaje completa y con los códigos de ubigeo correctos.
+ *    Se relee el cliente y se reintenta por UpdateCustomerServiceRequest, que no pasa por el
+ *    camino asíncrono. Verificado: Addresses=0 tras el alta, Addresses=1 tras el reintento.
+ *
+ * 3. La asignación al carrito ocurre ANTES de cerrar el diálogo.
+ *    Un executeAsync lanzado desde un diálogo ya cerrado corre sobre un contexto destruido y
+ *    su .catch escribe en un DOM desconectado: el fallo se vuelve invisible.
+ *
+ * 4. Los propósitos de dirección son el enum ProxyEntities.AddressType, NO una numeración
+ *    propia. El código llegó a tener los cuatro valores equivocados con comentarios que decían
+ *    lo correcto. Referenciar SIEMPRE el enum por nombre.
+ *
+ * 5. Tres peticiones se declaran a mano contra operaciones ESTÁNDAR de Retail Server, porque
+ *    el SDK del POS no las expone: GetAddressPurposes, GetCustomerGroups y Customers/Search.
+ *    Ver los archivos en ../../../DataService/. Todas tienen fallback: si Retail Server las
+ *    rechaza, el modal sigue funcionando con el comportamiento anterior.
+ *
+ * 6. `__diag:` en el campo de búsqueda ejecuta diagnósticos en vez de buscar.
+ *    Es una vía de soporte para entornos donde solo se puede operar el POS y no lanzar
+ *    peticiones a Retail Server. Sin interfaz propia a propósito. TEMPORAL: eliminar cuando
+ *    ya no haga falta.
+ *
+ * ---------------------------------------------------------------------------------------
+ * TRAMPA DE EMPAQUETADO
+ * ---------------------------------------------------------------------------------------
+ * El repositorio versiona tanto los .ts como los .js compilados. Editar SOLO el .js funciona
+ * hasta que alguien compila, y ahí se pierde. Si se agrega un archivo nuevo hace falta
+ * `/t:Clean` antes de `/t:Build`, o el módulo no entra al ZIP y SystemJS rompe toda la
+ * extensión sin ningún error de build. Verificar siempre el contenido del ZIP antes de subir.
+ */
+
 import {
     ExtensionTemplatedDialogBase,
     ITemplatedDialogOptions

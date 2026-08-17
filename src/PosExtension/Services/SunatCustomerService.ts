@@ -1,3 +1,33 @@
+/**
+ * CONSULTA SUNAT (proveedor PeruDevs)
+ * ===================================
+ *
+ * Normaliza el documento, consulta el padrón y mapea el resultado a las propiedades fiscales
+ * que espera la localización Perú DP.
+ *
+ * ---------------------------------------------------------------------------------------
+ * RESISTENCIA A CAÍDAS DEL PROVEEDOR — agregado tras un HTTP 502 real en UAT
+ * ---------------------------------------------------------------------------------------
+ *
+ * - CACHÉ estática de 30 minutos por número de documento. Es estática y no de instancia
+ *   porque el modal crea un servicio nuevo en cada apertura. Vive en memoria y se pierde al
+ *   recargar el POS: no se persisten datos de clientes en el navegador.
+ *
+ * - Se revisa `response.ok` ANTES de parsear. Llamar a `response.json()` sobre un 502 intenta
+ *   parsear la página de error del gateway y lanza un SyntaxError que no dice nada.
+ *
+ * - TIMEOUT por carrera contra temporizador: `fetch` no tiene timeout propio y el cajero se
+ *   quedaba esperando sin saber por qué.
+ *
+ * - Los mensajes distinguen si el problema es del proveedor o de la caja, y en todos los casos
+ *   indican que se puede continuar la venta ingresando los datos a mano. Un cajero no debería
+ *   detener una venta por una caída de un tercero.
+ *
+ * PENDIENTE EVALUADO Y NO IMPLEMENTADO: un segundo proveedor como respaldo, y el padrón
+ * reducido de SUNAT cargado localmente. Ver la nota de Obsidian sobre el dimensionamiento —
+ * el padrón resultó ser una decisión de infraestructura, no una tarea de esta extensión.
+ */
+
 import { ProxyEntities } from "PosApi/Entities";
 
 export type SunatDocumentType = "DNI" | "RUC";
