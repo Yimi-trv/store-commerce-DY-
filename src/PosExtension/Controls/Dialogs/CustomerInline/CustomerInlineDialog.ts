@@ -89,7 +89,6 @@ import {
     GetCountiesResponse
 } from "../../../DataService/GeographicRequests";
 import { GetStateProvincesServiceRequest } from "PosApi/Consume/StoreOperations";
-import { ShowMessageDialogClientRequest, ShowMessageDialogClientResponse } from "PosApi/Consume/Dialogs";
 
 const GUARD_KEY: string = "__customerInlineDialogActive";
 
@@ -1299,13 +1298,19 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      * Esa es la fuente autoritativa. Se aprovecha para mostrar la misma alerta que la
      * comprobación previa, en vez de dejar al cajero con un error crudo.
      */
+    private _isDuplicateDocumentError(reason: any): boolean {
+        const text: string = this._stringify(reason);
+        return text.indexOf("30104") >= 0
+            || /ya existe para el cliente/i.test(text)
+            || /ya existe.*documento|documento.*ya (existe|est[áa] registrado)/i.test(text);
+    }
+
+    /**
+     * La cuenta puede no venir: la detección y la extracción están separadas a propósito para
+     * que un mensaje sin cuenta siga mostrando la alerta en vez de pasar por "no es duplicado".
+     */
     private _extractDuplicateAccount(reason: any): string {
         const text: string = this._stringify(reason);
-
-        if (text.indexOf("30104") === -1 && !/ya existe para el cliente/i.test(text)) {
-            return "";
-        }
-
         const match: RegExpMatchArray = text.match(/ya existe para el cliente:?\s*([A-Za-z0-9\-]+)/i);
         return match && match[1] ? match[1] : "";
     }
@@ -1339,33 +1344,58 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             // la cuenta del cliente que ya lo tiene, así que se aprovecha para mostrar la misma
             // alerta en vez de dejar al cajero con un error crudo.
             .catch((reason: any): Promise<void> => {
-                const duplicateAccount: string = this._extractDuplicateAccount(reason);
-                if (!duplicateAccount) {
-                    return Promise.reject(reason);
-                }
+                const handled: Promise<void> | null = this._handleServerDuplicate(element, reason, documentNumber);
+                return handled ? handled : Promise.reject(reason);
+            });
+    }
 
-                this._logChunked("=== Duplicado detectado por el servidor ===",
-                    "documento=" + documentNumber + " ya pertenece a la cuenta " + duplicateAccount);
+    /**
+     * Muestra la alerta si `reason` es el rechazo por documento duplicado. Devuelve null si no
+     * lo es, para que quien llama siga tratándolo como el error que sea.
+     *
+     * Se llama desde DOS sitios y hace falta en los dos: el rechazo del alta llega unas veces
+     * como promesa rechazada y otras como respuesta con `canceled`, según por dónde lo capture
+     * el POS. Cubriendo solo uno, la mitad de los duplicados seguía sin avisar.
+     */
+    private _handleServerDuplicate(element: HTMLElement, reason: any, documentNumber: string): Promise<void> | null {
+        if (!this._isDuplicateDocumentError(reason)) {
+            return null;
+        }
 
-                return this._getCustomerByAccount(duplicateAccount)
-                    .then((existing: ProxyEntities.Customer | null): Promise<void> => {
-                        const stub: ProxyEntities.Customer = existing
-                            || ({ AccountNumber: duplicateAccount, Name: "" } as ProxyEntities.Customer);
-                        return this._blockDuplicate(element, stub, documentNumber);
-                    })
-                    .catch((): Promise<void> => {
-                        // Aunque no se pueda releer el cliente, la alerta debe salir igual.
-                        return this._blockDuplicate(
-                            element,
-                            { AccountNumber: duplicateAccount, Name: "" } as ProxyEntities.Customer,
-                            documentNumber);
-                    });
+        const duplicateAccount: string = this._extractDuplicateAccount(reason);
+
+        this._logChunked("=== Duplicado detectado por el servidor ===",
+            "documento=" + documentNumber
+            + " | cuenta existente=" + (duplicateAccount || "(no vino en el mensaje)"));
+
+        if (!duplicateAccount) {
+            // Sin cuenta no se puede asignar nada, pero el aviso igual tiene que salir.
+            return this._blockDuplicate(
+                element,
+                { AccountNumber: "", Name: "" } as ProxyEntities.Customer,
+                documentNumber);
+        }
+
+        return this._getCustomerByAccount(duplicateAccount)
+            .catch((): ProxyEntities.Customer | null => null)
+            .then((existing: ProxyEntities.Customer | null): Promise<void> => {
+                // Aunque no se pueda releer el cliente, la alerta debe salir igual.
+                const stub: ProxyEntities.Customer = existing
+                    || ({ AccountNumber: duplicateAccount, Name: "" } as ProxyEntities.Customer);
+                return this._blockDuplicate(element, stub, documentNumber);
             });
     }
 
     /**
      * Ante un duplicado no se crea nada, pero tampoco se deja al cajero sin salida: se ofrece
      * asignar el cliente que ya existe, que es lo que iba a necesitar de todas formas.
+     *
+     * POR QUÉ LA ALERTA ES PROPIA Y NO LA DEL POS
+     * La primera versión usaba `ShowMessageDialogClientRequest`. No se veía nada: el POS no apila
+     * un diálogo de mensaje sobre un templated dialog que ya está abierto —que es justo nuestro
+     * caso—, así que la petición fallaba y el aviso moría en el `.catch`. La alerta se pinta
+     * ahora en el DOM del propio modal (overlay `position: fixed`), donde no depende de la pila
+     * de diálogos del POS.
      */
     private _blockDuplicate(element: HTMLElement, existing: ProxyEntities.Customer, documentNumber: string): Promise<void> {
         const account: string = existing.AccountNumber || "";
@@ -1374,29 +1404,22 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         this._logChunked("=== Duplicado evitado ===",
             "documento=" + documentNumber + " ya pertenece a la cuenta " + account);
 
-        // Alerta flotante del propio POS en vez de un texto en el recuadro: un duplicado es una
-        // decisión que el cajero debe tomar, no un aviso que pueda pasar por alto.
-        const options: any = {
-            title: "El cliente ya existe",
-            subTitle: name,
-            message: "El documento " + documentNumber + " ya pertenece a la cuenta " + account
-                + ".\n\nNo se creó un cliente nuevo para no duplicarlo.\n\n"
-                + "¿Desea usar el cliente existente en esta venta?",
-            showCloseX: false,
-            button1: { id: "useExisting", label: "Aceptar y usar este cliente", isPrimary: true, result: "use" },
-            button2: { id: "cancel", label: "Cancelar", isPrimary: false, result: "cancel" }
-        };
+        const body: string = account
+            ? "El documento " + documentNumber + " ya pertenece a la cuenta " + account
+                + (name ? " (" + name + ")" : "") + ".\n\n"
+                + "No se creó un cliente nuevo para no duplicarlo.\n\n"
+                + "Al aceptar, ese cliente se asigna a esta venta."
+            : "El documento " + documentNumber + " ya está registrado en otro cliente.\n\n"
+                + "No se creó un cliente nuevo para no duplicarlo. "
+                + "Búsquelo en la pestaña Buscar Cliente.";
 
-        return this.context.runtime
-            .executeAsync(new ShowMessageDialogClientRequest<ShowMessageDialogClientResponse>(options, this._getCorrelationId()))
-            .then((response: any): Promise<void> => {
-                const chosen: any = response && response.data && response.data.result;
-                const chosenResult: string = chosen ? (chosen.result || chosen) : "";
-
-                if (chosenResult !== "use") {
+        return this._showAlert(element, "El cliente ya existe", body, account ? "Aceptar y usar este cliente" : "Aceptar")
+            .then((accepted: boolean): Promise<void> => {
+                if (!accepted || !account) {
                     // Canceló: se queda en el formulario con los datos que ya cargó, por si
                     // quiere revisarlos antes de decidir.
-                    this._showMessage(element, "El documento ya está registrado en la cuenta " + account + ".");
+                    this._showMessage(element, "El documento ya está registrado"
+                        + (account ? " en la cuenta " + account : "") + ".");
                     return Promise.resolve();
                 }
 
@@ -1416,16 +1439,51 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                         this._logError("Asignar cliente existente fallo: " + this._stringify(reason));
                         this._showMessage(element, "No se pudo asignar: " + this._getErrorMessage(reason));
                     });
-            })
-            .catch((reason: any): void => {
-                // Si la alerta no se puede mostrar, el aviso igual tiene que llegar.
-                this._logError("Alerta de duplicado fallo: " + this._stringify(reason));
-                this._showTextResult(element, "customerInlineCreateResult",
-                    "Ya existe un cliente con el documento " + documentNumber + ":\n\n"
-                    + "Cuenta: " + account + "\nNombre: " + name + "\n\n"
-                    + "No se creó uno nuevo para no duplicarlo.");
-                this._showMessage(element, "Documento ya registrado en la cuenta " + account + ".");
             });
+    }
+
+    /**
+     * Alerta flotante propia. Resuelve true si el cajero aceptó y false si canceló.
+     *
+     * Nunca rechaza: un fallo al mostrar el aviso no debe convertirse en un error suelto que
+     * tape el motivo real. Si el overlay no está en el DOM —plantilla vieja en caché— cae al
+     * recuadro de resultado, que siempre existe.
+     */
+    private _showAlert(element: HTMLElement, title: string, body: string, acceptLabel: string): Promise<boolean> {
+        const overlay: HTMLElement = element.querySelector("#customerInlineAlertOverlay") as HTMLElement;
+        const titleNode: HTMLElement = element.querySelector("#customerInlineAlertTitle") as HTMLElement;
+        const bodyNode: HTMLElement = element.querySelector("#customerInlineAlertBody") as HTMLElement;
+        const acceptButton: HTMLButtonElement = element.querySelector("#customerInlineAlertAccept") as HTMLButtonElement;
+        const cancelButton: HTMLButtonElement = element.querySelector("#customerInlineAlertCancel") as HTMLButtonElement;
+
+        if (!overlay || !acceptButton || !cancelButton) {
+            this._logError("Alerta flotante no disponible en la plantilla; se muestra en el recuadro.");
+            this._showTextResult(element, "customerInlineCreateResult", title + "\n\n" + body);
+            return Promise.resolve(false);
+        }
+
+        if (titleNode) { titleNode.textContent = title; }
+        if (bodyNode) { bodyNode.textContent = body; }
+        acceptButton.textContent = acceptLabel;
+        // Solo hay salida si se acepta cuando no se puede asignar nada: se oculta el botón que
+        // no lleva a ninguna parte en vez de ofrecer dos que hacen lo mismo.
+        cancelButton.style.display = acceptLabel === "Aceptar" ? "none" : "";
+
+        overlay.style.display = "flex";
+
+        return new Promise<boolean>((resolve: (value: boolean) => void): void => {
+            const close = (accepted: boolean): void => {
+                overlay.style.display = "none";
+                // Se desenganchan los dos manejadores: el modal se reutiliza entre aperturas y
+                // si no, cada duplicado sumaba un listener sobre el mismo botón.
+                acceptButton.onclick = null;
+                cancelButton.onclick = null;
+                resolve(accepted);
+            };
+
+            acceptButton.onclick = (): void => { close(true); };
+            cancelButton.onclick = (): void => { close(false); };
+        });
     }
 
     /**
@@ -1610,6 +1668,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                             // El motivo suele venir en la respuesta y hasta ahora se descartaba,
                             // dejando al cajero con un mensaje genérico.
                             this._logChunked("=== Alta cancelada por el sistema ===", this._stringify(response));
+
+                            // El rechazo por duplicado llega por aquí cuando el POS lo convierte
+                            // en respuesta cancelada en vez de rechazar la promesa. Sin esto, el
+                            // cajero veía "revise la consola" en lugar de la alerta.
+                            const handled: Promise<void> | null = this._handleServerDuplicate(
+                                element, response, sunatData.documentNumber || "");
+                            if (handled) {
+                                return handled;
+                            }
+
                             this._showMessage(element,
                                 "La creación del cliente falló o fue cancelada por el sistema. "
                                 + "Revise la consola (F12) para el detalle.");

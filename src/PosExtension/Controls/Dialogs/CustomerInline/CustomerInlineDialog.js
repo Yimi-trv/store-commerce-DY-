@@ -1,4 +1,4 @@
-System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest", "../../../DataService/CustomerSearchRequest", "../../../DataService/CustomerSearchByFieldsRequest", "../../../DataService/GeographicRequests", "PosApi/Consume/StoreOperations", "PosApi/Consume/Dialogs"], function (exports_1, context_1) {
+System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest", "../../../DataService/CustomerSearchRequest", "../../../DataService/CustomerSearchByFieldsRequest", "../../../DataService/GeographicRequests", "PosApi/Consume/StoreOperations"], function (exports_1, context_1) {
     "use strict";
     var __extends = (this && this.__extends) || (function () {
         var extendStatics = function (d, b) {
@@ -15,7 +15,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, CustomerSearchRequest_1, CustomerSearchByFieldsRequest_1, GeographicRequests_1, StoreOperations_1, Dialogs_2, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
+    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, CustomerSearchRequest_1, CustomerSearchByFieldsRequest_1, GeographicRequests_1, StoreOperations_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -57,9 +57,6 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             },
             function (StoreOperations_1_1) {
                 StoreOperations_1 = StoreOperations_1_1;
-            },
-            function (Dialogs_2_1) {
-                Dialogs_2 = Dialogs_2_1;
             }
         ],
         execute: function () {
@@ -876,11 +873,14 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         return null;
                     });
                 };
+                CustomerInlineDialog.prototype._isDuplicateDocumentError = function (reason) {
+                    var text = this._stringify(reason);
+                    return text.indexOf("30104") >= 0
+                        || /ya existe para el cliente/i.test(text)
+                        || /ya existe.*documento|documento.*ya (existe|est[áa] registrado)/i.test(text);
+                };
                 CustomerInlineDialog.prototype._extractDuplicateAccount = function (reason) {
                     var text = this._stringify(reason);
-                    if (text.indexOf("30104") === -1 && !/ya existe para el cliente/i.test(text)) {
-                        return "";
-                    }
                     var match = text.match(/ya existe para el cliente:?\s*([A-Za-z0-9\-]+)/i);
                     return match && match[1] ? match[1] : "";
                 };
@@ -906,20 +906,27 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         return _this._continueCreate(element, documentNumber, name);
                     })
                         .catch(function (reason) {
-                        var duplicateAccount = _this._extractDuplicateAccount(reason);
-                        if (!duplicateAccount) {
-                            return Promise.reject(reason);
-                        }
-                        _this._logChunked("=== Duplicado detectado por el servidor ===", "documento=" + documentNumber + " ya pertenece a la cuenta " + duplicateAccount);
-                        return _this._getCustomerByAccount(duplicateAccount)
-                            .then(function (existing) {
-                            var stub = existing
-                                || { AccountNumber: duplicateAccount, Name: "" };
-                            return _this._blockDuplicate(element, stub, documentNumber);
-                        })
-                            .catch(function () {
-                            return _this._blockDuplicate(element, { AccountNumber: duplicateAccount, Name: "" }, documentNumber);
-                        });
+                        var handled = _this._handleServerDuplicate(element, reason, documentNumber);
+                        return handled ? handled : Promise.reject(reason);
+                    });
+                };
+                CustomerInlineDialog.prototype._handleServerDuplicate = function (element, reason, documentNumber) {
+                    var _this = this;
+                    if (!this._isDuplicateDocumentError(reason)) {
+                        return null;
+                    }
+                    var duplicateAccount = this._extractDuplicateAccount(reason);
+                    this._logChunked("=== Duplicado detectado por el servidor ===", "documento=" + documentNumber
+                        + " | cuenta existente=" + (duplicateAccount || "(no vino en el mensaje)"));
+                    if (!duplicateAccount) {
+                        return this._blockDuplicate(element, { AccountNumber: "", Name: "" }, documentNumber);
+                    }
+                    return this._getCustomerByAccount(duplicateAccount)
+                        .catch(function () { return null; })
+                        .then(function (existing) {
+                        var stub = existing
+                            || { AccountNumber: duplicateAccount, Name: "" };
+                        return _this._blockDuplicate(element, stub, documentNumber);
                     });
                 };
                 CustomerInlineDialog.prototype._blockDuplicate = function (element, existing, documentNumber) {
@@ -927,23 +934,19 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     var account = existing.AccountNumber || "";
                     var name = existing.Name || this._formatCustomerSummary(existing);
                     this._logChunked("=== Duplicado evitado ===", "documento=" + documentNumber + " ya pertenece a la cuenta " + account);
-                    var options = {
-                        title: "El cliente ya existe",
-                        subTitle: name,
-                        message: "El documento " + documentNumber + " ya pertenece a la cuenta " + account
-                            + ".\n\nNo se creó un cliente nuevo para no duplicarlo.\n\n"
-                            + "¿Desea usar el cliente existente en esta venta?",
-                        showCloseX: false,
-                        button1: { id: "useExisting", label: "Aceptar y usar este cliente", isPrimary: true, result: "use" },
-                        button2: { id: "cancel", label: "Cancelar", isPrimary: false, result: "cancel" }
-                    };
-                    return this.context.runtime
-                        .executeAsync(new Dialogs_2.ShowMessageDialogClientRequest(options, this._getCorrelationId()))
-                        .then(function (response) {
-                        var chosen = response && response.data && response.data.result;
-                        var chosenResult = chosen ? (chosen.result || chosen) : "";
-                        if (chosenResult !== "use") {
-                            _this._showMessage(element, "El documento ya está registrado en la cuenta " + account + ".");
+                    var body = account
+                        ? "El documento " + documentNumber + " ya pertenece a la cuenta " + account
+                            + (name ? " (" + name + ")" : "") + ".\n\n"
+                            + "No se creó un cliente nuevo para no duplicarlo.\n\n"
+                            + "Al aceptar, ese cliente se asigna a esta venta."
+                        : "El documento " + documentNumber + " ya está registrado en otro cliente.\n\n"
+                            + "No se creó un cliente nuevo para no duplicarlo. "
+                            + "Búsquelo en la pestaña Buscar Cliente.";
+                    return this._showAlert(element, "El cliente ya existe", body, account ? "Aceptar y usar este cliente" : "Aceptar")
+                        .then(function (accepted) {
+                        if (!accepted || !account) {
+                            _this._showMessage(element, "El documento ya está registrado"
+                                + (account ? " en la cuenta " + account : "") + ".");
                             return Promise.resolve();
                         }
                         _this._showMessage(element, "Asignando " + account + " a la venta...");
@@ -959,13 +962,37 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             _this._logError("Asignar cliente existente fallo: " + _this._stringify(reason));
                             _this._showMessage(element, "No se pudo asignar: " + _this._getErrorMessage(reason));
                         });
-                    })
-                        .catch(function (reason) {
-                        _this._logError("Alerta de duplicado fallo: " + _this._stringify(reason));
-                        _this._showTextResult(element, "customerInlineCreateResult", "Ya existe un cliente con el documento " + documentNumber + ":\n\n"
-                            + "Cuenta: " + account + "\nNombre: " + name + "\n\n"
-                            + "No se creó uno nuevo para no duplicarlo.");
-                        _this._showMessage(element, "Documento ya registrado en la cuenta " + account + ".");
+                    });
+                };
+                CustomerInlineDialog.prototype._showAlert = function (element, title, body, acceptLabel) {
+                    var overlay = element.querySelector("#customerInlineAlertOverlay");
+                    var titleNode = element.querySelector("#customerInlineAlertTitle");
+                    var bodyNode = element.querySelector("#customerInlineAlertBody");
+                    var acceptButton = element.querySelector("#customerInlineAlertAccept");
+                    var cancelButton = element.querySelector("#customerInlineAlertCancel");
+                    if (!overlay || !acceptButton || !cancelButton) {
+                        this._logError("Alerta flotante no disponible en la plantilla; se muestra en el recuadro.");
+                        this._showTextResult(element, "customerInlineCreateResult", title + "\n\n" + body);
+                        return Promise.resolve(false);
+                    }
+                    if (titleNode) {
+                        titleNode.textContent = title;
+                    }
+                    if (bodyNode) {
+                        bodyNode.textContent = body;
+                    }
+                    acceptButton.textContent = acceptLabel;
+                    cancelButton.style.display = acceptLabel === "Aceptar" ? "none" : "";
+                    overlay.style.display = "flex";
+                    return new Promise(function (resolve) {
+                        var close = function (accepted) {
+                            overlay.style.display = "none";
+                            acceptButton.onclick = null;
+                            cancelButton.onclick = null;
+                            resolve(accepted);
+                        };
+                        acceptButton.onclick = function () { close(true); };
+                        cancelButton.onclick = function () { close(false); };
                     });
                 };
                 CustomerInlineDialog.prototype._continueCreate = function (element, documentNumber, name) {
@@ -1090,6 +1117,10 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 .then(function (response) {
                                 if (response.canceled || !response.data || !response.data.customer) {
                                     _this._logChunked("=== Alta cancelada por el sistema ===", _this._stringify(response));
+                                    var handled = _this._handleServerDuplicate(element, response, sunatData.documentNumber || "");
+                                    if (handled) {
+                                        return handled;
+                                    }
                                     _this._showMessage(element, "La creación del cliente falló o fue cancelada por el sistema. "
                                         + "Revise la consola (F12) para el detalle.");
                                     return Promise.resolve();

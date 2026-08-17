@@ -182,6 +182,59 @@
             color: #605e5c;
             font-size: 14px;
         }
+
+        /* ALERTA FLOTANTE PROPIA.
+           No se usa ShowMessageDialogClientRequest porque el POS no apila un diálogo de mensaje
+           sobre un templated dialog abierto: la petición falla y el aviso nunca llega a verse.
+           Al pintarla en el DOM del propio modal siempre aparece.
+           position:fixed —no absolute— para que no la recorte el overflow del contenedor. */
+        .customer-inline-dialog__overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.55);
+            /* Por encima de cualquier capa del POS. */
+            z-index: 2147483000;
+            padding: 16px;
+            box-sizing: border-box;
+        }
+
+        .customer-inline-dialog__alert {
+            width: 100%;
+            max-width: 460px;
+            background: #fff;
+            border-top: 4px solid #d83b01;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .customer-inline-dialog__alert-title {
+            margin: 0 0 6px 0;
+            color: #a4262c;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .customer-inline-dialog__alert-body {
+            margin: 0 0 18px 0;
+            color: #222;
+            font-size: 15px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+        }
+
+        .customer-inline-dialog__alert-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 8px;
+        }
     </style>
 
     <div class="customer-inline-dialog__tabs">
@@ -397,4 +450,18 @@
     <div id="customerInlineEditResult" class="customer-inline-dialog__result" style="display: none;"></div>
 
     <div id="customerInlineMessage" class="customer-inline-dialog__message"></div>
+
+    <!-- ALERTA FLOTANTE DE CLIENTE DUPLICADO
+         Oculta hasta que _blockDuplicate la llena. El botón principal asigna a la venta el
+         cliente que ya existe, que es lo que el cajero necesitaba de todas formas. -->
+    <div id="customerInlineAlertOverlay" class="customer-inline-dialog__overlay" style="display: none;">
+        <div class="customer-inline-dialog__alert" role="alertdialog" aria-labelledby="customerInlineAlertTitle">
+            <p id="customerInlineAlertTitle" class="customer-inline-dialog__alert-title">El cliente ya existe</p>
+            <p id="customerInlineAlertBody" class="customer-inline-dialog__alert-body"></p>
+            <div class="customer-inline-dialog__alert-actions">
+                <button id="customerInlineAlertCancel" class="customer-inline-dialog__action customer-inline-dialog__action--secondary" type="button">Cancelar</button>
+                <button id="customerInlineAlertAccept" class="customer-inline-dialog__action" type="button">Aceptar</button>
+            </div>
+        </div>
+    </div>
 </div>
