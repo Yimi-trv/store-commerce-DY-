@@ -264,23 +264,34 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      * No se toca `position` ni `left`: el diálogo ya viene centrado y moverlo lo rompería.
      */
     private _widenHostDialog(element: HTMLElement): void {
-        this._applyDialogWidth(element);
+        // El POS fija el ancho del diálogo cuando lo muestra, y lo hace DESPUÉS de onReady.
+        // Aplicarlo una sola vez no alcanza: verificado en UAT, la primera apertura salía ancha
+        // y la segunda volvía al tamaño por defecto, porque con el contenido ya en caché el POS
+        // termina antes y su valor pisa el nuestro.
+        //
+        // Por eso se reaplica a lo largo de ~1 segundo. Cada pasada es idempotente y barata:
+        // solo escribe estilos en línea sobre tres contenedores.
+        const attempts: number[] = [0, 60, 150, 300, 550, 900];
 
-        // El POS termina de medir después de onReady; sin estas reaplicaciones el ancho se
-        // pierde. Son baratas y idempotentes.
-        setTimeout((): void => { this._applyDialogWidth(element); }, 0);
-        setTimeout((): void => {
-            this._applyDialogWidth(element);
-            // Se reporta al final, cuando el POS ya midió: antes todo daba 0px y no servía.
-            this._reportDialogWidth(element);
-        }, 200);
+        this._applyDialogWidth(element);
+        for (let i: number = 0; i < attempts.length; i++) {
+            setTimeout((): void => { this._applyDialogWidth(element); }, attempts[i]);
+        }
+
+        // Se reporta al final, cuando el POS ya midió: antes todo daba 0px y no servía de nada.
+        setTimeout((): void => { this._reportDialogWidth(element); }, 950);
     }
 
     private _applyDialogWidth(element: HTMLElement): void {
         // El viewport de caja puede ser 1024px, no 1920: el ancho se calcula contra la pantalla
         // real en vez de fijar un número que desborde.
+        //
+        // 800px es el techo. Con 960 el modal tapaba casi toda la venta —el cajero pierde de
+        // vista las líneas y los totales—, y con 1024 de viewport eso son 94% de la pantalla.
+        // A 800 quedan ~220px de la transacción visibles, que es el punto donde la tabla de
+        // resultados sigue entrando cómoda sin ocultar el contexto de la venta.
         const viewport: number = (typeof window !== "undefined" && window.innerWidth) ? window.innerWidth : 1024;
-        const targetWidth: number = Math.max(560, Math.min(960, Math.floor(viewport * 0.94)));
+        const targetWidth: number = Math.max(520, Math.min(800, Math.floor(viewport * 0.82)));
 
         let node: HTMLElement = element.parentElement;
         for (let depth: number = 0; node && depth < 10; depth++) {

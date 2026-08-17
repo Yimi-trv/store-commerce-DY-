@@ -154,16 +154,16 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._widenHostDialog = function (element) {
                     var _this = this;
+                    var attempts = [0, 60, 150, 300, 550, 900];
                     this._applyDialogWidth(element);
-                    setTimeout(function () { _this._applyDialogWidth(element); }, 0);
-                    setTimeout(function () {
-                        _this._applyDialogWidth(element);
-                        _this._reportDialogWidth(element);
-                    }, 200);
+                    for (var i = 0; i < attempts.length; i++) {
+                        setTimeout(function () { _this._applyDialogWidth(element); }, attempts[i]);
+                    }
+                    setTimeout(function () { _this._reportDialogWidth(element); }, 950);
                 };
                 CustomerInlineDialog.prototype._applyDialogWidth = function (element) {
                     var viewport = (typeof window !== "undefined" && window.innerWidth) ? window.innerWidth : 1024;
-                    var targetWidth = Math.max(560, Math.min(960, Math.floor(viewport * 0.94)));
+                    var targetWidth = Math.max(520, Math.min(800, Math.floor(viewport * 0.82)));
                     var node = element.parentElement;
                     for (var depth = 0; node && depth < 10; depth++) {
                         var cls = typeof node.className === "string" ? node.className : "";
