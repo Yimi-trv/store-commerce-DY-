@@ -123,6 +123,73 @@ export default class SunatCustomerService {
         };
     }
 
+    /**
+     * Parte la dirección de SUNAT en los tres campos que maneja D365.
+     *
+     * SUNAT devuelve la dirección en una sola cadena con su propia nomenclatura:
+     *
+     *   "CAL. LORETO NRO. 208"                  -> CAL. LORETO      | 208 | (vacío)
+     *   "AV. LARCO NRO. 1234 INT. 501"          -> AV. LARCO        | 1234 | INT. 501
+     *   "JR. UNION NRO. 123 DPTO. 401 PISO 4"   -> JR. UNION        | 123  | DPTO. 401 PISO 4
+     *   "AV. PRIMAVERA NRO. S/N"                -> AV. PRIMAVERA    | S/N  | (vacío)
+     *   "CAL. SAN MARTIN 456"                   -> CAL. SAN MARTIN  | 456  | (vacío)
+     *
+     * El corte se hace sobre el marcador de número (NRO., N°, NUM...), que es lo que SUNAT
+     * emite de forma consistente. Lo de antes es la calle, lo de después del número es el
+     * complemento (interior, piso, departamento, manzana...).
+     *
+     * DELIBERADAMENTE CONSERVADORA: si no hay marcador ni un número al final reconocible, se
+     * devuelve la cadena entera como calle y los otros dos campos vacíos. Es preferible dejar
+     * la dirección como llegó a partirla mal —una dirección troceada al azar es peor que una
+     * sin trocear, y el cajero no tendría cómo notarlo. Los tres campos quedan editables.
+     */
+    public parseAddressParts(fullAddress: string): { street: string; streetNumber: string; compliment: string } {
+        const clean: string = (fullAddress || "").replace(/\s+/g, " ").trim();
+
+        if (!clean) {
+            return { street: "", streetNumber: "", compliment: "" };
+        }
+
+        // Un número puede ser "208", "208A", "208-B", "1234/2" o "S/N" (sin número).
+        const numberToken: string = "(?:S\\/N|SN|[0-9]+[A-Za-z]?(?:\\s?[\\-\\/]\\s?[0-9A-Za-z]+)?)";
+
+        // Caso normal de SUNAT: marcador explícito de número.
+        const match: RegExpMatchArray =
+            clean.match(new RegExp("\\b(?:NRO|NUM|NUMERO|N[°º])\\.?\\s*(" + numberToken + ")(?![0-9])", "i"));
+
+        if (match) {
+            const markerIndex: number = match.index || 0;
+            return {
+                street: this._trimSeparators(clean.substring(0, markerIndex)),
+                streetNumber: match[1],
+                compliment: this._trimSeparators(clean.substring(markerIndex + match[0].length))
+            };
+        }
+
+        // Sin marcador: "CAL. SAN MARTIN 456 INT. 2". Se busca el primer bloque que sea un número
+        // y que tenga texto delante — así una dirección que ARRANCA con número no se parte
+        // dejando la calle vacía.
+        const tokens: string[] = clean.split(" ");
+        const isNumber: RegExp = new RegExp("^" + numberToken + "$", "i");
+
+        for (let index: number = 1; index < tokens.length; index++) {
+            if (isNumber.test(tokens[index]) && /[A-Za-z]/.test(tokens.slice(0, index).join(" "))) {
+                return {
+                    street: this._trimSeparators(tokens.slice(0, index).join(" ")),
+                    streetNumber: tokens[index],
+                    compliment: this._trimSeparators(tokens.slice(index + 1).join(" "))
+                };
+            }
+        }
+
+        return { street: clean, streetNumber: "", compliment: "" };
+    }
+
+    /** Quita puntuación y espacios sueltos que quedan en los bordes al cortar. */
+    private _trimSeparators(value: string): string {
+        return (value || "").replace(/^[\s.,\-]+/, "").replace(/[\s.,\-]+$/, "").trim();
+    }
+
     public getDocumentType(documentNumber: string): SunatDocumentType | null {
         const normalizedDocument: string = this.normalizeDocument(documentNumber);
 

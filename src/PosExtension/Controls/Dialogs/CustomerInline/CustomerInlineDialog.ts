@@ -259,6 +259,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 this._loadDistricts(element, departmentSelect ? departmentSelect.value : "", provinceSelect.value);
             };
         }
+
+        // Lo que se escribe o se pega a mano también se separa, no solo lo que trae SUNAT: el
+        // cajero copia la dirección de un documento y viene igual de concatenada.
+        const streetInput: HTMLInputElement =
+            element.querySelector("#customerInlineCreateAddress") as HTMLInputElement;
+        if (streetInput) {
+            streetInput.onblur = (): void => {
+                this._splitStreetOnBlur(element);
+            };
+        }
     }
 
     /**
@@ -838,9 +848,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             }
         }
 
-        this._setValue(element, "customerInlineCreateAddress", address.Street || "");
-        this._setValue(element, "customerInlineCreateStreetNumber", address.StreetNumber || "");
-        this._setValue(element, "customerInlineCreateBuildingCompliment", address.BuildingCompliment || "");
+        if (address.StreetNumber || address.BuildingCompliment) {
+            this._setValue(element, "customerInlineCreateAddress", address.Street || "");
+            this._setValue(element, "customerInlineCreateStreetNumber", address.StreetNumber || "");
+            this._setValue(element, "customerInlineCreateBuildingCompliment", address.BuildingCompliment || "");
+        } else {
+            // Los clientes creados antes de separar estos campos traen todo dentro de Street. Se
+            // parte al editarlos, para que al guardar queden bien repartidos sin retipear nada.
+            this._applyAddressParts(element, address.Street || "");
+        }
+
         this._setChecked(element, "customerInlineCreateAddressPrimary", address.IsPrimary !== false);
 
         const purposeSelect: HTMLSelectElement =
@@ -1198,7 +1215,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             .then((sunatData: ISunatCustomerData): void => {
                 this._lastSunatData = sunatData;
                 this._setValue(element, "customerInlineCreateName", sunatData.name || "");
-                this._setValue(element, "customerInlineCreateAddress", sunatData.address || "");
+                // SUNAT entrega la dirección en una sola cadena ("CAL. LORETO NRO. 208") y D365
+                // la guarda en tres campos. Si se vuelca entera en la calle, el número y el
+                // piso/interior se pierden.
+                this._applyAddressParts(element, sunatData.address || "");
                 this._setValue(element, "customerInlineCreateCondition", (sunatData.raw && sunatData.raw.condicion) || "");
                 this._setChecked(element, "customerInlineCreateRetention", sunatData.isRetentionAgent);
                 this._setChecked(element, "customerInlineCreatePerception", sunatData.isPerceptionAgent);
@@ -2036,6 +2056,50 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         customer.Name = name || customer.Name || "";
         customer.Phone = phone || "";
         customer.Email = email || "";
+    }
+
+    /**
+     * Reparte una dirección de una sola línea entre calle, número y complemento.
+     *
+     * El corte lo hace SunatCustomerService; aquí solo se vuelca al formulario. Si no hubo nada
+     * que separar, el número y el complemento se dejan vacíos en vez de conservar lo anterior:
+     * si no, al consultar un segundo RUC quedaba el número del primero pegado al nuevo.
+     */
+    private _applyAddressParts(element: HTMLElement, fullAddress: string): void {
+        const parts: { street: string; streetNumber: string; compliment: string } =
+            this._sunatService.parseAddressParts(fullAddress);
+
+        this._setValue(element, "customerInlineCreateAddress", parts.street);
+        this._setValue(element, "customerInlineCreateStreetNumber", parts.streetNumber);
+        this._setValue(element, "customerInlineCreateBuildingCompliment", parts.compliment);
+
+        this._logChunked("=== Direccion separada ===",
+            "origen=" + (fullAddress || "(vacio)")
+            + "\ncalle=" + (parts.street || "(vacio)")
+            + " | numero=" + (parts.streetNumber || "(vacio)")
+            + " | complemento=" + (parts.compliment || "(vacio)"));
+    }
+
+    /**
+     * Separa lo que el cajero escribió o pegó en el campo de calle, al salir de él.
+     *
+     * Solo actúa si el número está vacío: si ya lo llenó a mano, mandan sus datos. Y solo si de
+     * verdad había algo que separar, para no vaciar lo que acaba de escribir.
+     */
+    private _splitStreetOnBlur(element: HTMLElement): void {
+        if (this._getValue(element, "customerInlineCreateStreetNumber")) {
+            return;
+        }
+
+        const typed: string = this._getValue(element, "customerInlineCreateAddress");
+        const parts: { street: string; streetNumber: string; compliment: string } =
+            this._sunatService.parseAddressParts(typed);
+
+        if (!parts.streetNumber) {
+            return;
+        }
+
+        this._applyAddressParts(element, typed);
     }
 
     /**

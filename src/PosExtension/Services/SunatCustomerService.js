@@ -35,6 +35,37 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                         firstName: parts.slice(2).join(" ")
                     };
                 };
+                SunatCustomerService.prototype.parseAddressParts = function (fullAddress) {
+                    var clean = (fullAddress || "").replace(/\s+/g, " ").trim();
+                    if (!clean) {
+                        return { street: "", streetNumber: "", compliment: "" };
+                    }
+                    var numberToken = "(?:S\\/N|SN|[0-9]+[A-Za-z]?(?:\\s?[\\-\\/]\\s?[0-9A-Za-z]+)?)";
+                    var match = clean.match(new RegExp("\\b(?:NRO|NUM|NUMERO|N[°º])\\.?\\s*(" + numberToken + ")(?![0-9])", "i"));
+                    if (match) {
+                        var markerIndex = match.index || 0;
+                        return {
+                            street: this._trimSeparators(clean.substring(0, markerIndex)),
+                            streetNumber: match[1],
+                            compliment: this._trimSeparators(clean.substring(markerIndex + match[0].length))
+                        };
+                    }
+                    var tokens = clean.split(" ");
+                    var isNumber = new RegExp("^" + numberToken + "$", "i");
+                    for (var index = 1; index < tokens.length; index++) {
+                        if (isNumber.test(tokens[index]) && /[A-Za-z]/.test(tokens.slice(0, index).join(" "))) {
+                            return {
+                                street: this._trimSeparators(tokens.slice(0, index).join(" ")),
+                                streetNumber: tokens[index],
+                                compliment: this._trimSeparators(tokens.slice(index + 1).join(" "))
+                            };
+                        }
+                    }
+                    return { street: clean, streetNumber: "", compliment: "" };
+                };
+                SunatCustomerService.prototype._trimSeparators = function (value) {
+                    return (value || "").replace(/^[\s.,\-]+/, "").replace(/[\s.,\-]+$/, "").trim();
+                };
                 SunatCustomerService.prototype.getDocumentType = function (documentNumber) {
                     var normalizedDocument = this.normalizeDocument(documentNumber);
                     if (normalizedDocument.length === 11) {

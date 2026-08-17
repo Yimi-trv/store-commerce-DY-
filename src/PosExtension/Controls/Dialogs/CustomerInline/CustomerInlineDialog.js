@@ -161,6 +161,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             _this._loadDistricts(element, departmentSelect ? departmentSelect.value : "", provinceSelect.value);
                         };
                     }
+                    var streetInput = element.querySelector("#customerInlineCreateAddress");
+                    if (streetInput) {
+                        streetInput.onblur = function () {
+                            _this._splitStreetOnBlur(element);
+                        };
+                    }
                 };
                 CustomerInlineDialog.prototype._widenHostDialog = function (element) {
                     var _this = this;
@@ -558,9 +564,14 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             break;
                         }
                     }
-                    this._setValue(element, "customerInlineCreateAddress", address.Street || "");
-                    this._setValue(element, "customerInlineCreateStreetNumber", address.StreetNumber || "");
-                    this._setValue(element, "customerInlineCreateBuildingCompliment", address.BuildingCompliment || "");
+                    if (address.StreetNumber || address.BuildingCompliment) {
+                        this._setValue(element, "customerInlineCreateAddress", address.Street || "");
+                        this._setValue(element, "customerInlineCreateStreetNumber", address.StreetNumber || "");
+                        this._setValue(element, "customerInlineCreateBuildingCompliment", address.BuildingCompliment || "");
+                    }
+                    else {
+                        this._applyAddressParts(element, address.Street || "");
+                    }
                     this._setChecked(element, "customerInlineCreateAddressPrimary", address.IsPrimary !== false);
                     var purposeSelect = element.querySelector("#customerInlineCreateAddressPurpose");
                     if (purposeSelect && address.AddressTypeValue) {
@@ -815,7 +826,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         .then(function (sunatData) {
                         _this._lastSunatData = sunatData;
                         _this._setValue(element, "customerInlineCreateName", sunatData.name || "");
-                        _this._setValue(element, "customerInlineCreateAddress", sunatData.address || "");
+                        _this._applyAddressParts(element, sunatData.address || "");
                         _this._setValue(element, "customerInlineCreateCondition", (sunatData.raw && sunatData.raw.condicion) || "");
                         _this._setChecked(element, "customerInlineCreateRetention", sunatData.isRetentionAgent);
                         _this._setChecked(element, "customerInlineCreatePerception", sunatData.isPerceptionAgent);
@@ -1382,6 +1393,27 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     customer.Name = name || customer.Name || "";
                     customer.Phone = phone || "";
                     customer.Email = email || "";
+                };
+                CustomerInlineDialog.prototype._applyAddressParts = function (element, fullAddress) {
+                    var parts = this._sunatService.parseAddressParts(fullAddress);
+                    this._setValue(element, "customerInlineCreateAddress", parts.street);
+                    this._setValue(element, "customerInlineCreateStreetNumber", parts.streetNumber);
+                    this._setValue(element, "customerInlineCreateBuildingCompliment", parts.compliment);
+                    this._logChunked("=== Direccion separada ===", "origen=" + (fullAddress || "(vacio)")
+                        + "\ncalle=" + (parts.street || "(vacio)")
+                        + " | numero=" + (parts.streetNumber || "(vacio)")
+                        + " | complemento=" + (parts.compliment || "(vacio)"));
+                };
+                CustomerInlineDialog.prototype._splitStreetOnBlur = function (element) {
+                    if (this._getValue(element, "customerInlineCreateStreetNumber")) {
+                        return;
+                    }
+                    var typed = this._getValue(element, "customerInlineCreateAddress");
+                    var parts = this._sunatService.parseAddressParts(typed);
+                    if (!parts.streetNumber) {
+                        return;
+                    }
+                    this._applyAddressParts(element, typed);
                 };
                 CustomerInlineDialog.prototype._buildAddressFromForm = function (element, recordId) {
                     var street = this._getValue(element, "customerInlineCreateAddress");
