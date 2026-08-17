@@ -248,26 +248,52 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      */
     private _widenHostDialog(element: HTMLElement): void {
         const TARGET_WIDTH: number = 900;
-        const applied: string[] = [];
+        const report: string[] = [];
 
+        // Se registra la cadena COMPLETA de ancestros con sus medidas, se ensanche o no. Si el
+        // resultado en pantalla no es el esperado, este volcado dice exactamente qué contenedor
+        // manda y con qué reglas, sin tener que adivinar en otra iteración.
         let node: HTMLElement = element.parentElement;
-        for (let depth: number = 0; node && depth < 6; depth++) {
+        for (let depth: number = 0; node && depth < 8; depth++) {
             const width: number = node.offsetWidth;
+            const tag: string = node.tagName;
+            const cls: string = node.className || "(sin clase)";
 
-            // Solo interesan los contenedores que hoy limitan el ancho. Por encima del diálogo
-            // están el overlay y el body, que ya ocupan toda la pantalla.
+            let cssWidth: string = "";
+            let cssMaxWidth: string = "";
+            let cssPosition: string = "";
+            let cssOverflow: string = "";
+            if (typeof window !== "undefined" && window.getComputedStyle) {
+                const computed: CSSStyleDeclaration = window.getComputedStyle(node);
+                cssWidth = computed.width;
+                cssMaxWidth = computed.maxWidth;
+                cssPosition = computed.position;
+                cssOverflow = computed.overflowX;
+            }
+
+            let action: string = "sin tocar";
             if (width > 0 && width < TARGET_WIDTH) {
                 node.style.width = TARGET_WIDTH + "px";
                 node.style.maxWidth = "95vw";
-                applied.push(depth + ":" + (node.className || node.tagName) + " (" + width + "px)");
+                action = "ENSANCHADO -> " + node.offsetWidth + "px";
             }
+
+            report.push(
+                depth + ") " + tag + "." + cls
+                + " | offsetWidth=" + width
+                + " | css width=" + cssWidth
+                + " max-width=" + cssMaxWidth
+                + " position=" + cssPosition
+                + " overflow-x=" + cssOverflow
+                + " | " + action);
 
             node = node.parentElement;
         }
 
-        this._logChunked("=== Ancho del dialogo ===", applied.length > 0
-            ? "ensanchados -> " + applied.join(" | ")
-            : "no se encontro contenedor acotado; el modal queda con el ancho por defecto");
+        report.push("--- ancho final del contenido: " + element.offsetWidth + "px (objetivo " + TARGET_WIDTH + ") ---");
+        report.push("--- viewport: " + (typeof window !== "undefined" ? window.innerWidth : "?") + "px ---");
+
+        this._logChunked("=== Ancho del dialogo ===", report.join("\n"));
     }
 
     /**

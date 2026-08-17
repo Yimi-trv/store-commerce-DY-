@@ -154,20 +154,41 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._widenHostDialog = function (element) {
                     var TARGET_WIDTH = 900;
-                    var applied = [];
+                    var report = [];
                     var node = element.parentElement;
-                    for (var depth = 0; node && depth < 6; depth++) {
+                    for (var depth = 0; node && depth < 8; depth++) {
                         var width = node.offsetWidth;
+                        var tag = node.tagName;
+                        var cls = node.className || "(sin clase)";
+                        var cssWidth = "";
+                        var cssMaxWidth = "";
+                        var cssPosition = "";
+                        var cssOverflow = "";
+                        if (typeof window !== "undefined" && window.getComputedStyle) {
+                            var computed = window.getComputedStyle(node);
+                            cssWidth = computed.width;
+                            cssMaxWidth = computed.maxWidth;
+                            cssPosition = computed.position;
+                            cssOverflow = computed.overflowX;
+                        }
+                        var action = "sin tocar";
                         if (width > 0 && width < TARGET_WIDTH) {
                             node.style.width = TARGET_WIDTH + "px";
                             node.style.maxWidth = "95vw";
-                            applied.push(depth + ":" + (node.className || node.tagName) + " (" + width + "px)");
+                            action = "ENSANCHADO -> " + node.offsetWidth + "px";
                         }
+                        report.push(depth + ") " + tag + "." + cls
+                            + " | offsetWidth=" + width
+                            + " | css width=" + cssWidth
+                            + " max-width=" + cssMaxWidth
+                            + " position=" + cssPosition
+                            + " overflow-x=" + cssOverflow
+                            + " | " + action);
                         node = node.parentElement;
                     }
-                    this._logChunked("=== Ancho del dialogo ===", applied.length > 0
-                        ? "ensanchados -> " + applied.join(" | ")
-                        : "no se encontro contenedor acotado; el modal queda con el ancho por defecto");
+                    report.push("--- ancho final del contenido: " + element.offsetWidth + "px (objetivo " + TARGET_WIDTH + ") ---");
+                    report.push("--- viewport: " + (typeof window !== "undefined" ? window.innerWidth : "?") + "px ---");
+                    this._logChunked("=== Ancho del dialogo ===", report.join("\n"));
                 };
                 CustomerInlineDialog.prototype._loadCustomerGroups = function (element) {
                     var _this = this;

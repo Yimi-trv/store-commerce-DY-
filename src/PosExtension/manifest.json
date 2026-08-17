@@ -35,6 +35,12 @@
 "description": "Aplica el tema visual Trujillo Market al iniciar Store Commerce"
 },
 {
+"triggerType": "PreOperation",
+"modulePath": "Triggers/OperationProbeTrigger",
+"name": "OperationProbeTrigger",
+"description": "TEMPORAL - Sonda de diagnostico: registra en consola que operacion dispara cada boton. Nunca cancela. Eliminar cuando se resuelva el boton Agregar cliente."
+},
+{
 "triggerType": "PreCustomerSearch",
 "modulePath": "Triggers/PreCustomerSearchModalTrigger",
 "name": "PreCustomerSearchModalTrigger",
