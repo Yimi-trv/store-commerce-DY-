@@ -128,15 +128,20 @@ export default class SunatCustomerService {
      *
      * SUNAT devuelve la dirección en una sola cadena con su propia nomenclatura:
      *
-     *   "CAL. LORETO NRO. 208"                  -> CAL. LORETO      | 208 | (vacío)
-     *   "AV. LARCO NRO. 1234 INT. 501"          -> AV. LARCO        | 1234 | INT. 501
-     *   "JR. UNION NRO. 123 DPTO. 401 PISO 4"   -> JR. UNION        | 123  | DPTO. 401 PISO 4
-     *   "AV. PRIMAVERA NRO. S/N"                -> AV. PRIMAVERA    | S/N  | (vacío)
-     *   "CAL. SAN MARTIN 456"                   -> CAL. SAN MARTIN  | 456  | (vacío)
+     *   "CAL. LORETO NRO. 208"                -> CAL. LORETO NRO.      | 208  | (vacío)
+     *   "AV. LARCO NRO. 1234 INT. 501"        -> AV. LARCO NRO.        | 1234 | INT. 501
+     *   "JR. UNION NRO. 123 DPTO. 401 PISO 4" -> JR. UNION NRO.        | 123  | DPTO. 401 PISO 4
+     *   "AV. PRIMAVERA NRO. S/N"              -> AV. PRIMAVERA NRO.    | S/N  | (vacío)
+     *   "CAL. SAN MARTIN 456"                 -> CAL. SAN MARTIN       | 456  | (vacío)
      *
      * El corte se hace sobre el marcador de número (NRO., N°, NUM...), que es lo que SUNAT
      * emite de forma consistente. Lo de antes es la calle, lo de después del número es el
      * complemento (interior, piso, departamento, manzana...).
+     *
+     * EL MARCADOR SE QUEDA EN LA CALLE. Es parte de cómo se escribe una dirección fiscal en
+     * Perú: la dirección impresa es "JR. AREQUIPA NRO. 514", no "JR. AREQUIPA 514". D365 arma
+     * la dirección completa concatenando Street y StreetNumber, así que si el "NRO." se
+     * descarta al separar, desaparece también del comprobante. Solo se extrae el número.
      *
      * DELIBERADAMENTE CONSERVADORA: si no hay marcador ni un número al final reconocible, se
      * devuelve la cadena entera como calle y los otros dos campos vacíos. Es preferible dejar
@@ -153,15 +158,18 @@ export default class SunatCustomerService {
         // Un número puede ser "208", "208A", "208-B", "1234/2" o "S/N" (sin número).
         const numberToken: string = "(?:S\\/N|SN|[0-9]+[A-Za-z]?(?:\\s?[\\-\\/]\\s?[0-9A-Za-z]+)?)";
 
-        // Caso normal de SUNAT: marcador explícito de número.
+        // Caso normal de SUNAT: marcador explícito de número. El marcador se captura aparte
+        // porque NO se descarta: vuelve al final de la calle tal como venía escrito.
         const match: RegExpMatchArray =
-            clean.match(new RegExp("\\b(?:NRO|NUM|NUMERO|N[°º])\\.?\\s*(" + numberToken + ")(?![0-9])", "i"));
+            clean.match(new RegExp("\\b((?:NRO|NUM|NUMERO|N[°º])\\.?)\\s*(" + numberToken + ")(?![0-9])", "i"));
 
         if (match) {
             const markerIndex: number = match.index || 0;
+            const beforeMarker: string = this._trimSeparators(clean.substring(0, markerIndex));
+
             return {
-                street: this._trimSeparators(clean.substring(0, markerIndex)),
-                streetNumber: match[1],
+                street: (beforeMarker ? beforeMarker + " " : "") + match[1],
+                streetNumber: match[2],
                 compliment: this._trimSeparators(clean.substring(markerIndex + match[0].length))
             };
         }

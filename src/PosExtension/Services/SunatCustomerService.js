@@ -41,12 +41,13 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                         return { street: "", streetNumber: "", compliment: "" };
                     }
                     var numberToken = "(?:S\\/N|SN|[0-9]+[A-Za-z]?(?:\\s?[\\-\\/]\\s?[0-9A-Za-z]+)?)";
-                    var match = clean.match(new RegExp("\\b(?:NRO|NUM|NUMERO|N[°º])\\.?\\s*(" + numberToken + ")(?![0-9])", "i"));
+                    var match = clean.match(new RegExp("\\b((?:NRO|NUM|NUMERO|N[°º])\\.?)\\s*(" + numberToken + ")(?![0-9])", "i"));
                     if (match) {
                         var markerIndex = match.index || 0;
+                        var beforeMarker = this._trimSeparators(clean.substring(0, markerIndex));
                         return {
-                            street: this._trimSeparators(clean.substring(0, markerIndex)),
-                            streetNumber: match[1],
+                            street: (beforeMarker ? beforeMarker + " " : "") + match[1],
+                            streetNumber: match[2],
                             compliment: this._trimSeparators(clean.substring(markerIndex + match[0].length))
                         };
                     }
