@@ -43,7 +43,7 @@ System.register(["PosApi/Consume/DataService", "PosApi/Entities"], function (exp
                     _this._entityType = "CustomerSearchField";
                     _this._method = "GetCustomerSearchFields";
                     _this._parameters = {};
-                    _this._isAction = true;
+                    _this._isAction = false;
                     _this._returnType = Entities_1.ProxyEntities.CustomerSearchFieldClass;
                     _this._isReturnTypeCollection = true;
                     return _this;

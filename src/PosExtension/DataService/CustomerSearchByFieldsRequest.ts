@@ -21,8 +21,15 @@ import { ProxyEntities } from "PosApi/Entities";
  *     CustomerSearchByFieldCriteria => CustomerSearchByFieldCriteria
  *     returns                       => Collection(GlobalCustomer)
  *
- *   Action GetCustomerSearchFields (IsBound=true)
+ *   Function GetCustomerSearchFields (IsBound=true)
  *     returns => Collection(CustomerSearchField)
+ *
+ * OJO CON FUNCTION vs ACTION: el EDMX distingue las dos y eso cambia cómo viajan. Una Function
+ * va por GET con paréntesis en la URL; una Action va por POST con el cuerpo en JSON. Declarar
+ * una Function como acción produce un 404, que es exactamente lo que pasó aquí. Antes de
+ * declarar una operación a mano hay que mirar cuál de las dos es:
+ *
+ *   grep -oE '<(Function|Action) Name="NOMBRE"' RetailServerEdmxModel.g.xml
  */
 
 export class GetCustomerSearchFieldsResponse extends DataServiceResponse {
@@ -37,7 +44,11 @@ export class GetCustomerSearchFieldsRequest<TResponse extends GetCustomerSearchF
         this._entityType = "CustomerSearchField";
         this._method = "GetCustomerSearchFields";
         this._parameters = {};
-        this._isAction = true;
+        // FUNCTION, no action: viaja por GET y la URL lleva paréntesis
+        // —/Commerce/Customers/GetCustomerSearchFields()—. Declararla como acción producía un
+        // POST sin paréntesis y Retail Server respondía 404. El metadata lo dice: el EDMX la
+        // declara como <Function>, mientras que Search y SearchByFields son <Action>.
+        this._isAction = false;
         this._returnType = ProxyEntities.CustomerSearchFieldClass;
         this._isReturnTypeCollection = true;
     }
