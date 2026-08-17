@@ -83,6 +83,7 @@ import {
     GetCountiesResponse
 } from "../../../DataService/GeographicRequests";
 import { GetStateProvincesServiceRequest } from "PosApi/Consume/StoreOperations";
+import { ShowMessageDialogClientRequest, ShowMessageDialogClientResponse } from "PosApi/Consume/Dialogs";
 
 const GUARD_KEY: string = "__customerInlineDialogActive";
 
@@ -1149,22 +1150,41 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         const account: string = existing.AccountNumber || "";
         const name: string = existing.Name || this._formatCustomerSummary(existing);
 
-        this._showTextResult(element, "customerInlineCreateResult",
-            "Ya existe un cliente con el documento " + documentNumber + ":\n\n"
-            + "Cuenta: " + account + "\n"
-            + "Nombre: " + name + "\n\n"
-            + "No se creó uno nuevo para no duplicarlo.");
+        this._logChunked("=== Duplicado evitado ===",
+            "documento=" + documentNumber + " ya pertenece a la cuenta " + account);
 
-        this._showMessage(element, "Documento ya registrado. Puede asignar el cliente existente.");
+        // Alerta flotante del propio POS en vez de un texto en el recuadro: un duplicado es una
+        // decisión que el cajero debe tomar, no un aviso que pueda pasar por alto.
+        const options: any = {
+            title: "El cliente ya existe",
+            subTitle: name,
+            message: "El documento " + documentNumber + " ya pertenece a la cuenta " + account
+                + ".\n\nNo se creó un cliente nuevo para no duplicarlo.\n\n"
+                + "¿Desea usar el cliente existente en esta venta?",
+            showCloseX: false,
+            button1: { id: "useExisting", label: "Aceptar y usar este cliente", isPrimary: true, result: "use" },
+            button2: { id: "cancel", label: "Cancelar", isPrimary: false, result: "cancel" }
+        };
 
-        const useExistingButton: HTMLButtonElement =
-            element.querySelector("#customerInlineUseExistingBtn") as HTMLButtonElement;
-        if (useExistingButton) {
-            useExistingButton.style.display = "";
-            useExistingButton.onclick = (): void => {
+        return this.context.runtime
+            .executeAsync(new ShowMessageDialogClientRequest<ShowMessageDialogClientResponse>(options, this._getCorrelationId()))
+            .then((response: any): Promise<void> => {
+                const chosen: any = response && response.data && response.data.result;
+                const chosenResult: string = chosen ? (chosen.result || chosen) : "";
+
+                if (chosenResult !== "use") {
+                    // Canceló: se queda en el formulario con los datos que ya cargó, por si
+                    // quiere revisarlos antes de decidir.
+                    this._showMessage(element, "El documento ya está registrado en la cuenta " + account + ".");
+                    return Promise.resolve();
+                }
+
                 this._showMessage(element, "Asignando " + account + " a la venta...");
-                this._setCustomerOnCart(account)
+
+                return this._setCustomerOnCart(account)
                     .then((): void => {
+                        // Cierra el modal y deja al cliente existente puesto en la venta, que es
+                        // lo que el cajero necesitaba desde el principio.
                         this._complete({
                             mode: "create",
                             action: "assignedExistingCustomer",
@@ -1175,13 +1195,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                         this._logError("Asignar cliente existente fallo: " + this._stringify(reason));
                         this._showMessage(element, "No se pudo asignar: " + this._getErrorMessage(reason));
                     });
-            };
-        }
-
-        this._logChunked("=== Duplicado evitado ===",
-            "documento=" + documentNumber + " ya pertenece a la cuenta " + account);
-
-        return Promise.resolve();
+            })
+            .catch((reason: any): void => {
+                // Si la alerta no se puede mostrar, el aviso igual tiene que llegar.
+                this._logError("Alerta de duplicado fallo: " + this._stringify(reason));
+                this._showTextResult(element, "customerInlineCreateResult",
+                    "Ya existe un cliente con el documento " + documentNumber + ":\n\n"
+                    + "Cuenta: " + account + "\nNombre: " + name + "\n\n"
+                    + "No se creó uno nuevo para no duplicarlo.");
+                this._showMessage(element, "Documento ya registrado en la cuenta " + account + ".");
+            });
     }
 
     /**

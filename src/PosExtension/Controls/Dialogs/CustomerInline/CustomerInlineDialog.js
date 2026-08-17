@@ -1,4 +1,4 @@
-System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest", "../../../DataService/CustomerSearchRequest", "../../../DataService/GeographicRequests", "PosApi/Consume/StoreOperations"], function (exports_1, context_1) {
+System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest", "../../../DataService/CustomerSearchRequest", "../../../DataService/GeographicRequests", "PosApi/Consume/StoreOperations", "PosApi/Consume/Dialogs"], function (exports_1, context_1) {
     "use strict";
     var __extends = (this && this.__extends) || (function () {
         var extendStatics = function (d, b) {
@@ -15,7 +15,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, CustomerSearchRequest_1, GeographicRequests_1, StoreOperations_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
+    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, CustomerSearchRequest_1, GeographicRequests_1, StoreOperations_1, Dialogs_2, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -54,6 +54,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             },
             function (StoreOperations_1_1) {
                 StoreOperations_1 = StoreOperations_1_1;
+            },
+            function (Dialogs_2_1) {
+                Dialogs_2 = Dialogs_2_1;
             }
         ],
         execute: function () {
@@ -801,32 +804,47 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     var _this = this;
                     var account = existing.AccountNumber || "";
                     var name = existing.Name || this._formatCustomerSummary(existing);
-                    this._showTextResult(element, "customerInlineCreateResult", "Ya existe un cliente con el documento " + documentNumber + ":\n\n"
-                        + "Cuenta: " + account + "\n"
-                        + "Nombre: " + name + "\n\n"
-                        + "No se creó uno nuevo para no duplicarlo.");
-                    this._showMessage(element, "Documento ya registrado. Puede asignar el cliente existente.");
-                    var useExistingButton = element.querySelector("#customerInlineUseExistingBtn");
-                    if (useExistingButton) {
-                        useExistingButton.style.display = "";
-                        useExistingButton.onclick = function () {
-                            _this._showMessage(element, "Asignando " + account + " a la venta...");
-                            _this._setCustomerOnCart(account)
-                                .then(function () {
-                                _this._complete({
-                                    mode: "create",
-                                    action: "assignedExistingCustomer",
-                                    customerAccountNumber: account
-                                });
-                            })
-                                .catch(function (reason) {
-                                _this._logError("Asignar cliente existente fallo: " + _this._stringify(reason));
-                                _this._showMessage(element, "No se pudo asignar: " + _this._getErrorMessage(reason));
-                            });
-                        };
-                    }
                     this._logChunked("=== Duplicado evitado ===", "documento=" + documentNumber + " ya pertenece a la cuenta " + account);
-                    return Promise.resolve();
+                    var options = {
+                        title: "El cliente ya existe",
+                        subTitle: name,
+                        message: "El documento " + documentNumber + " ya pertenece a la cuenta " + account
+                            + ".\n\nNo se creó un cliente nuevo para no duplicarlo.\n\n"
+                            + "¿Desea usar el cliente existente en esta venta?",
+                        showCloseX: false,
+                        button1: { id: "useExisting", label: "Aceptar y usar este cliente", isPrimary: true, result: "use" },
+                        button2: { id: "cancel", label: "Cancelar", isPrimary: false, result: "cancel" }
+                    };
+                    return this.context.runtime
+                        .executeAsync(new Dialogs_2.ShowMessageDialogClientRequest(options, this._getCorrelationId()))
+                        .then(function (response) {
+                        var chosen = response && response.data && response.data.result;
+                        var chosenResult = chosen ? (chosen.result || chosen) : "";
+                        if (chosenResult !== "use") {
+                            _this._showMessage(element, "El documento ya está registrado en la cuenta " + account + ".");
+                            return Promise.resolve();
+                        }
+                        _this._showMessage(element, "Asignando " + account + " a la venta...");
+                        return _this._setCustomerOnCart(account)
+                            .then(function () {
+                            _this._complete({
+                                mode: "create",
+                                action: "assignedExistingCustomer",
+                                customerAccountNumber: account
+                            });
+                        })
+                            .catch(function (reason) {
+                            _this._logError("Asignar cliente existente fallo: " + _this._stringify(reason));
+                            _this._showMessage(element, "No se pudo asignar: " + _this._getErrorMessage(reason));
+                        });
+                    })
+                        .catch(function (reason) {
+                        _this._logError("Alerta de duplicado fallo: " + _this._stringify(reason));
+                        _this._showTextResult(element, "customerInlineCreateResult", "Ya existe un cliente con el documento " + documentNumber + ":\n\n"
+                            + "Cuenta: " + account + "\nNombre: " + name + "\n\n"
+                            + "No se creó uno nuevo para no duplicarlo.");
+                        _this._showMessage(element, "Documento ya registrado en la cuenta " + account + ".");
+                    });
                 };
                 CustomerInlineDialog.prototype._continueCreate = function (element, documentNumber, name) {
                     this._showMessage(element, "Paso 1: Resolviendo dirección (Ubigeo)...");
