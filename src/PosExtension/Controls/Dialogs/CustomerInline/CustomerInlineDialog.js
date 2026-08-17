@@ -153,6 +153,35 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                 };
                 CustomerInlineDialog.prototype._widenHostDialog = function (element) {
+                    var _this = this;
+                    this._applyDialogWidth(element);
+                    setTimeout(function () { _this._applyDialogWidth(element); }, 0);
+                    setTimeout(function () {
+                        _this._applyDialogWidth(element);
+                        _this._reportDialogWidth(element);
+                    }, 200);
+                };
+                CustomerInlineDialog.prototype._applyDialogWidth = function (element) {
+                    var viewport = (typeof window !== "undefined" && window.innerWidth) ? window.innerWidth : 1024;
+                    var targetWidth = Math.max(560, Math.min(960, Math.floor(viewport * 0.94)));
+                    var node = element.parentElement;
+                    for (var depth = 0; node && depth < 10; depth++) {
+                        var cls = typeof node.className === "string" ? node.className : "";
+                        if (cls.indexOf("extensionTemplatedDialog") >= 0) {
+                            node.style.width = targetWidth + "px";
+                            node.style.maxWidth = "96vw";
+                            break;
+                        }
+                        if (cls.indexOf("dialogContainer") >= 0
+                            || cls.indexOf("ExtensionTemplateDialogContentPlaceholder") >= 0) {
+                            node.style.width = "100%";
+                            node.style.maxWidth = "100%";
+                            node.style.boxSizing = "border-box";
+                        }
+                        node = node.parentElement;
+                    }
+                };
+                CustomerInlineDialog.prototype._reportDialogWidth = function (element) {
                     var TARGET_WIDTH = 900;
                     var report = [];
                     var node = element.parentElement;
@@ -171,19 +200,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             cssPosition = computed.position;
                             cssOverflow = computed.overflowX;
                         }
-                        var action = "sin tocar";
-                        if (width > 0 && width < TARGET_WIDTH) {
-                            node.style.width = TARGET_WIDTH + "px";
-                            node.style.maxWidth = "95vw";
-                            action = "ENSANCHADO -> " + node.offsetWidth + "px";
-                        }
                         report.push(depth + ") " + tag + "." + cls
                             + " | offsetWidth=" + width
                             + " | css width=" + cssWidth
                             + " max-width=" + cssMaxWidth
                             + " position=" + cssPosition
-                            + " overflow-x=" + cssOverflow
-                            + " | " + action);
+                            + " overflow-x=" + cssOverflow);
                         node = node.parentElement;
                     }
                     report.push("--- ancho final del contenido: " + element.offsetWidth + "px (objetivo " + TARGET_WIDTH + ") ---");

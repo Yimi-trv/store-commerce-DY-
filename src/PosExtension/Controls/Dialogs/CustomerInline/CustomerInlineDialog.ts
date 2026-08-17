@@ -246,7 +246,64 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      * POS: se ensancha el primero que ya tenga un ancho acotado. Si no se encuentra ninguno,
      * el modal queda angosto pero funcional — nunca se rompe por esto.
      */
+    /**
+     * Ensancha el diálogo del POS identificando sus contenedores POR CLASE.
+     *
+     * El primer intento medía `offsetWidth` y solo tocaba los contenedores acotados. No sirvió:
+     * `onReady` corre ANTES de que el POS dibuje el diálogo, así que todos los ancestros
+     * reportaban 0px y quedaban descartados. Verificado en UAT con el volcado de la cadena.
+     *
+     * Estructura real del diálogo (de fuera hacia dentro):
+     *   .extensionTemplatedDialog   <- la ventana; position:fixed. Aquí va el ancho.
+     *   .dialogContainer            <- centrado vertical
+     *   .dialogContainer2           <- fila
+     *   ...
+     *   .ExtensionTemplateDialogContentPlaceholder  <- donde vive nuestro HTML
+     *
+     * Se reaplica tras el render porque el POS ajusta medidas después de `onReady`.
+     * No se toca `position` ni `left`: el diálogo ya viene centrado y moverlo lo rompería.
+     */
     private _widenHostDialog(element: HTMLElement): void {
+        this._applyDialogWidth(element);
+
+        // El POS termina de medir después de onReady; sin estas reaplicaciones el ancho se
+        // pierde. Son baratas y idempotentes.
+        setTimeout((): void => { this._applyDialogWidth(element); }, 0);
+        setTimeout((): void => {
+            this._applyDialogWidth(element);
+            // Se reporta al final, cuando el POS ya midió: antes todo daba 0px y no servía.
+            this._reportDialogWidth(element);
+        }, 200);
+    }
+
+    private _applyDialogWidth(element: HTMLElement): void {
+        // El viewport de caja puede ser 1024px, no 1920: el ancho se calcula contra la pantalla
+        // real en vez de fijar un número que desborde.
+        const viewport: number = (typeof window !== "undefined" && window.innerWidth) ? window.innerWidth : 1024;
+        const targetWidth: number = Math.max(560, Math.min(960, Math.floor(viewport * 0.94)));
+
+        let node: HTMLElement = element.parentElement;
+        for (let depth: number = 0; node && depth < 10; depth++) {
+            const cls: string = typeof node.className === "string" ? node.className : "";
+
+            if (cls.indexOf("extensionTemplatedDialog") >= 0) {
+                node.style.width = targetWidth + "px";
+                node.style.maxWidth = "96vw";
+                break;
+            }
+
+            if (cls.indexOf("dialogContainer") >= 0
+                || cls.indexOf("ExtensionTemplateDialogContentPlaceholder") >= 0) {
+                node.style.width = "100%";
+                node.style.maxWidth = "100%";
+                node.style.boxSizing = "border-box";
+            }
+
+            node = node.parentElement;
+        }
+    }
+
+    private _reportDialogWidth(element: HTMLElement): void {
         const TARGET_WIDTH: number = 900;
         const report: string[] = [];
 
@@ -271,21 +328,13 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 cssOverflow = computed.overflowX;
             }
 
-            let action: string = "sin tocar";
-            if (width > 0 && width < TARGET_WIDTH) {
-                node.style.width = TARGET_WIDTH + "px";
-                node.style.maxWidth = "95vw";
-                action = "ENSANCHADO -> " + node.offsetWidth + "px";
-            }
-
             report.push(
                 depth + ") " + tag + "." + cls
                 + " | offsetWidth=" + width
                 + " | css width=" + cssWidth
                 + " max-width=" + cssMaxWidth
                 + " position=" + cssPosition
-                + " overflow-x=" + cssOverflow
-                + " | " + action);
+                + " overflow-x=" + cssOverflow);
 
             node = node.parentElement;
         }

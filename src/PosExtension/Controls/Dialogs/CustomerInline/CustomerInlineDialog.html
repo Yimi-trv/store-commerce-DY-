@@ -1,20 +1,20 @@
 <div class="customer-inline-dialog">
     <style>
-        /* El diálogo del POS se ancla a la derecha, así que crecer en ancho lo extiende hacia
-           la izquierda. 920px deja sitio para la tabla de resultados sin tapar la venta.
-           El max-width en vw evita que se salga de pantalla en resoluciones chicas de caja. */
+        /* El ancho lo fija _applyDialogWidth sobre el contenedor del POS, calculado contra el
+           viewport real (en caja puede ser 1024px). Aquí solo se ocupa todo lo disponible.
+           Fijar un ancho mínimo grande aquí desbordaba el diálogo en pantallas chicas. */
         .customer-inline-dialog {
-            min-width: 880px;
-            width: 920px;
-            max-width: 92vw;
+            width: 100%;
+            min-width: 0;
+            max-width: 100%;
             padding: 16px;
             box-sizing: border-box;
             font-family: "Segoe UI", Arial, sans-serif;
         }
 
-        /* Con el modal ancho, los campos entran de a dos por fila. */
+        /* Dos columnas cuando hay sitio; una sola en pantallas angostas. */
         .customer-inline-dialog__grid {
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
         }
 
         .customer-inline-dialog__results {

@@ -1,74 +1,74 @@
 {
-"$schema": "./devDependencies/schemas/manifestSchema.json",
-"name": "RegenerateFE",
-"publisher": "DP",
-"version": "1.2.1",
-"minimumPosVersion": "9.51.0.0",
-"description": "Extension POS: consulta de RUC y DNI via SUNAT en Customer Add/Edit + tema visual Trujillo Market (layout amplio y compacto 1024x768)",
-"components": {
-"extend": {
-"views": {
-"CustomerAddEditView": {
-"appBarCommands": [
-{
-"modulePath": "ViewExtensions/CustomerAddEdit/SunatLookupCommand"
-}
-],
-"controlsConfig": {
-"customControls": [
-{
-"controlName": "sunatPadronesControl",
-"htmlPath": "ViewExtensions/CustomerAddEdit/SunatPadronesControl.html",
-"modulePath": "ViewExtensions/CustomerAddEdit/SunatPadronesControl",
-"name": "SunatPadronesControl",
-"description": "Padrones SUNAT (retencion/percepcion/sector publico) editables y visibles en vivo"
-}
-]
-}
-}
-},
-"triggers": [
-{
-"modulePath": "Triggers/ApplyThemeTrigger",
-"triggerType": "ApplicationStart",
-"name": "ApplyThemeTrigger",
-"description": "Aplica el tema visual Trujillo Market al iniciar Store Commerce"
-},
-{
-"triggerType": "PreOperation",
-"modulePath": "Triggers/OperationProbeTrigger",
-"name": "OperationProbeTrigger",
-"description": "TEMPORAL - Sonda de diagnostico: registra en consola que operacion dispara cada boton. Nunca cancela. Eliminar cuando se resuelva el boton Agregar cliente."
-},
-{
-"triggerType": "PreCustomerSearch",
-"modulePath": "Triggers/PreCustomerSearchModalTrigger",
-"name": "PreCustomerSearchModalTrigger",
-"description": "Abre el modal de cliente en ventas antes de ejecutar la busqueda estandar."
-},
-{
-"triggerType": "PreCustomerAdd",
-"modulePath": "Triggers/PreCustomerAddModalTrigger",
-"name": "PreCustomerAddModalTrigger",
-"description": "Abre el modal de cliente en ventas antes de navegar a crear cliente."
-},
-{
-"triggerType": "PreCustomerEdit",
-"modulePath": "Triggers/PreCustomerEditModalTrigger",
-"name": "PreCustomerEditModalTrigger",
-"description": "Abre el modal de cliente en ventas antes de navegar a editar cliente."
-}
-]
-},
-"create": {
-"templatedDialogs": [
-{
-"htmlPath": "Controls/Dialogs/CustomerInline/CustomerInlineDialog.html",
-"modulePath": "Controls/Dialogs/CustomerInline/CustomerInlineDialog",
-"name": "CustomerInlineDialog",
-"description": "Modal unificado para buscar, crear y editar cliente desde ventas."
-}
-]
-}
-}
+ "$schema": "./devDependencies/schemas/manifestSchema.json",
+ "name": "RegenerateFE",
+ "publisher": "DP",
+ "version": "1.2.1",
+ "minimumPosVersion": "9.51.0.0",
+ "description": "Extension POS: consulta de RUC y DNI via SUNAT en Customer Add/Edit + tema visual Trujillo Market (layout amplio y compacto 1024x768)",
+ "components": {
+  "extend": {
+   "views": {
+    "CustomerAddEditView": {
+     "appBarCommands": [
+      {
+       "modulePath": "ViewExtensions/CustomerAddEdit/SunatLookupCommand"
+      }
+     ],
+     "controlsConfig": {
+      "customControls": [
+       {
+        "controlName": "sunatPadronesControl",
+        "htmlPath": "ViewExtensions/CustomerAddEdit/SunatPadronesControl.html",
+        "modulePath": "ViewExtensions/CustomerAddEdit/SunatPadronesControl",
+        "name": "SunatPadronesControl",
+        "description": "Padrones SUNAT (retencion/percepcion/sector publico) editables y visibles en vivo"
+       }
+      ]
+     }
+    }
+   },
+   "triggers": [
+    {
+     "modulePath": "Triggers/ApplyThemeTrigger",
+     "triggerType": "ApplicationStart",
+     "name": "ApplyThemeTrigger",
+     "description": "Aplica el tema visual Trujillo Market al iniciar Store Commerce"
+    },
+    {
+     "triggerType": "PreOperation",
+     "modulePath": "Triggers/OperationProbeTrigger",
+     "name": "OperationProbeTrigger",
+     "description": "Intercepta la operacion 602 (Customer search) para abrir el modal de cliente en vez de la pantalla nativa. El boton Agregar cliente del panel de la venta usa esa operacion y no dispara PreCustomerSearch. Ademas registra en consola cada operacion, util para identificar otros botones."
+    },
+    {
+     "triggerType": "PreCustomerSearch",
+     "modulePath": "Triggers/PreCustomerSearchModalTrigger",
+     "name": "PreCustomerSearchModalTrigger",
+     "description": "Abre el modal de cliente en ventas antes de ejecutar la busqueda estandar."
+    },
+    {
+     "triggerType": "PreCustomerAdd",
+     "modulePath": "Triggers/PreCustomerAddModalTrigger",
+     "name": "PreCustomerAddModalTrigger",
+     "description": "Abre el modal de cliente en ventas antes de navegar a crear cliente."
+    },
+    {
+     "triggerType": "PreCustomerEdit",
+     "modulePath": "Triggers/PreCustomerEditModalTrigger",
+     "name": "PreCustomerEditModalTrigger",
+     "description": "Abre el modal de cliente en ventas antes de navegar a editar cliente."
+    }
+   ]
+  },
+  "create": {
+   "templatedDialogs": [
+    {
+     "htmlPath": "Controls/Dialogs/CustomerInline/CustomerInlineDialog.html",
+     "modulePath": "Controls/Dialogs/CustomerInline/CustomerInlineDialog",
+     "name": "CustomerInlineDialog",
+     "description": "Modal unificado para buscar, crear y editar cliente desde ventas."
+    }
+   ]
+  }
+ }
 }
