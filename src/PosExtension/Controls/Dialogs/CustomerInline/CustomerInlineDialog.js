@@ -384,31 +384,11 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             address.ThreeLetterISORegionName = "PER";
                             address.Name = _this._resolveAddressName(sunatData.documentType, purposeValue, purposeLabel);
                             address.Street = addressStreet;
-<<<<<<< HEAD
                             address.AddressTypeValue = purposeValue;
                             address.IsPrimary = _this._getChecked(element, "customerInlineCreateAddressPrimary");
                             address.RecordId = 0;
                             address.Deactivate = false;
                             address.ExtensionProperties = [];
-=======
-                            address.IsPrimary = true;
-<<<<<<< Updated upstream
->>>>>>> 3ef2e5af97826f953ad157ca3af3ecfd9ca9ddcd
-=======
-                            if (addressPurpose === "Entrega") {
-                                address.AddressTypeValue = 1;
-                            }
-                            else if (addressPurpose === "Factura") {
-                                address.AddressTypeValue = 4;
-                            }
-                            else if (addressPurpose === "Casa") {
-                                address.AddressTypeValue = 3;
-                            }
-                            else {
-                                address.AddressTypeValue = 2;
-                            }
-                            address.ExtensionProperties = [];
->>>>>>> Stashed changes
                             if (u && u.IsValid) {
                                 address.State = u.StateId;
                                 address.County = u.CountyId;

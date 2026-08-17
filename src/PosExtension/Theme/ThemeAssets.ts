@@ -1,6 +1,39 @@
 /**
  * SCT_ThemeAssets — íconos y CSS del tema "Trujillo Market" para Store Commerce.
  * Soporte dual: 1920x855 (sct-amplio) y 1024x768 (sct-compacto).
+ *
+ * ---------------------------------------------------------------------------------------------
+ * COMO ESTA ORGANIZADO ESTE FICHERO (leer antes de tocar nada)
+ * ---------------------------------------------------------------------------------------------
+ *
+ * Al final, construirCss() devuelve TRES bloques concatenados:
+ *
+ *     acotar(cssBase)                                    -> siempre
+ *     @media (min-width:1367px) { acotar(cssAmplio)   }  -> pantalla ancha
+ *     @media (max-width:1366px) { acotar(cssCompacto) }  -> 1024x768 y similares
+ *
+ * acotar() reescribe CADA selector para colgarlo de "body.sct-on", que es la clase que el motor
+ * pone SOLO en la pantalla de transaccion. Asi el tema no se derrama sobre las pantallas de SUNAT
+ * ni sobre el resto del POS.
+ *
+ * TRAMPA DE acotar(): trocea el CSS partiendo por "}" y por "{". Ningun valor puede contener esas
+ * llaves (ojo con los data: URI de los iconos y con content:''), o el troceado se rompe.
+ *
+ * TRAMPA DE ".dark": es una clase del PROPIO <body>, no de un ancestro. Por eso acotar() la fusiona
+ * en un selector compuesto (body.sct-on.dark ...). Si se escribe a mano "body.sct-on .dark" la
+ * regla no casa NUNCA y parece aplicada sin estarlo.
+ *
+ * REGLA DE ORO DEL LAYOUT DUAL: toda regla de GEOMETRIA (width, height, left, top, position,
+ * display, overflow) que se anada a cssAmplio necesita su equivalente en cssCompacto. La mayoria
+ * de los bugs de 1024x768 de esta campana fueron exactamente eso: reglas que nunca se replicaron.
+ *
+ * LIMITE REAL DEL CSS: el POS escribe estilos INLINE con !important en algunos botones (el color
+ * de los botones de cuadricula viene configurado en HQ). Un !important de hoja de estilos NO gana
+ * a un inline con !important: esas reglas quedan como codigo muerto. Comprobado en el panel
+ * BOLETEO, que se ve #FF0000 pese a que aqui se pide #1B1A19. Si hay que cambiarlo, se cambia en
+ * HQ o desde el motor con setProperty(..., 'important').
+ *
+ * El umbral 1366/1367 de estas @media tiene que coincidir con esCompacto() de ThemeEngine.ts.
  */
 
 export var TEMA_ACTIVO: boolean = true;
@@ -214,7 +247,75 @@ export function construirCss(): string {
         + "#ButtonGrid4Control .sct-p2{left:0px !important;top:84px !important;width:452px !important;height:62px !important;min-height:0 !important;max-height:62px !important;}\n";
 
 
+    // =============================================================================================
     // CSS COMPACTO (1024x768)
+    // =============================================================================================
+    //
+    // ¡¡NO BORRAR NI "LIMPIAR" LOS VALORES DE ESTA LISTA SIN LEER EL MOTIVO!!
+    //
+    // Los numeros de este bloque NO son estéticos ni aproximados: salieron de medir la pantalla
+    // real (getBoundingClientRect) con el POS abierto en una ventana de 1024x768 y con el usuario
+    // de caja. Cada uno cuadra con otro. Si se "redondean" o se borran por parecer redundantes, la
+    // pantalla se descuadra de formas que NO se ven en las medidas, solo mirándola.
+    //
+    // ANCLAS DE LA PANTALLA (si cambias una, tienes que cambiar su pareja):
+    //
+    //   x=8 .. x=634   -> columna izquierda completa (carrito, cliente, montos).
+    //                     El ancho del carrito vive en ThemeEngine (propLineas: left -12, width
+    //                     626, height 400) porque se escribe INLINE y el CSS no le gana.
+    //                     Su pareja aqui es #TotalsPanel{width:298px} (desde x=336 acaba en 634).
+    //   16px           -> aire entre la columna izquierda y la derecha (x=650).
+    //   y=508          -> cierran a la vez el carrito y la tarjeta de pestañas.
+    //   y=752          -> cierran A LA VEZ TRES cosas: #TotalsPanel, la fila de pagos (NIUBIZ) y
+    //                     la tarjeta de direccion del cliente (.sct-dom-card, de ahi su alto 148).
+    //                     De ahi salen #CustomControl1{top:460} y #ButtonGrid4{top:565}, y de ahi
+    //                     que los huecos verticales sean 12 y 11 y no 16: no cabe mas.
+    //   228            -> alto de la zona de cliente. Dentro caben JUSTO ficha 80 + direccion 148.
+    //                     Si crece cualquiera de las dos, la otra se corta (la zona tiene
+    //                     overflow:hidden y no puede crecer: topa con el carrito arriba y con el
+    //                     borde de la pantalla abajo).
+    //
+    // REGLAS QUE PARECEN MUERTAS Y NO LO SON (ya se intento borrarlas una vez):
+    //
+    //   #TabControl .numpad-control-buttons{max-height:266px}  (la primera de las dos)
+    //       La regla de mas abajo gana en "height", pero NO trae max-height. Sin este tope, el
+    //       contenedor (que es flex) se dispara a 322px y el teclado se sale 37px de su tarjeta.
+    //       MEDIDO al quitarlo. Ganar en una propiedad no es ganar en todas.
+    //
+    //   #ButtonGrid4Control .sct-pbtn{width:82px}  +  .sct-p2{width:340px}
+    //       El bloque ancho de NIUBIZ recupera sus 340px POR ORDEN (va despues), no por
+    //       especificidad. Si a la primera regla se le añade una clase mas (por ejemplo para
+    //       acotarla), pasa a ganar y NIUBIZ se encoge al ancho del tile pequeño con el logo
+    //       saliendose. Paso al probarlo en vivo.
+    //
+    //   #TabControl .numpad-control-input{height + min-height + max-height}
+    //       Los tres hacen falta. El POS le pone font-size:40px INLINE y una regla base le pone
+    //       min-height, y min-height gana SIEMPRE a height. Con solo height se queda en 52px y se
+    //       sale por arriba de la tarjeta.
+    //
+    //   #ButtonGrid1, #ButtonGrid2, #ButtonGrid3{overflow:visible}
+    //       Las zonas que dibuja HQ miden 300px con overflow:hidden y el control interior mide
+    //       316: sin esto se recortan 16px por la derecha, justo las esquinas redondeadas, y los
+    //       botones se ven "entrecortados".
+    //
+    //   #CustomerPanel .sct-dom-card .col, ... .pad12{min-width:0}
+    //       Parece que no hace nada y es lo que arregla la direccion cortada. Los items de un
+    //       contenedor flex traen min-width:auto: se NIEGAN a encogerse por debajo del ancho
+    //       natural de su contenido. Con el texto en nowrap ese ancho es la linea entera, asi que
+    //       las lineas median 382px dentro de una tarjeta de 320 y el texto se pintaba fuera de la
+    //       vista. Borrar esta regla devuelve el bug.
+    //
+    //   #CustomerPanel .sct-cli-card .marginTop20 / .marginBottom12 / .marginTop12 / .pad12
+    //       No son numeros al azar: recortan el AIRE de la ficha de cliente (la fila de iconos de
+    //       telefono/correo mide 15px y arrastraba 20px de margen arriba y 12 abajo). Sin ellos la
+    //       ficha vuelve a 120px, y 120 + 148 = 268 en una zona de 228: se corta.
+    //
+    //   -webkit-line-clamp:2 en .sct-dom-card .h4.ellipsis
+    //       Es el tope de seguridad de la direccion. Sin el, una direccion larga crece sin limite
+    //       y desborda la tarjeta. Con el, corta con puntos suspensivos.
+    //
+    // Contexto completo de cada decision: vault de Obsidian, 006-MEMORIA, notas 14 y 23.
+    // =============================================================================================
     var cssCompacto: string = ""
         // Reparto vertical de la columna derecha en 768px de alto (medido en vivo):
         //   pestanas 108-170 | tarjeta numpad hasta 508 | Boleta 516-610 | tiles 618-745
@@ -230,9 +331,15 @@ export function construirCss(): string {
         + ".commerceTabControl.righttabs .tabsContainer{order:-1 !important;display:flex !important;flex-direction:row !important;gap:6px !important;width:340px !important;height:62px !important;margin:0 0 8px auto !important;}\n"
         + ".commerceTabControl.righttabs .tabsContainer .tab{width:80px !important;height:58px !important;margin:0 !important;}\n"
         // El bloque de teclas trae altura propia (304px) y no cabia: se fija junto al tamano de tecla.
-        + "#TabControl .numpad-control-buttons{height:224px !important;max-height:224px !important;min-height:0 !important;}\n"
-        + "#TabControl .numpad-control-buttons button,#TabControl .numpad-control-buttons .enter{height:32px !important;min-height:32px !important;max-height:32px !important;}\n"
-        + "#TabControl .numpad-control-buttons button *{font-size:20px !important;}\n"
+        // CUIDADO CON LA CASCADA: mas abajo (bloque del numpad) hay otra regla para este mismo
+        // selector. Como va despues, gana en "height" — pero NO trae max-height, asi que el
+        // max-height de AQUI es el que manda de verdad. Y no es decorativo: el contenedor es un
+        // flex y sin tope se dispara a 322px (medido en vivo al quitarlo). Los dos valores se
+        // mantienen iguales a proposito para que no haya sorpresas.
+        // 266 = 5 filas de 50px + 4 separaciones de 4px.
+        + "#TabControl .numpad-control-buttons{height:266px !important;max-height:266px !important;min-height:0 !important;}\n"
+        // (Aqui habia dos reglas mas, teclas a 32px y su tipografia a 20px, que las de mas abajo
+        // pisaban por completo: no pintaban nada. Se retiran para que el fichero no engane.)
         + "#TabControl .commerceTabControl.righttabs{width:452px !important;height:400px !important;overflow:visible !important;box-sizing:border-box !important;}\n"
         + "#TabControl .commerceTabControl.righttabs .tabsContainer{display:flex !important;flex-direction:row !important;justify-content:flex-start !important;align-items:flex-start !important;width:340px !important;min-width:340px !important;max-width:340px !important;height:62px !important;gap:6px !important;padding:0 !important;margin:0 0 8px 112px !important;left:0 !important;right:auto !important;transform:none !important;overflow:visible !important;box-sizing:border-box !important;pointer-events:auto !important;}\n"
         + "#TabControl .commerceTabControl.righttabs .tabsContainer .tab{position:relative !important;flex:0 0 80px !important;width:80px !important;min-width:80px !important;max-width:80px !important;height:58px !important;left:auto !important;right:auto !important;top:auto !important;margin:0 !important;transform:none !important;border-radius:9px !important;box-sizing:border-box !important;border:1px solid rgba(255,255,255,0.25) !important;background:#161514 !important;}\n"
@@ -246,14 +353,26 @@ export function construirCss(): string {
         + ".sct-tab2 .icon{background-image:" + ICONOS["tab2"] + " !important;}\n"
         + ".sct-tab3 .icon{background-image:" + ICONOS["tab3"] + " !important;}\n"
         + "#TabControl .commerceTabControl.righttabs > .tabContent{flex:0 0 330px !important;width:340px !important;height:330px !important;margin-left:112px !important;padding:10px 12px !important;box-sizing:border-box !important;overflow:hidden !important;pointer-events:auto !important;border:" + BORDE_TARJETA + " !important;border-radius:12px !important;}\n"
-        + "#TabControl .numpad-control{width:316px !important;height:auto !important;margin:0 auto !important;transform:translateX(-12px) !important;}\n"
-        + "#TabControl .numpad-control-input-wrapper{width:316px !important;height:36px !important;min-height:36px !important;margin-left:auto !important;margin-right:auto !important;}\n"
-        + "#TabControl .numpad-control-buttons{width:316px !important;height:auto !important;margin:8px auto 0 auto !important;transform:none !important;}\n"
-        + "#TabControl .numpad-control-buttons button{background-color:rgba(255,255,255,0.13) !important;color:#FFF !important;border:1px solid rgba(255,255,255,0.18) !important;height:44px !important;min-height:44px !important;max-height:44px !important;font-size:28px !important;border-radius:8px !important;}\n"
+        // El translateX(-12px) venia de cuando el numpad tenia otro ancho: dejaba el bloque 22px
+        // descentrado (se metia 11px en el borde izquierdo de la tarjeta y sobraban 11px a la
+        // derecha). Medido y corregido: ahora los margenes quedan en 1px y -1px.
+        + "#TabControl .numpad-control{width:316px !important;height:auto !important;margin:2px auto 0 auto !important;transform:none !important;}\n"
+        // El campo "Escribir" traia font-size:40px en un estilo INLINE del POS y se salia 9px por
+        // ENCIMA del interior de la tarjeta. Ojo: no basta con bajar la fuente y poner height —
+        // una regla base del POS le pone min-height, y min-height gana siempre a height. Hay que
+        // fijar los tres (height, min-height y max-height) o el campo se queda en 52px.
+        + "#TabControl .numpad-control-input-wrapper{width:316px !important;height:34px !important;min-height:34px !important;max-height:34px !important;margin-left:auto !important;margin-right:auto !important;}\n"
+        + "#TabControl .numpad-control-input{font-size:22px !important;height:34px !important;min-height:34px !important;max-height:34px !important;line-height:34px !important;}\n"
+        // Reparto vertical dentro de la tarjeta (interior util: 310px):
+        //   campo 34 + separacion 8 + teclado 266 = 308. Sobran 2px. Antes sobraban 31 abajo.
+        + "#TabControl .numpad-control-buttons{width:316px !important;height:266px !important;margin:8px auto 0 auto !important;transform:none !important;}\n"
+        // Tecla 44 -> 50px: es lo que hace falta para que el teclado llene la tarjeta en vez de
+        // dejar 31px muertos abajo, y de paso se agradece en una pantalla tactil.
+        + "#TabControl .numpad-control-buttons button{background-color:rgba(255,255,255,0.13) !important;color:#FFF !important;border:1px solid rgba(255,255,255,0.18) !important;height:50px !important;min-height:50px !important;max-height:50px !important;font-size:28px !important;border-radius:8px !important;}\n"
         + "#TabControl .numpad-control-buttons button *{font-size:28px !important;}\n"
         + "#TabControl .numpad-control-buttons button[aria-label='Habilitar edición de texto'],#TabControl .numpad-control-buttons button[aria-label='Habilitar edición de texto'] *{font-size:16px !important;}\n"
         + "#TabControl .numpad-control-buttons button[aria-label='Más/Menos'],#TabControl .numpad-control-buttons button[aria-label='Más/Menos'] *,#TabControl .numpad-control-buttons button[aria-label='Veces'],#TabControl .numpad-control-buttons button[aria-label='Veces'] *{font-size:21px !important;}\n"
-        + "#TabControl .numpad-control-buttons .enter{width:316px !important;height:44px !important;min-height:44px !important;max-height:44px !important;background-color:#A81020 !important;color:#FFF !important;border:none !important;}\n"
+        + "#TabControl .numpad-control-buttons .enter{width:316px !important;height:50px !important;min-height:50px !important;max-height:50px !important;background-color:#A81020 !important;color:#FFF !important;border:none !important;}\n"
         + "#TabControl .numpad-control-label{color:#A19F9D !important;font-size:12px !important;font-style:italic !important;margin-bottom:3px !important;}\n"
         + "#ButtonGrid1Control .sct-cbtn .sct-ic{left:18px !important;width:36px !important;height:36px !important;}\n"
         + "#ButtonGrid1Control .sct-cbtn::after{left:70px !important;}\n"
@@ -278,9 +397,18 @@ export function construirCss(): string {
         + "#CustomControl1 #btnToggle{width:100% !important;height:26px !important;min-height:26px !important;max-height:26px !important;font-size:11px !important;line-height:1 !important;}\n"
         + "#ButtonGrid4, #ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer{width:340px !important;height:127px !important;min-height:0 !important;max-height:127px !important;overflow:hidden !important;padding:0 !important;}\n"
         + "#ButtonGrid4Control .sct-pbtn{border-radius:9px !important;}\n"
-        + "#ButtonGrid4Control .sct-pbtn .sct-ic{width:25px !important;height:25px !important;top:4px !important;}\n"
-        + "#ButtonGrid4Control .sct-pbtn::after{left:2px !important;right:2px !important;bottom:4px !important;font-size:9px !important;line-height:1.05 !important;}\n"
-        + "#ButtonGrid4Control .sct-p4::after{font-size:8.5px !important;}\n"
+        // Icono 25 -> 30px y texto 9 -> 11px (el rotulo largo de .sct-p4, 10.5). La CAJA no cambia:
+        // sigue en 82x64. Solo crecen el icono y la tipografia, que a 9px eran ilegibles.
+        //
+        // PRESUPUESTO VERTICAL DEL TILE (64px de alto, no hay mas):
+        //   icono: top 4 + 30            -> termina en 35
+        //   texto: 2 lineas de 11 x 1.05 -> 23px, con bottom 3 empieza en 38
+        //   quedan 3px de aire entre uno y otro. Es el limite: subir el icono a 32 o el texto a
+        //   11.5 los hace chocar. Si se quiere mas, hay que crecer la caja, y eso descuadra la
+        //   fila de pagos (que esta alineada con la caja de montos de la izquierda).
+        + "#ButtonGrid4Control .sct-pbtn .sct-ic{width:30px !important;height:30px !important;top:4px !important;}\n"
+        + "#ButtonGrid4Control .sct-pbtn::after{left:2px !important;right:2px !important;bottom:3px !important;font-size:11px !important;line-height:1.05 !important;}\n"
+        + "#ButtonGrid4Control .sct-p4::after{font-size:10.5px !important;}\n"
         + "#ButtonGrid4Control .buttonGridButton.sct-p2 i.sct-ic{width:135px !important;height:34px !important;}\n"
         + "#TotalsPanel .fields.row{border:1px solid rgba(255,255,255,0.14) !important;border-radius:14px 14px 0 0 !important;border-bottom:none !important;box-sizing:border-box !important;display:flex !important;flex-direction:column !important;align-items:stretch !important;gap:0 !important;height:188px !important;min-height:188px !important;max-height:188px !important;padding:6px 12px 8px !important;overflow:hidden !important;}\n"
         + "#TotalsPanel .fields.row *{color:#E8E6E3 !important;font-size:13px !important;line-height:1.2 !important;}\n"
@@ -296,20 +424,76 @@ export function construirCss(): string {
         + "#TotalsPanel .panel-footer{border:1px solid rgba(255,255,255,0.14) !important;border-top:1px solid rgba(255,255,255,0.12) !important;border-radius:0 0 14px 14px !important;box-sizing:border-box !important;height:40px !important;min-height:40px !important;max-height:40px !important;padding:4px 12px !important;overflow:hidden !important;}\n"
         + "#TotalsPanel .panel-footer *{color:#E8E6E3 !important;}\n"
         + "#TotalsPanel .panel-footer .h1{color:" + ROJO + " !important;font-size:25px !important;font-weight:700 !important;line-height:1 !important;}\n"
+        // BUG CORREGIDO (1024x768): con un cliente REAL cargado, la tarjeta de cliente (120px) mas
+        // la de direccion (140px) suman 260px dentro de una zona de 228 con overflow:hidden — se
+        // cortaban 32px por abajo. El cliente de pruebas no lo destapaba porque su ficha es mas
+        // corta. En el layout amplio no pasa: alli la zona mide 276px.
+        //
+        // No se puede agrandar la zona: su fondo (y=752) esta alineado con NIUBIZ y con la caja de
+        // montos, y por arriba topa con el carrito. Asi que se recorta el AIRE de la ficha, que era
+        // mucho: la fila de iconos de telefono/correo mide 15px y arrastraba 20px de margen arriba
+        // y 12 abajo. Con esto la tarjeta pasa de 120 a 80px y el total a 220 (medido en vivo:
+        // corte 0). No se toca ningun tamano de letra ni de icono.
+        + "#CustomerPanel .sct-cli-card .marginTop20{margin-top:8px !important;}\n"
+        + "#CustomerPanel .sct-cli-card .marginBottom12{margin-bottom:4px !important;}\n"
+        + "#CustomerPanel .sct-cli-card .marginTop12{margin-top:6px !important;}\n"
+        + "#CustomerPanel .sct-cli-card .pad12{padding-top:6px !important;}\n"
+        // DIRECCION CORTADA — no era falta de sitio, era un desbordamiento de flexbox.
+        //
+        // Las lineas de la direccion median 382px DENTRO de una tarjeta de 320: el texto se pintaba
+        // en 62px que no se ven. La causa es el `min-width:auto` que traen por defecto los items de
+        // un contenedor flex: se niegan a encogerse por debajo del ancho NATURAL de su contenido, y
+        // como el texto va en nowrap, ese ancho natural es la linea entera. Con min-width:0 el item
+        // ya puede encogerse a los 270px reales de la tarjeta.
+        //
+        // Con el ancho arreglado, la linea larga se deja pasar a una SEGUNDA linea (line-clamp:2).
+        // El tope de 2 no es arbitrario: la tarjeta tiene 140px fijos (clase height140 del POS), de
+        // los que 124 son utiles, y el contenido ocupa 93. Con line-height 13 caben holgadamente
+        // dos lineas largas; a partir de ahi el clamp corta con puntos suspensivos en vez de
+        // desbordar. Medido: la direccion completa "---- CALLEJON GRANDE PARCELA NRO. REF ---- EX
+        // FUNDO SANTA ROSA" se ve entera y el corte de la zona sigue en 0.
+        // Alto 140 -> 148px. La tarjeta de direccion trae 140px fijos del POS (clase height140) y
+        // acababa en y=744, mientras la caja de montos de al lado acaba en 752: las dos tarjetas de
+        // abajo no cerraban a la misma altura. Con 148 (80 de la ficha + 148 = 228, el alto exacto
+        // de la zona) cierran las dos en 752. Sigue sobrando sitio dentro: el contenido ocupa 93 de
+        // los ~132 utiles.
+        + "#CustomerPanel .sct-dom-card{height:148px !important;min-height:148px !important;max-height:148px !important;}\n"
+        + "#CustomerPanel .sct-dom-card .col,#CustomerPanel .sct-dom-card .pad12{min-width:0 !important;}\n"
+        + "#CustomerPanel .sct-dom-card .h4{line-height:13px !important;}\n"
+        + "#CustomerPanel .sct-dom-card .h4.ellipsis{white-space:normal !important;display:-webkit-box !important;-webkit-box-orient:vertical !important;-webkit-line-clamp:2 !important;overflow:hidden !important;}\n"
         + ".sct-dom-card .sct-live-direccion{display:block !important;width:100% !important;max-width:100% !important;max-height:58px !important;margin:0 !important;padding:0 !important;overflow:hidden !important;overflow-wrap:anywhere !important;word-break:normal !important;white-space:normal !important;font-size:10px !important;line-height:1.1 !important;box-sizing:border-box !important;}\n"
         + ".sct-live-zona-cliente{height:228px !important;min-height:0 !important;max-height:228px !important;margin-top:0px !important;transform:translateY(-20px) !important;overflow:hidden !important;box-sizing:border-box !important;}\n"
         + ".sct-live-zona-montos{height:228px !important;min-height:0 !important;max-height:228px !important;margin-top:0px !important;overflow:hidden !important;box-sizing:border-box !important;}\n"
-        + "#TotalsPanel{right:auto !important;width:312px !important;height:228px !important;min-height:0px !important;max-height:228px !important;transform:translateY(-20px) !important;box-sizing:border-box !important;overflow:hidden !important;}\n"
+        // Ancho 312 -> 298. La caja de montos terminaba en x=648 y la columna derecha empieza en
+        // x=650: quedaban 2px entre las dos, pegadas. Con 298 acaba en 634, que es donde acaba
+        // ahora el carrito (ver propLineas en ThemeEngine.aplicarLayoutCompacto): las dos cajas de
+        // la izquierda alineadas y 16px de aire hasta la columna derecha.
+        // Los dos anchos van de la mano: si se cambia uno, se cambia el otro o se descuadran.
+        + "#TotalsPanel{right:auto !important;width:298px !important;height:228px !important;min-height:0px !important;max-height:228px !important;transform:translateY(-20px) !important;box-sizing:border-box !important;overflow:hidden !important;}\n"
         + "#TotalsPanel .fields.row{width:100% !important;height:188px !important;min-height:188px !important;max-height:188px !important;}\n"
         + "#TotalsPanel .panel-footer{width:100% !important;height:40px !important;min-height:40px !important;max-height:40px !important;}\n"
-        // top ajustado (554 -> 456) para que Boleta y los tiles quepan en 768px de alto.
-        + "#CustomControl1{position:absolute !important;left:630px !important;top:456px !important;right:auto !important;width:340px !important;height:94px !important;min-height:0px !important;max-height:94px !important;transform:none !important;padding:6px 10px 7px !important;overflow:hidden !important;}\n"
+        // Reparto vertical de la columna derecha (medido en vivo, ventana 1024x768):
+        //   tarjeta de pestanas 178-508 | Boleta 520-614 | Metodos de pago 625-752 | fondo 768
+        //
+        // Los huecos entre bloques estaban en 8px, demasiado apretados, y sobraban 23px muertos al
+        // final de la pantalla. Repartidos, quedan en 12 y 11px.
+        //
+        // POR QUE 12 Y 11 Y NO 16: el bloque de pagos tiene que acabar en y=752, que es donde acaba
+        // la caja de montos de la izquierda (#TotalsPanel) — asi NIUBIZ queda alineado con ella.
+        // Desde el fondo de la tarjeta de pestanas (508) hasta 752 hay 244px, y el contenido ocupa
+        // 221 (Boleta 94 + pagos 127): solo quedan 23px para los DOS huecos. Con 16+16 no cabe.
+        // La otra salida era encoger los tiles de pago, y esos no se tocan.
+        //
+        // Los valores del CSS llevan un desfase de -60px respecto a la pantalla (asi venia el
+        // original): top 460 pinta en y=520, top 565 pinta en y=625.
+        + "#CustomControl1{position:absolute !important;left:630px !important;top:460px !important;right:auto !important;width:340px !important;height:94px !important;min-height:0px !important;max-height:94px !important;transform:none !important;padding:6px 10px 7px !important;overflow:hidden !important;}\n"
         // BUG CORREGIDO (1024x768): esta regla aplicaba la MISMA posicion absoluta a tres
         // elementos ANIDADOS (#ButtonGrid4 > #ButtonGrid4Control > .buttonsContainer). Como cada
         // uno se posiciona respecto al anterior, los desplazamientos se SUMABAN
         // (630+630+630 / 644+644+644) y los tiles de pago acababan en x=1910, y=1961:
         // completamente fuera de la pantalla. Solo la ZONA exterior lleva left/top.
-        + "#ButtonGrid4{position:absolute !important;left:630px !important;top:558px !important;right:auto !important;width:340px !important;height:127px !important;min-height:0px !important;max-height:127px !important;transform:none !important;}\n"
+        // top 565 -> el bloque pinta en y=625 y acaba en 752, alineado con #TotalsPanel.
+        + "#ButtonGrid4{position:absolute !important;left:630px !important;top:565px !important;right:auto !important;width:340px !important;height:127px !important;min-height:0px !important;max-height:127px !important;transform:none !important;}\n"
         + "#ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer{position:absolute !important;left:0 !important;top:0 !important;right:auto !important;width:340px !important;height:127px !important;min-height:0px !important;max-height:127px !important;transform:none !important;}\n"
         // El contenedor nativo del teclado mide 256px con overflow:hidden y recortaba la 4a
         // columna (Retroceso, Mas/Menos, Veces, abc), que llega hasta los 316px del bloque.
@@ -343,6 +527,10 @@ export function construirCss(): string {
         + ".sct-bbtn{position:absolute !important;left:7px !important;width:302px !important;height:112px !important;min-height:0 !important;max-height:112px !important;transform:none !important;background-color:#1B1A19 !important;color:#FFFFFF !important;background-image:none !important;}\n"
         + ".sct-bbtn.sct-b1{top:0px !important;}\n"
         + ".sct-bbtn.sct-b2{top:124px !important;}\n"
+        // OJO AL RETOCAR ESTO: la regla de .sct-p2 (el bloque ancho de NIUBIZ) va DESPUES y le
+        // devuelve sus 340px. Funciona por ORDEN, no por especificidad. Si se le sube la
+        // especificidad a esta regla (por ejemplo acotandola con una clase mas), NIUBIZ se encoge
+        // al ancho del tile pequeno y su logo se sale. Comprobado en vivo.
         + "#ButtonGrid4Control .sct-pbtn{position:absolute !important;top:0px !important;width:82px !important;height:64px !important;min-height:0 !important;max-height:64px !important;transform:none !important;}\n"
         + "#ButtonGrid4Control .sct-p0{left:0px !important;}\n"
         + "#ButtonGrid4Control .sct-p1{left:86px !important;}\n"
