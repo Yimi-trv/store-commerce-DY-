@@ -95,6 +95,119 @@ export class ThemeEngine {
         return null;
     }
 
+    // La tarjeta de Boleta es el control OptionDetails de DP.LocalizacionPeru, que el layout de HQ
+    // monta como #CustomControl1. Se buscaba SOLO por el texto "Seleccionar una preferencia": si DP
+    // cambia ese rotulo (ya renombraron el boton una vez), la tarjeta perdia el estilo en silencio.
+    // Ahora: texto insensible a mayusculas y, si falla, la zona por id.
+    private static zonaBoleta(): HTMLElement | null {
+        var encontrada: HTMLElement | null = ThemeEngine.zona(/seleccionar una preferencia/i);
+        if (encontrada) return encontrada;
+        // Respaldo por id. Se SUBE hasta el hijo directo de raiz() para devolver exactamente el
+        // mismo tipo de nodo que zona(): si #CustomControl1 no cuelga de raiz, no es la zona de
+        // esta pantalla y no se toca (si no, .sct-boleta acabaria pegada a un control ajeno).
+        var control: HTMLElement | null = ThemeEngine.q("#CustomControl1");
+        var raiz: HTMLElement | null = ThemeEngine.raiz();
+        if (!control || !raiz) return null;
+        var actual: HTMLElement | null = control;
+        while (actual && actual.parentElement !== raiz) actual = actual.parentElement;
+        return actual;
+    }
+
+    // El rotulo de la tarjeta ("Boleta"/"Factura") se marca en LOS DOS layouts. Antes solo lo hacia
+    // aplicarLayoutAmplio(), asi que en compacto el titulo se quedaba con el tamano nativo del POS
+    // (h3) dentro de una tarjeta de 94px de alto.
+    private static marcarTituloBoleta(zonaBoleta: HTMLElement | null): void {
+        if (!zonaBoleta) return;
+        var objetivo: HTMLElement | null = null;
+        var posibles: NodeListOf<Element> = zonaBoleta.querySelectorAll("*");
+        for (var i: number = 0; i < posibles.length; i++) {
+            var elemento: HTMLElement = posibles[i] as HTMLElement;
+            var texto: string = (elemento.textContent || "").trim();
+            if (elemento.children.length === 0 && (texto === "Boleta" || texto === "Factura") && !elemento.closest("select")) {
+                objetivo = elemento; break;
+            }
+        }
+        // Al cambiar de Boleta a Factura el rotulo puede mudarse de nodo: hay que despegar la clase
+        // del anterior o acaban DOS elementos con estilo de titulo.
+        // OJO: solo se escribe cuando algo cambia de verdad. El vigilante observa el atributo
+        // "class"; quitar y volver a poner la clase en cada pasada dispararia el bucle de
+        // mutaciones (el parpadeo que ya costo arreglar una vez).
+        var previos: NodeListOf<Element> = zonaBoleta.querySelectorAll(".sct-titulo");
+        for (var p: number = 0; p < previos.length; p++) {
+            var viejo: HTMLElement = previos[p] as HTMLElement;
+            if (viejo !== objetivo) viejo.classList.remove("sct-titulo");
+        }
+        if (objetivo && !objetivo.classList.contains("sct-titulo")) objetivo.classList.add("sct-titulo");
+    }
+
+    // Botones del panel BOLETEO (#ButtonGrid3Control). Antes se asignaban por POSICION: el boton 0
+    // recibia siempre el rotulo "A Cuenta / Empleado Planilla". Como el tema REESCRIBE el texto del
+    // boton, un orden distinto en HQ pegaria el rotulo equivocado sobre la accion equivocada (y eso
+    // en una caja que emite documentos tributarios no es cosmetico). Ahora se identifica por el
+    // texto propio del boton y la posicion queda solo como respaldo.
+    // Un boton inesperado (un tercero) se deja NATIVO a proposito: recibir un sct-b3 inexistente lo
+    // dejaria en position:absolute sin top, superpuesto sobre los otros dos.
+    private static decorarBoleto(botones: HTMLElement[]): void {
+        var defs: any[] = [
+            { n: 1, re: /empleado|planilla/i, titulo: "A Cuenta", sub: "Empleado Planilla" },
+            { n: 2, re: /tercero|honorario/i, titulo: "A cuenta de terceros", sub: "RECIBO POR HONORARIOS" }
+        ];
+        var usados: any = {};
+        var asignadas: any[] = [];
+        var i: number = 0;
+        var j: number = 0;
+        // 1a vuelta: emparejar por el texto del PROPIO boton, mirando todos antes de repartir nada.
+        for (i = 0; i < botones.length; i++) {
+            asignadas[i] = null;
+            var texto: string = botones[i].textContent || "";
+            for (j = 0; j < defs.length; j++) {
+                if (!usados[defs[j].n] && defs[j].re.test(texto)) {
+                    asignadas[i] = defs[j];
+                    usados[defs[j].n] = true;
+                    break;
+                }
+            }
+        }
+        // 2a vuelta: al que no caso por texto se le da la PRIMERA def libre, NO la de su indice.
+        // Con el respaldo por indice, si el boton 0 casaba con la def 2, el boton 1 se quedaba sin
+        // nada (pedia la def 2, ya usada) aunque la def 1 estuviera libre.
+        for (i = 0; i < botones.length; i++) {
+            if (asignadas[i]) continue;
+            for (j = 0; j < defs.length; j++) {
+                if (!usados[defs[j].n]) { asignadas[i] = defs[j]; usados[defs[j].n] = true; break; }
+            }
+        }
+        for (i = 0; i < botones.length; i++) {
+            var def: any = asignadas[i];
+            var clases: DOMTokenList = botones[i].classList;
+            if (!def) {
+                if (clases.contains("sct-bbtn")) clases.remove("sct-bbtn", "sct-b1", "sct-b2");
+                continue;
+            }
+            // Se retira la marca anterior si cambio, para que no se acumulen dos posiciones.
+            // Igual que arriba: solo se escribe cuando hay cambio real, por el vigilante.
+            var clase: string = "sct-b" + def.n;
+            if (!clases.contains(clase)) {
+                if (clases.contains("sct-b1")) clases.remove("sct-b1");
+                if (clases.contains("sct-b2")) clases.remove("sct-b2");
+                clases.add(clase);
+            }
+            if (!clases.contains("sct-bbtn")) clases.add("sct-bbtn");
+            ThemeEngine.estilo(botones[i], { "background-color": "#1B1A19", "color": "#FFFFFF", "background-image": "none" });
+            ThemeEngine.icono(botones[i], "sct-ic-b" + def.n);
+            var etiqueta: HTMLElement | null = botones[i].querySelector("div") as HTMLElement | null;
+            if (etiqueta) {
+                // La guarda mira la IDENTIDAD del rotulo, no su mera presencia: si un boton quedo
+                // con el rotulo del otro, hay que corregirlo, no darlo por bueno.
+                var marca: HTMLElement | null = etiqueta.querySelector(".sct-b-t") as HTMLElement | null;
+                if (!marca || (marca.textContent || "") !== def.titulo) {
+                    var destino: HTMLElement = (etiqueta.querySelector(".h4") as HTMLElement) || etiqueta;
+                    destino.innerHTML = "<span class=\"sct-b-t\">" + def.titulo + "</span><span class=\"sct-b-s\">" + def.sub + "</span>";
+                }
+            }
+        }
+    }
+
     private static icono(boton: HTMLElement, clase: string): void {
         var actual: HTMLElement | null = null;
         for (var i: number = 0; i < boton.children.length; i++) {
@@ -121,8 +234,12 @@ export class ThemeEngine {
 
     // ---------------------------------------------------------------- resolución
 
+    // El umbral DEBE coincidir con el de las @media de ThemeAssets (max-width:1366 / min-width:1367).
+    // Estaba en 1200 y entre 1201 y 1366px el tema quedaba en estado mixto: el CSS activo era el
+    // COMPACTO mientras el JS ejecutaba aplicarLayoutAmplio() y marcaba el body como sct-amplio.
+    // No es hipotetico: HQ sirve un layout size de 1366x768 (el que trae la pestana BOLETEO).
     private static esCompacto(): boolean {
-        return window.innerWidth <= 1200;
+        return window.innerWidth <= 1366;
     }
 
     // ---------------------------------------------------------------- secciones comunes
@@ -137,7 +254,7 @@ export class ThemeEngine {
             if (!document.body.classList.contains(CLASE_AMBITO)) {
                 document.body.classList.add(CLASE_AMBITO);
             }
-            var zonaBoleta: HTMLElement | null = ThemeEngine.zona(/Seleccionar una preferencia/);
+            var zonaBoleta: HTMLElement | null = ThemeEngine.zonaBoleta();
             if (zonaBoleta) zonaBoleta.classList.add("sct-boleta");
         } else if (document.body.classList.contains(CLASE_AMBITO) && !ThemeEngine.temporizadorSalidaAmbito) {
             ThemeEngine.temporizadorSalidaAmbito = window.setTimeout((): void => {
@@ -169,7 +286,11 @@ export class ThemeEngine {
     }
 
     private static aplicarPestanas(): void {
-        var rotulos: string[] = ["NUMPAD", "CLIENTE", "TRANSAC.", "BOLETO"];
+        // El rotulo de la 4a pestana es BOLETEO (la cuadricula se llama "Boleteos" en HQ).
+        // OJO: esta pestana solo existe cuando el layout activo asigna una cuadricula a la zona
+        // TransactionScreen3. El layout de 1366x768 la trae; el de 1024x768 NO, y por eso ahi el
+        // riel solo muestra tres pestanas. Eso se corrige en HQ, no aqui.
+        var rotulos: string[] = ["NUMPAD", "CLIENTE", "TRANSAC.", "BOLETEO"];
         var pestanas: HTMLElement[] = ThemeEngine.todos(".commerceTabControl.righttabs .tabsContainer .tab");
         for (var i: number = 0; i < pestanas.length && i < rotulos.length; i++) {
             pestanas[i].classList.add("sct-tab" + i);
@@ -332,7 +453,7 @@ export class ThemeEngine {
         for (var i: number = 0; i < botonesC.length; i++) {
             botonesC[i].classList.add("sct-cbtn");
             botonesC[i].classList.add(i === 0 ? "sct-cbtn-primary" : "sct-cbtn-dark");
-
+            ThemeEngine.estilo(botonesC[i], { "color": "#FFFFFF", "background-image": "none", "background-color": i === 0 ? "#C8102E" : "#1B1A19" });
             ThemeEngine.icono(botonesC[i], "sct-ic-c" + (i + 1));
         }
 
@@ -340,24 +461,15 @@ export class ThemeEngine {
         var botonesT: HTMLElement[] = ThemeEngine.todos("#ButtonGrid2Control .buttonGridButton");
         for (var j: number = 0; j < botonesT.length; j++) {
             botonesT[j].classList.add("sct-tbtn", "sct-t" + (j + 1));
-
+            ThemeEngine.estilo(botonesT[j], { "color": "#FFFFFF", "background-image": "none", "background-color": j === 4 ? "#C8102E" : "#1B1A19" });
             ThemeEngine.icono(botonesT[j], "sct-ic-t" + (j + 1));
         }
 
-        // Boleto
-        var botonesB: HTMLElement[] = ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton");
-        var titulos: string[] = ["A Cuenta", "A cuenta de terceros"];
-        var subtitulos: string[] = ["Empleado Planilla", "RECIBO POR HONORARIOS"];
-        for (var k: number = 0; k < botonesB.length; k++) {
-            botonesB[k].classList.add("sct-bbtn", "sct-b" + (k + 1));
-
-            ThemeEngine.icono(botonesB[k], "sct-ic-b" + (k + 1));
-            var etiqueta = botonesB[k].querySelector("div");
-            if (etiqueta && !etiqueta.querySelector(".sct-b-t") && k < titulos.length) {
-                var destino = etiqueta.querySelector(".h4") || etiqueta;
-                destino.innerHTML = "<span class=\"sct-b-t\">" + titulos[k] + "</span><span class=\"sct-b-s\">" + subtitulos[k] + "</span>";
-            }
-        }
+        // Boleto. OJO: en el layout de 1024x768 esta cuadricula NO existe (HQ no la asigna a la
+        // zona TransactionScreen3), asi que la lista viene vacia y esto no hace nada. Se deja
+        // preparado para cuando se asigne en HQ: el CSS compacto ya tiene sus reglas.
+        ThemeEngine.decorarBoleto(ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton"));
+        ThemeEngine.marcarTituloBoleta(ThemeEngine.zonaBoleta());
 
         // Pagos (Posiciones manejadas por CSS)
 
@@ -414,23 +526,9 @@ export class ThemeEngine {
         if (zonaCliente) zonaCliente.classList.add("sct-cliente", "sct-live-zona-cliente");
 
 
-        var zonaBoleta: HTMLElement | null = ThemeEngine.zona(/Seleccionar una preferencia/);
-        if (zonaBoleta) {
-            zonaBoleta.classList.add("sct-live-zona-boleta");
-
-            var titulo: HTMLElement | null = null;
-            var posibles: NodeListOf<Element> = zonaBoleta.querySelectorAll("*");
-            for (var j: number = 0; j < posibles.length; j++) {
-                var elemento: HTMLElement = posibles[j] as HTMLElement;
-                var texto: string = (elemento.textContent || "").trim();
-                if (elemento.children.length === 0 && (texto === "Boleta" || texto === "Factura") && !elemento.closest("select")) {
-                    titulo = elemento; break;
-                }
-            }
-            if (titulo) {
-                titulo.classList.add("sct-titulo");
-            }
-        }
+        var zonaBoleta: HTMLElement | null = ThemeEngine.zonaBoleta();
+        if (zonaBoleta) zonaBoleta.classList.add("sct-live-zona-boleta");
+        ThemeEngine.marcarTituloBoleta(zonaBoleta);
 
 
 
@@ -440,7 +538,7 @@ export class ThemeEngine {
             var btn1 = ThemeEngine.todos("#ButtonGrid1Control .buttonGridButton");
             for (var i = 0; i < btn1.length; i++) {
                 btn1[i].classList.add("sct-cbtn", i === 0 ? "sct-cbtn-primary" : "sct-cbtn-dark");
-
+                ThemeEngine.estilo(btn1[i], { "color": "#FFFFFF", "background-image": "none", "background-color": i === 0 ? "#C8102E" : "#1B1A19" });
                 ThemeEngine.icono(btn1[i], "sct-ic-c" + (i + 1));
             }
         }
@@ -451,25 +549,14 @@ export class ThemeEngine {
                 btn2[i].classList.add("sct-tbtn", "sct-t" + (i + 1));
                 btn2[i].classList.remove("sct-tbtn-dark", "sct-tbtn-outline", "sct-tbtn-fill");
                 btn2[i].classList.add(i === 4 ? "sct-tbtn-fill" : (i === 3 ? "sct-tbtn-outline" : "sct-tbtn-dark"));
-
+                ThemeEngine.estilo(btn2[i], { "color": "#FFFFFF", "background-image": "none", "background-color": i === 4 ? "#C8102E" : "#1B1A19" });
                 ThemeEngine.icono(btn2[i], "sct-ic-t" + (i + 1));
             }
         }
         var b3 = ThemeEngine.q("#ButtonGrid3Control");
         if (b3) {
-            var titulos3 = ["A Cuenta", "A cuenta de terceros"];
-            var subs3 = ["Empleado Planilla", "RECIBO POR HONORARIOS"];
             ThemeEngine.estilo(b3, { "width": "428px", "height": "316px" });
-            var btn3 = ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton");
-            for (var i = 0; i < btn3.length; i++) {
-                btn3[i].classList.add("sct-bbtn", "sct-b" + (i + 1));
-                ThemeEngine.icono(btn3[i], "sct-ic-b" + (i + 1));
-                var et = btn3[i].querySelector("div");
-                if (et && !et.querySelector(".sct-b-t") && i < titulos3.length) {
-                    var dst = (et.querySelector(".h4") as HTMLElement) || et;
-                    dst.innerHTML = "<span class=\"sct-b-t\">" + titulos3[i] + "</span><span class=\"sct-b-s\">" + subs3[i] + "</span>";
-                }
-            }
+            ThemeEngine.decorarBoleto(ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton"));
         }
 
         

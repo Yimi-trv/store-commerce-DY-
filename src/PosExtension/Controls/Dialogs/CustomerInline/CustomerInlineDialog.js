@@ -148,7 +148,286 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             action: "native_search"
                         });
                     }
-                    return Promise.resolve();
+                    var searchText = this._lastSearchText.trim();
+                    if (!searchText)
+                        return Promise.resolve();
+                    var container = element.querySelector("#customerInlineSearchResultsContainer");
+                    var status = element.querySelector("#customerInlineSearchStatus");
+                    var tbody = element.querySelector("#customerInlineSearchResultsBody");
+                    if (container)
+                        container.style.display = "flex";
+                    if (status)
+                        status.innerText = "Buscando...";
+                    if (!isPagination && tbody)
+                        tbody.innerHTML = "";
+                    var searchRequest = new CustomCustomerSearchRequest(searchText, this._searchTop, this._searchSkip);
+                    return this.context.runtime.executeAsync(searchRequest).then(function (response) {
+                        var results = (response.data && response.data.result) || [];
+                        _this._renderSearchResults(element, results);
+                    }).catch(function (error) {
+                        _this._logError("Search error: " + _this._stringify(error));
+                        if (status)
+                            status.innerText = "Error en la búsqueda. (Revise conexión o longitud de palabra)";
+                    });
+                };
+                CustomerInlineDialog.prototype._renderSearchResults = function (element, results) {
+                    var _this = this;
+                    var tbody = element.querySelector("#customerInlineSearchResultsBody");
+                    var status = element.querySelector("#customerInlineSearchStatus");
+                    var nextBtn = element.querySelector("#customerInlineSearchNextBtn");
+                    var prevBtn = element.querySelector("#customerInlineSearchPrevBtn");
+                    if (!tbody)
+                        return;
+                    tbody.innerHTML = "";
+                    if (results.length === 0) {
+                        if (status)
+                            status.innerText = "No se encontraron clientes.";
+                    }
+                    else {
+                        if (status)
+                            status.innerText = "Mostrando resultados ".concat(this._searchSkip + 1, " - ").concat(this._searchSkip + results.length);
+                        results.forEach(function (customer) {
+                            var tr = document.createElement("tr");
+                            tr.style.borderBottom = "1px solid #f3f2f1";
+                            var tdDoc = document.createElement("td");
+                            tdDoc.style.padding = "8px";
+                            tdDoc.innerText = customer.IdentificationNumber || "";
+                            var tdName = document.createElement("td");
+                            tdName.style.padding = "8px";
+                            tdName.innerText = customer.Name || [customer.FirstName, customer.LastName].join(" ").trim() || "";
+                            var tdAccount = document.createElement("td");
+                            tdAccount.style.padding = "8px";
+                            tdAccount.innerText = customer.AccountNumber || "";
+                            var tdAction = document.createElement("td");
+                            tdAction.style.padding = "8px";
+                            var btn = document.createElement("button");
+                            btn.innerText = "Elegir";
+                            btn.style.padding = "4px 8px";
+                            btn.style.background = "#0063b1";
+                            btn.style.color = "white";
+                            btn.style.border = "none";
+                            btn.style.cursor = "pointer";
+                            btn.onclick = function () {
+                                _this._selectCustomerFromSearch(customer.AccountNumber);
+                            };
+                            tdAction.appendChild(btn);
+                            tr.appendChild(tdDoc);
+                            tr.appendChild(tdName);
+                            tr.appendChild(tdAccount);
+                            tr.appendChild(tdAction);
+                            tbody.appendChild(tr);
+                        });
+                    }
+                    if (prevBtn) {
+                        prevBtn.disabled = this._searchSkip === 0;
+                        prevBtn.onclick = function () {
+                            _this._searchSkip = Math.max(0, _this._searchSkip - _this._searchTop);
+                            _this._executeSearch(element, true);
+                        };
+                    }
+                    if (nextBtn) {
+                        nextBtn.disabled = results.length < this._searchTop;
+                        nextBtn.onclick = function () {
+                            _this._searchSkip += _this._searchTop;
+                            _this._executeSearch(element, true);
+                        };
+                    }
+                };
+                CustomerInlineDialog.prototype._selectCustomerFromSearch = function (accountNumber) {
+                    var _this = this;
+                    this.closeDialog();
+                    setTimeout(function () {
+                        var cartRequest = new Cart_1.SetCustomerOnCartOperationRequest(_this._getCorrelationId(), accountNumber);
+                        _this.context.runtime.executeAsync(cartRequest).catch(function (error) {
+                            _this._logError("Error SetCustomerOnCartOperationRequest: " + _this._stringify(error));
+                        });
+                    }, 500);
+                };
+                        return Promise.resolve();
+                    var container = element.querySelector("#customerInlineSearchResultsContainer");
+                    var status = element.querySelector("#customerInlineSearchStatus");
+                    var tbody = element.querySelector("#customerInlineSearchResultsBody");
+                    if (container)
+                        container.style.display = "flex";
+                    if (status)
+                        status.innerText = "Buscando...";
+                    if (!isPagination && tbody)
+                        tbody.innerHTML = "";
+                    var searchRequest = new CustomCustomerSearchRequest(searchText, this._searchTop, this._searchSkip);
+                    return this.context.runtime.executeAsync(searchRequest).then(function (response) {
+                        var results = (response.data && response.data.result) || [];
+                        _this._renderSearchResults(element, results);
+                    }).catch(function (error) {
+                        _this._logError("Search error: " + _this._stringify(error));
+                        if (status)
+                            status.innerText = "Error en la búsqueda. (Revise conexión o longitud de palabra)";
+                    });
+                };
+                CustomerInlineDialog.prototype._renderSearchResults = function (element, results) {
+                    var _this = this;
+                    var tbody = element.querySelector("#customerInlineSearchResultsBody");
+                    var status = element.querySelector("#customerInlineSearchStatus");
+                    var nextBtn = element.querySelector("#customerInlineSearchNextBtn");
+                    var prevBtn = element.querySelector("#customerInlineSearchPrevBtn");
+                    if (!tbody)
+                        return;
+                    tbody.innerHTML = "";
+                    if (results.length === 0) {
+                        if (status)
+                            status.innerText = "No se encontraron clientes.";
+                    }
+                    else {
+                        if (status)
+                            status.innerText = "Mostrando resultados ".concat(this._searchSkip + 1, " - ").concat(this._searchSkip + results.length);
+                        results.forEach(function (customer) {
+                            var tr = document.createElement("tr");
+                            tr.style.borderBottom = "1px solid #f3f2f1";
+                            var tdDoc = document.createElement("td");
+                            tdDoc.style.padding = "8px";
+                            tdDoc.innerText = customer.IdentificationNumber || "";
+                            var tdName = document.createElement("td");
+                            tdName.style.padding = "8px";
+                            tdName.innerText = customer.Name || [customer.FirstName, customer.LastName].join(" ").trim() || "";
+                            var tdAccount = document.createElement("td");
+                            tdAccount.style.padding = "8px";
+                            tdAccount.innerText = customer.AccountNumber || "";
+                            var tdAction = document.createElement("td");
+                            tdAction.style.padding = "8px";
+                            var btn = document.createElement("button");
+                            btn.innerText = "Elegir";
+                            btn.style.padding = "4px 8px";
+                            btn.style.background = "#0063b1";
+                            btn.style.color = "white";
+                            btn.style.border = "none";
+                            btn.style.cursor = "pointer";
+                            btn.onclick = function () {
+                                _this._selectCustomerFromSearch(customer.AccountNumber);
+                            };
+                            tdAction.appendChild(btn);
+                            tr.appendChild(tdDoc);
+                            tr.appendChild(tdName);
+                            tr.appendChild(tdAccount);
+                            tr.appendChild(tdAction);
+                            tbody.appendChild(tr);
+                        });
+                    }
+                    if (prevBtn) {
+                        prevBtn.disabled = this._searchSkip === 0;
+                        prevBtn.onclick = function () {
+                            _this._searchSkip = Math.max(0, _this._searchSkip - _this._searchTop);
+                            _this._executeSearch(element, true);
+                        };
+                    }
+                    if (nextBtn) {
+                        nextBtn.disabled = results.length < this._searchTop;
+                        nextBtn.onclick = function () {
+                            _this._searchSkip += _this._searchTop;
+                            _this._executeSearch(element, true);
+                        };
+                    }
+                };
+                CustomerInlineDialog.prototype._selectCustomerFromSearch = function (accountNumber) {
+                    var _this = this;
+                    this.closeDialog();
+                    setTimeout(function () {
+                        var cartRequest = new Cart_1.SetCustomerOnCartOperationRequest(_this._getCorrelationId(), accountNumber);
+                        _this.context.runtime.executeAsync(cartRequest).catch(function (error) {
+                            _this._logError("Error SetCustomerOnCartOperationRequest: " + _this._stringify(error));
+                        });
+                    }, 500);
+                };
+                        return Promise.resolve();
+                    var container = element.querySelector("#customerInlineSearchResultsContainer");
+                    var status = element.querySelector("#customerInlineSearchStatus");
+                    var tbody = element.querySelector("#customerInlineSearchResultsBody");
+                    if (container)
+                        container.style.display = "flex";
+                    if (status)
+                        status.innerText = "Buscando...";
+                    if (!isPagination && tbody)
+                        tbody.innerHTML = "";
+                    var searchRequest = new CustomCustomerSearchRequest(searchText, this._searchTop, this._searchSkip);
+                    return this.context.runtime.executeAsync(searchRequest).then(function (response) {
+                        var results = (response.data && response.data.result) || [];
+                        _this._renderSearchResults(element, results);
+                    }).catch(function (error) {
+                        _this._logError("Search error: " + _this._stringify(error));
+                        if (status)
+                            status.innerText = "Error en la búsqueda. (Revise conexión o longitud de palabra)";
+                    });
+                };
+                CustomerInlineDialog.prototype._renderSearchResults = function (element, results) {
+                    var _this = this;
+                    var tbody = element.querySelector("#customerInlineSearchResultsBody");
+                    var status = element.querySelector("#customerInlineSearchStatus");
+                    var nextBtn = element.querySelector("#customerInlineSearchNextBtn");
+                    var prevBtn = element.querySelector("#customerInlineSearchPrevBtn");
+                    if (!tbody)
+                        return;
+                    tbody.innerHTML = "";
+                    if (results.length === 0) {
+                        if (status)
+                            status.innerText = "No se encontraron clientes.";
+                    }
+                    else {
+                        if (status)
+                            status.innerText = "Mostrando resultados ".concat(this._searchSkip + 1, " - ").concat(this._searchSkip + results.length);
+                        results.forEach(function (customer) {
+                            var tr = document.createElement("tr");
+                            tr.style.borderBottom = "1px solid #f3f2f1";
+                            var tdDoc = document.createElement("td");
+                            tdDoc.style.padding = "8px";
+                            tdDoc.innerText = customer.IdentificationNumber || "";
+                            var tdName = document.createElement("td");
+                            tdName.style.padding = "8px";
+                            tdName.innerText = customer.Name || [customer.FirstName, customer.LastName].join(" ").trim() || "";
+                            var tdAccount = document.createElement("td");
+                            tdAccount.style.padding = "8px";
+                            tdAccount.innerText = customer.AccountNumber || "";
+                            var tdAction = document.createElement("td");
+                            tdAction.style.padding = "8px";
+                            var btn = document.createElement("button");
+                            btn.innerText = "Elegir";
+                            btn.style.padding = "4px 8px";
+                            btn.style.background = "#0063b1";
+                            btn.style.color = "white";
+                            btn.style.border = "none";
+                            btn.style.cursor = "pointer";
+                            btn.onclick = function () {
+                                _this._selectCustomerFromSearch(customer.AccountNumber);
+                            };
+                            tdAction.appendChild(btn);
+                            tr.appendChild(tdDoc);
+                            tr.appendChild(tdName);
+                            tr.appendChild(tdAccount);
+                            tr.appendChild(tdAction);
+                            tbody.appendChild(tr);
+                        });
+                    }
+                    if (prevBtn) {
+                        prevBtn.disabled = this._searchSkip === 0;
+                        prevBtn.onclick = function () {
+                            _this._searchSkip = Math.max(0, _this._searchSkip - _this._searchTop);
+                            _this._executeSearch(element, true);
+                        };
+                    }
+                    if (nextBtn) {
+                        nextBtn.disabled = results.length < this._searchTop;
+                        nextBtn.onclick = function () {
+                            _this._searchSkip += _this._searchTop;
+                            _this._executeSearch(element, true);
+                        };
+                    }
+                };
+                CustomerInlineDialog.prototype._selectCustomerFromSearch = function (accountNumber) {
+                    var _this = this;
+                    this.closeDialog();
+                    setTimeout(function () {
+                        var cartRequest = new Cart_1.SetCustomerOnCartOperationRequest(_this._getCorrelationId(), accountNumber);
+                        _this.context.runtime.executeAsync(cartRequest).catch(function (error) {
+                            _this._logError("Error SetCustomerOnCartOperationRequest: " + _this._stringify(error));
+                        });
+                    }, 500);
                 };
                 CustomerInlineDialog.prototype._lookupSunatForCreate = function (element) {
                     var _this = this;
@@ -244,19 +523,6 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             address.Name = addressPurpose;
                             address.Street = addressStreet;
                             address.IsPrimary = true;
-                            if (addressPurpose === "Entrega") {
-                                address.AddressTypeValue = 1;
-                            }
-                            else if (addressPurpose === "Factura") {
-                                address.AddressTypeValue = 4;
-                            }
-                            else if (addressPurpose === "Casa") {
-                                address.AddressTypeValue = 3;
-                            }
-                            else {
-                                address.AddressTypeValue = 2;
-                            }
-                            address.ExtensionProperties = [];
                             if (u && u.IsValid) {
                                 address.State = u.StateId;
                                 address.County = u.CountyId;

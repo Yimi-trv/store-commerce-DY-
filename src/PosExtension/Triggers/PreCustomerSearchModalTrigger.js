@@ -37,10 +37,12 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
                     if (window[GUARD_KEY] || window["__customerSearchProgrammatic"]) {
                         return Promise.resolve({ canceled: false });
                     }
-                    var searchText = "";
                     var dialog = new CustomerInlineDialog_1.default();
-                    return dialog.open("search", null, searchText)
+                    return dialog.open("search", null, "")
                         .then(function (result) {
+                        if (result && result.action === "native_search") {
+                            return { canceled: false };
+                        }
                         return { canceled: true };
                     })
                         .catch(function () {
