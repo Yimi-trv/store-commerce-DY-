@@ -312,6 +312,9 @@
             </div>
         </div>
         <div class="customer-inline-dialog__actions">
+            <!-- Aparece solo si el documento ya pertenece a un cliente: ante un duplicado el
+                 cajero necesita asignar el existente, no quedarse sin salida. -->
+            <button id="customerInlineUseExistingBtn" class="customer-inline-dialog__action customer-inline-dialog__action--secondary" type="button" style="display: none;">Asignar cliente existente</button>
             <button id="customerInlineCreateButton" class="customer-inline-dialog__action" type="button">2. Crear en Sistema y Asignar</button>
         </div>
         <div id="customerInlineCreateResult" class="customer-inline-dialog__result"></div>

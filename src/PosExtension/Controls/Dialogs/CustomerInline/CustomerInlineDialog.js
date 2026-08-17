@@ -713,7 +713,45 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._showMessage(element, "Datos obtenidos. Complete si falta algo y presione Crear en Sistema.");
                     });
                 };
+                CustomerInlineDialog.prototype._findExistingByDocument = function (documentNumber) {
+                    var _this = this;
+                    if (!documentNumber) {
+                        return Promise.resolve(null);
+                    }
+                    return this.context.runtime
+                        .executeAsync(new CustomerSearchRequest_1.CustomerSearchRequest(documentNumber, 5, 0))
+                        .then(function (response) {
+                        var candidates = (response && response.data && response.data.result) || [];
+                        if (candidates.length === 0) {
+                            return Promise.resolve(null);
+                        }
+                        var accounts = [];
+                        for (var i = 0; i < candidates.length && accounts.length < 3; i++) {
+                            if (candidates[i].AccountNumber) {
+                                accounts.push(candidates[i].AccountNumber);
+                            }
+                        }
+                        var checkNext = function (index) {
+                            if (index >= accounts.length) {
+                                return Promise.resolve(null);
+                            }
+                            return _this._getCustomerByAccount(accounts[index])
+                                .then(function (customer) {
+                                if (customer && _this._sunatService.getDocumentNumber(customer) === documentNumber) {
+                                    return Promise.resolve(customer);
+                                }
+                                return checkNext(index + 1);
+                            });
+                        };
+                        return checkNext(0);
+                    })
+                        .catch(function (reason) {
+                        _this._logError("Comprobacion de duplicado fallo: " + _this._stringify(reason));
+                        return null;
+                    });
+                };
                 CustomerInlineDialog.prototype._executeCreate = function (element) {
+                    var _this = this;
                     var rawDocument = this._getValue(element, "customerInlineCreateDocument");
                     var documentNumber = this._sunatService.normalizeDocument(rawDocument);
                     if (!this._sunatService.getDocumentType(documentNumber)) {
@@ -725,6 +763,47 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this._showMessage(element, "El nombre/razón social es obligatorio.");
                         return Promise.resolve();
                     }
+                    this._showMessage(element, "Verificando que el documento no esté ya registrado...");
+                    return this._findExistingByDocument(documentNumber)
+                        .then(function (existing) {
+                        if (existing) {
+                            return _this._blockDuplicate(element, existing, documentNumber);
+                        }
+                        return _this._continueCreate(element, documentNumber, name);
+                    });
+                };
+                CustomerInlineDialog.prototype._blockDuplicate = function (element, existing, documentNumber) {
+                    var _this = this;
+                    var account = existing.AccountNumber || "";
+                    var name = existing.Name || this._formatCustomerSummary(existing);
+                    this._showTextResult(element, "customerInlineCreateResult", "Ya existe un cliente con el documento " + documentNumber + ":\n\n"
+                        + "Cuenta: " + account + "\n"
+                        + "Nombre: " + name + "\n\n"
+                        + "No se creó uno nuevo para no duplicarlo.");
+                    this._showMessage(element, "Documento ya registrado. Puede asignar el cliente existente.");
+                    var useExistingButton = element.querySelector("#customerInlineUseExistingBtn");
+                    if (useExistingButton) {
+                        useExistingButton.style.display = "";
+                        useExistingButton.onclick = function () {
+                            _this._showMessage(element, "Asignando " + account + " a la venta...");
+                            _this._setCustomerOnCart(account)
+                                .then(function () {
+                                _this._complete({
+                                    mode: "create",
+                                    action: "assignedExistingCustomer",
+                                    customerAccountNumber: account
+                                });
+                            })
+                                .catch(function (reason) {
+                                _this._logError("Asignar cliente existente fallo: " + _this._stringify(reason));
+                                _this._showMessage(element, "No se pudo asignar: " + _this._getErrorMessage(reason));
+                            });
+                        };
+                    }
+                    this._logChunked("=== Duplicado evitado ===", "documento=" + documentNumber + " ya pertenece a la cuenta " + account);
+                    return Promise.resolve();
+                };
+                CustomerInlineDialog.prototype._continueCreate = function (element, documentNumber, name) {
                     this._showMessage(element, "Paso 1: Resolviendo dirección (Ubigeo)...");
                     var sunatDataToUse = this._lastSunatData || {
                         documentNumber: documentNumber,

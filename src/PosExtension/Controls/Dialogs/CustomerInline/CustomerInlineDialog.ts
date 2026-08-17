@@ -1020,6 +1020,63 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             });
     }
 
+    /**
+     * Busca un cliente ya registrado con ese documento, para no crear duplicados.
+     *
+     * `GlobalCustomer` —lo que devuelve la búsqueda— NO trae el número de documento, así que un
+     * resultado por sí solo no prueba nada: hay que traer el cliente completo y comparar contra
+     * DPNUMBERDOCUMID_PE. Por eso se revisan como máximo tres candidatos; cada uno cuesta una
+     * petición y en caja la espera se nota.
+     *
+     * LÍMITE CONOCIDO: si el buscador del canal no indexa el documento, la búsqueda no devuelve
+     * al cliente y esta comprobación no lo detecta. Es una red de seguridad, no una garantía:
+     * por eso ante la duda deja crear en vez de bloquear una venta legítima.
+     */
+    private _findExistingByDocument(documentNumber: string): Promise<ProxyEntities.Customer | null> {
+        if (!documentNumber) {
+            return Promise.resolve(null);
+        }
+
+        return this.context.runtime
+            .executeAsync(new CustomerSearchRequest<CustomerSearchResponse>(documentNumber, 5, 0))
+            .then((response: any): Promise<ProxyEntities.Customer | null> => {
+                const candidates: any[] = (response && response.data && response.data.result) || [];
+                if (candidates.length === 0) {
+                    return Promise.resolve(null);
+                }
+
+                const accounts: string[] = [];
+                for (let i: number = 0; i < candidates.length && accounts.length < 3; i++) {
+                    if (candidates[i].AccountNumber) {
+                        accounts.push(candidates[i].AccountNumber);
+                    }
+                }
+
+                // Se revisan en cadena y se corta al primer acierto, para no gastar peticiones.
+                const checkNext: (index: number) => Promise<ProxyEntities.Customer | null> =
+                    (index: number): Promise<ProxyEntities.Customer | null> => {
+                        if (index >= accounts.length) {
+                            return Promise.resolve(null);
+                        }
+                        return this._getCustomerByAccount(accounts[index])
+                            .then((customer: ProxyEntities.Customer | null): Promise<ProxyEntities.Customer | null> => {
+                                if (customer && this._sunatService.getDocumentNumber(customer) === documentNumber) {
+                                    return Promise.resolve(customer);
+                                }
+                                return checkNext(index + 1);
+                            });
+                    };
+
+                return checkNext(0);
+            })
+            .catch((reason: any): ProxyEntities.Customer | null => {
+                // Ante un fallo de la comprobación NO se bloquea el alta: es peor impedir una
+                // venta legítima que permitir un duplicado que después se depura.
+                this._logError("Comprobacion de duplicado fallo: " + this._stringify(reason));
+                return null;
+            });
+    }
+
     private _executeCreate(element: HTMLElement): Promise<void> {
         let rawDocument: string = this._getValue(element, "customerInlineCreateDocument");
         let documentNumber: string = this._sunatService.normalizeDocument(rawDocument);
@@ -1035,8 +1092,68 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return Promise.resolve();
         }
 
+        this._showMessage(element, "Verificando que el documento no esté ya registrado...");
+
+        return this._findExistingByDocument(documentNumber)
+            .then((existing: ProxyEntities.Customer | null): Promise<void> => {
+                if (existing) {
+                    return this._blockDuplicate(element, existing, documentNumber);
+                }
+                return this._continueCreate(element, documentNumber, name);
+            });
+    }
+
+    /**
+     * Ante un duplicado no se crea nada, pero tampoco se deja al cajero sin salida: se ofrece
+     * asignar el cliente que ya existe, que es lo que iba a necesitar de todas formas.
+     */
+    private _blockDuplicate(element: HTMLElement, existing: ProxyEntities.Customer, documentNumber: string): Promise<void> {
+        const account: string = existing.AccountNumber || "";
+        const name: string = existing.Name || this._formatCustomerSummary(existing);
+
+        this._showTextResult(element, "customerInlineCreateResult",
+            "Ya existe un cliente con el documento " + documentNumber + ":\n\n"
+            + "Cuenta: " + account + "\n"
+            + "Nombre: " + name + "\n\n"
+            + "No se creó uno nuevo para no duplicarlo.");
+
+        this._showMessage(element, "Documento ya registrado. Puede asignar el cliente existente.");
+
+        const useExistingButton: HTMLButtonElement =
+            element.querySelector("#customerInlineUseExistingBtn") as HTMLButtonElement;
+        if (useExistingButton) {
+            useExistingButton.style.display = "";
+            useExistingButton.onclick = (): void => {
+                this._showMessage(element, "Asignando " + account + " a la venta...");
+                this._setCustomerOnCart(account)
+                    .then((): void => {
+                        this._complete({
+                            mode: "create",
+                            action: "assignedExistingCustomer",
+                            customerAccountNumber: account
+                        });
+                    })
+                    .catch((reason: any): void => {
+                        this._logError("Asignar cliente existente fallo: " + this._stringify(reason));
+                        this._showMessage(element, "No se pudo asignar: " + this._getErrorMessage(reason));
+                    });
+            };
+        }
+
+        this._logChunked("=== Duplicado evitado ===",
+            "documento=" + documentNumber + " ya pertenece a la cuenta " + account);
+
+        return Promise.resolve();
+    }
+
+    /**
+     * `name` viaja como parámetro y no se lee del ámbito exterior: en JavaScript un `name`
+     * suelto resuelve a `window.name`, que es una cadena válida — el alta habría salido con un
+     * nombre incorrecto sin que nada fallara.
+     */
+    private _continueCreate(element: HTMLElement, documentNumber: string, name: string): Promise<void> {
         this._showMessage(element, "Paso 1: Resolviendo dirección (Ubigeo)...");
-        
+
         const sunatDataToUse: ISunatCustomerData = this._lastSunatData || {
             documentNumber: documentNumber,
             documentType: this._sunatService.getDocumentType(documentNumber) as string,
