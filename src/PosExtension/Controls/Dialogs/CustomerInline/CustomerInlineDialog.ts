@@ -1433,7 +1433,12 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 + "No se creó un cliente nuevo para no duplicarlo. "
                 + "Búsquelo en la pestaña Buscar Cliente.";
 
-        return this._showAlert(element, "El cliente ya existe", body, account ? "Aceptar y usar este cliente" : "Aceptar")
+        return this._showAlert(
+            element,
+            "El cliente ya existe",
+            body,
+            account ? "Aceptar y usar este cliente" : "Aceptar",
+            account ? "Cancelar" : "")
             .then((accepted: boolean): Promise<void> => {
                 if (!accepted || !account) {
                     // Canceló: se queda en el formulario con los datos que ya cargó, por si
@@ -1469,7 +1474,12 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      * tape el motivo real. Si el overlay no está en el DOM —plantilla vieja en caché— cae al
      * recuadro de resultado, que siempre existe.
      */
-    private _showAlert(element: HTMLElement, title: string, body: string, acceptLabel: string): Promise<boolean> {
+    private _showAlert(
+        element: HTMLElement,
+        title: string,
+        body: string,
+        acceptLabel: string,
+        cancelLabel: string): Promise<boolean> {
         const overlay: HTMLElement = element.querySelector("#customerInlineAlertOverlay") as HTMLElement;
         const titleNode: HTMLElement = element.querySelector("#customerInlineAlertTitle") as HTMLElement;
         const bodyNode: HTMLElement = element.querySelector("#customerInlineAlertBody") as HTMLElement;
@@ -1485,9 +1495,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         if (titleNode) { titleNode.textContent = title; }
         if (bodyNode) { bodyNode.textContent = body; }
         acceptButton.textContent = acceptLabel;
-        // Solo hay salida si se acepta cuando no se puede asignar nada: se oculta el botón que
-        // no lleva a ninguna parte en vez de ofrecer dos que hacen lo mismo.
-        cancelButton.style.display = acceptLabel === "Aceptar" ? "none" : "";
+        // Sin etiqueta de cancelar el aviso es de una sola salida: se oculta el botón en vez de
+        // ofrecer dos que hacen lo mismo.
+        cancelButton.textContent = cancelLabel || "Cancelar";
+        cancelButton.style.display = cancelLabel ? "" : "none";
 
         overlay.style.display = "flex";
 
@@ -1900,7 +1911,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         this._showMessage(element, "Consultando SUNAT para comparar antes de editar...");
 
         return this._sunatService.lookup(documentNumber)
-            .then((sunatData: ISunatCustomerData): void => {
+            .then((sunatData: ISunatCustomerData): Promise<void> => {
                 if (!this._getValue(element, "customerInlineEditName")) {
                     this._setValue(element, "customerInlineEditName", sunatData.name || "");
                 }
@@ -1909,6 +1920,59 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
                 this._showTextResult(element, "customerInlineEditResult", this._formatSunatSummary(sunatData) + "\n" + differences.join("\n"));
                 this._showMessage(element, "SUNAT consultado. Revise diferencias y confirme Guardar.");
+
+                return this._offerSunatAddress(element, sunatData);
+            });
+    }
+
+    /**
+     * Ofrece traer la dirección de SUNAT al formulario de edición, ya repartida en los tres
+     * campos.
+     *
+     * SE PREGUNTA, NO SE PISA: un cliente puede haberse mudado a una dirección que SUNAT todavía
+     * no tiene, o el cajero puede estar corrigiendo la que ya estaba. Reemplazarla sin avisar
+     * borraría ese trabajo sin que se note.
+     */
+    private _offerSunatAddress(element: HTMLElement, sunatData: ISunatCustomerData): Promise<void> {
+        const fromSunat: string = (sunatData.address || "").replace(/\s+/g, " ").trim();
+
+        if (!fromSunat) {
+            return Promise.resolve();
+        }
+
+        const parts: { street: string; streetNumber: string; compliment: string } =
+            this._sunatService.parseAddressParts(fromSunat);
+
+        // Si ya es la misma no hay nada que preguntar.
+        const current: string = [
+            this._getValue(element, "customerInlineCreateAddress"),
+            this._getValue(element, "customerInlineCreateStreetNumber"),
+            this._getValue(element, "customerInlineCreateBuildingCompliment")
+        ].join(" ").replace(/\s+/g, " ").trim().toUpperCase();
+
+        const proposed: string = [parts.street, parts.streetNumber, parts.compliment]
+            .join(" ").replace(/\s+/g, " ").trim().toUpperCase();
+
+        if (current === proposed) {
+            return Promise.resolve();
+        }
+
+        const body: string = "SUNAT tiene registrada esta dirección:\n\n"
+            + "Calle: " + (parts.street || "(vacío)") + "\n"
+            + "Número: " + (parts.streetNumber || "(vacío)") + "\n"
+            + "Complemento: " + (parts.compliment || "(vacío)") + "\n\n"
+            + "En el formulario hay: " + (current || "(vacío)") + "\n\n"
+            + "¿Reemplazar la del formulario por la de SUNAT?";
+
+        return this._showAlert(element, "Dirección según SUNAT", body, "Sí, usar la de SUNAT", "No, dejar la actual")
+            .then((accepted: boolean): void => {
+                if (!accepted) {
+                    this._showMessage(element, "Se conserva la dirección del formulario.");
+                    return;
+                }
+
+                this._applyAddressParts(element, fromSunat);
+                this._showMessage(element, "Dirección de SUNAT cargada. Revise el ubigeo y confirme Guardar.");
             });
     }
 

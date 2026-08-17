@@ -953,7 +953,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         : "El documento " + documentNumber + " ya está registrado en otro cliente.\n\n"
                             + "No se creó un cliente nuevo para no duplicarlo. "
                             + "Búsquelo en la pestaña Buscar Cliente.";
-                    return this._showAlert(element, "El cliente ya existe", body, account ? "Aceptar y usar este cliente" : "Aceptar")
+                    return this._showAlert(element, "El cliente ya existe", body, account ? "Aceptar y usar este cliente" : "Aceptar", account ? "Cancelar" : "")
                         .then(function (accepted) {
                         if (!accepted || !account) {
                             _this._showMessage(element, "El documento ya está registrado"
@@ -975,7 +975,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         });
                     });
                 };
-                CustomerInlineDialog.prototype._showAlert = function (element, title, body, acceptLabel) {
+                CustomerInlineDialog.prototype._showAlert = function (element, title, body, acceptLabel, cancelLabel) {
                     var overlay = element.querySelector("#customerInlineAlertOverlay");
                     var titleNode = element.querySelector("#customerInlineAlertTitle");
                     var bodyNode = element.querySelector("#customerInlineAlertBody");
@@ -993,7 +993,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         bodyNode.textContent = body;
                     }
                     acceptButton.textContent = acceptLabel;
-                    cancelButton.style.display = acceptLabel === "Aceptar" ? "none" : "";
+                    cancelButton.textContent = cancelLabel || "Cancelar";
+                    cancelButton.style.display = cancelLabel ? "" : "none";
                     overlay.style.display = "flex";
                     return new Promise(function (resolve) {
                         var close = function (accepted) {
@@ -1278,6 +1279,40 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         var differences = _this._currentCustomer ? _this._sunatService.compareWithCustomer(_this._currentCustomer, sunatData) : [];
                         _this._showTextResult(element, "customerInlineEditResult", _this._formatSunatSummary(sunatData) + "\n" + differences.join("\n"));
                         _this._showMessage(element, "SUNAT consultado. Revise diferencias y confirme Guardar.");
+                        return _this._offerSunatAddress(element, sunatData);
+                    });
+                };
+                CustomerInlineDialog.prototype._offerSunatAddress = function (element, sunatData) {
+                    var _this = this;
+                    var fromSunat = (sunatData.address || "").replace(/\s+/g, " ").trim();
+                    if (!fromSunat) {
+                        return Promise.resolve();
+                    }
+                    var parts = this._sunatService.parseAddressParts(fromSunat);
+                    var current = [
+                        this._getValue(element, "customerInlineCreateAddress"),
+                        this._getValue(element, "customerInlineCreateStreetNumber"),
+                        this._getValue(element, "customerInlineCreateBuildingCompliment")
+                    ].join(" ").replace(/\s+/g, " ").trim().toUpperCase();
+                    var proposed = [parts.street, parts.streetNumber, parts.compliment]
+                        .join(" ").replace(/\s+/g, " ").trim().toUpperCase();
+                    if (current === proposed) {
+                        return Promise.resolve();
+                    }
+                    var body = "SUNAT tiene registrada esta dirección:\n\n"
+                        + "Calle: " + (parts.street || "(vacío)") + "\n"
+                        + "Número: " + (parts.streetNumber || "(vacío)") + "\n"
+                        + "Complemento: " + (parts.compliment || "(vacío)") + "\n\n"
+                        + "En el formulario hay: " + (current || "(vacío)") + "\n\n"
+                        + "¿Reemplazar la del formulario por la de SUNAT?";
+                    return this._showAlert(element, "Dirección según SUNAT", body, "Sí, usar la de SUNAT", "No, dejar la actual")
+                        .then(function (accepted) {
+                        if (!accepted) {
+                            _this._showMessage(element, "Se conserva la dirección del formulario.");
+                            return;
+                        }
+                        _this._applyAddressParts(element, fromSunat);
+                        _this._showMessage(element, "Dirección de SUNAT cargada. Revise el ubigeo y confirme Guardar.");
                     });
                 };
                 CustomerInlineDialog.prototype._updateCustomer = function (element) {
