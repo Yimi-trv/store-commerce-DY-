@@ -1,11 +1,56 @@
 <div class="customer-inline-dialog">
     <style>
+        /* El diálogo del POS se ancla a la derecha, así que crecer en ancho lo extiende hacia
+           la izquierda. 920px deja sitio para la tabla de resultados sin tapar la venta.
+           El max-width en vw evita que se salga de pantalla en resoluciones chicas de caja. */
         .customer-inline-dialog {
-            min-width: 280px;
-            width: 100%;
+            min-width: 880px;
+            width: 920px;
+            max-width: 92vw;
             padding: 16px;
             box-sizing: border-box;
             font-family: "Segoe UI", Arial, sans-serif;
+        }
+
+        /* Con el modal ancho, los campos entran de a dos por fila. */
+        .customer-inline-dialog__grid {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .customer-inline-dialog__results {
+            margin-top: 12px;
+            max-height: 320px;
+            overflow-y: auto;
+            border: 1px solid #d8d8d8;
+        }
+
+        .customer-inline-dialog__results table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .customer-inline-dialog__results th {
+            position: sticky;
+            top: 0;
+            padding: 8px 10px;
+            background: #f3f2f1;
+            border-bottom: 1px solid #d8d8d8;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .customer-inline-dialog__results td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #ededed;
+        }
+
+        .customer-inline-dialog__results tbody tr {
+            cursor: pointer;
+        }
+
+        .customer-inline-dialog__results tbody tr:hover {
+            background: #eaf3fb;
         }
 
         .customer-inline-dialog__tabs {
@@ -140,11 +185,15 @@
             </div>
         </div>
         <div class="customer-inline-dialog__actions">
+            <button id="customerInlineSearchNativeBtn" type="button" class="customer-inline-dialog__action customer-inline-dialog__action--secondary">
+                Abrir buscador del POS
+            </button>
             <button id="customerInlineSearchBtn" type="button" class="customer-inline-dialog__action">
-                Buscar y asignar
+                Buscar
             </button>
         </div>
-        <div id="customerInlineSearchResult" class="customer-inline-dialog__result">El resultado se abre en la grilla de clientes del POS. Al elegir uno, se asigna a esta venta automáticamente.</div>
+        <div id="customerInlineSearchResults" class="customer-inline-dialog__results"></div>
+        <div id="customerInlineSearchResult" class="customer-inline-dialog__result">Escriba y presione Buscar. Toque un resultado para asignarlo a esta venta.</div>
     </div>
 
     <!-- PANEL CREAR -->

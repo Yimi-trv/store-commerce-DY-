@@ -1,4 +1,4 @@
-System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest"], function (exports_1, context_1) {
+System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest", "../../../DataService/CustomerSearchRequest"], function (exports_1, context_1) {
     "use strict";
     var __extends = (this && this.__extends) || (function () {
         var extendStatics = function (d, b) {
@@ -15,7 +15,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
+    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, CustomerSearchRequest_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -45,6 +45,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             },
             function (CustomerGroupsRequest_1_1) {
                 CustomerGroupsRequest_1 = CustomerGroupsRequest_1_1;
+            },
+            function (CustomerSearchRequest_1_1) {
+                CustomerSearchRequest_1 = CustomerSearchRequest_1_1;
             }
         ],
         execute: function () {
@@ -54,6 +57,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 __extends(CustomerInlineDialog, _super);
                 function CustomerInlineDialog() {
                     var _this = _super.call(this) || this;
+                    _this._searchTop = 50;
+                    _this._searchSkip = 0;
                     _this._mode = "search";
                     _this._resolve = null;
                     _this._currentCustomer = null;
@@ -94,6 +99,21 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (searchBtn) {
                         searchBtn.onclick = function () {
                             _this._executeSearch(element, false);
+                        };
+                    }
+                    var nativeSearchBtn = element.querySelector("#customerInlineSearchNativeBtn");
+                    if (nativeSearchBtn) {
+                        nativeSearchBtn.onclick = function () {
+                            _this._openNativeSearch(element);
+                        };
+                    }
+                    var searchInput = element.querySelector("#customerInlineSearchText");
+                    if (searchInput) {
+                        searchInput.onkeydown = function (event) {
+                            if (event.keyCode === 13) {
+                                event.preventDefault();
+                                _this._executeSearch(element, false);
+                            }
                         };
                     }
                     this._bindAction(element, "customerInlineCreateSunatButton", this._lookupSunatForCreate.bind(this));
@@ -266,11 +286,99 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                 };
                 CustomerInlineDialog.prototype._executeSearch = function (element, isPagination) {
+                    var _this = this;
                     if (isPagination === void 0) { isPagination = false; }
                     var searchText = this._getValue(element, "customerInlineSearchText") || this._initialSearchText;
                     if (searchText.indexOf(DIAG_PREFIX) === 0) {
                         return this._runSchemaDiagnostic(element, searchText.substring(DIAG_PREFIX.length));
                     }
+                    if (!searchText) {
+                        this._showMessage(element, "Escriba un nombre, cuenta o número de documento.");
+                        return Promise.resolve();
+                    }
+                    if (!isPagination) {
+                        this._searchSkip = 0;
+                    }
+                    this._showMessage(element, "Buscando...");
+                    return this.context.runtime
+                        .executeAsync(new CustomerSearchRequest_1.CustomerSearchRequest(searchText, this._searchTop, this._searchSkip))
+                        .then(function (response) {
+                        var results = (response && response.data && response.data.result) || [];
+                        _this._renderSearchResults(element, results);
+                        if (results.length === 0) {
+                            _this._showMessage(element, _this._searchSkip > 0
+                                ? "No hay más resultados."
+                                : "Sin coincidencias para \"" + searchText + "\".");
+                        }
+                        else {
+                            _this._showMessage(element, results.length + " resultado(s). Toque uno para asignarlo a la venta.");
+                        }
+                    })
+                        .catch(function (reason) {
+                        _this._logError("Busqueda de clientes fallo: " + _this._stringify(reason));
+                        _this._renderSearchResults(element, []);
+                        _this._showMessage(element, "No se pudo buscar: " + _this._getErrorMessage(reason)
+                            + " Puede usar el buscador del POS.");
+                    });
+                };
+                CustomerInlineDialog.prototype._renderSearchResults = function (element, results) {
+                    var _this = this;
+                    var container = element.querySelector("#customerInlineSearchResults");
+                    if (!container) {
+                        return;
+                    }
+                    container.innerHTML = "";
+                    if (results.length === 0) {
+                        return;
+                    }
+                    var table = document.createElement("table");
+                    var head = table.createTHead().insertRow();
+                    var columns = ["Cuenta", "Nombre", "Dirección", "Teléfono"];
+                    for (var c = 0; c < columns.length; c++) {
+                        var th = document.createElement("th");
+                        th.textContent = columns[c];
+                        head.appendChild(th);
+                    }
+                    var body = table.createTBody();
+                    var _loop_1 = function (i) {
+                        var customer = results[i];
+                        var row = body.insertRow();
+                        row.insertCell().textContent = customer.AccountNumber || "";
+                        row.insertCell().textContent = customer.FullName || "";
+                        row.insertCell().textContent = customer.FullAddress || "";
+                        row.insertCell().textContent = customer.Phone || "";
+                        var accountNumber = customer.AccountNumber || "";
+                        row.onclick = function () {
+                            _this._selectCustomerFromSearch(element, accountNumber);
+                        };
+                    };
+                    for (var i = 0; i < results.length; i++) {
+                        _loop_1(i);
+                    }
+                    container.appendChild(table);
+                };
+                CustomerInlineDialog.prototype._selectCustomerFromSearch = function (element, accountNumber) {
+                    var _this = this;
+                    if (!accountNumber) {
+                        this._showMessage(element, "Ese resultado no tiene número de cuenta.");
+                        return;
+                    }
+                    this._showMessage(element, "Asignando " + accountNumber + " a la venta...");
+                    this._setCustomerOnCart(accountNumber)
+                        .then(function () {
+                        _this._complete({
+                            mode: "search",
+                            action: "searchAndSetCustomerOnCart",
+                            customerAccountNumber: accountNumber
+                        });
+                    })
+                        .catch(function (reason) {
+                        _this._logError("SetCustomerOnCart desde busqueda fallo: " + _this._stringify(reason));
+                        _this._showMessage(element, "No se pudo asignar el cliente: " + _this._getErrorMessage(reason));
+                    });
+                };
+                CustomerInlineDialog.prototype._openNativeSearch = function (element) {
+                    var searchText = this._getValue(element, "customerInlineSearchText") || this._initialSearchText;
                     this.closeDialog();
                     if (this._resolve) {
                         this._resolve({

@@ -23,6 +23,7 @@ import SunatCustomerService, { ISunatCustomerData } from "../../../Services/Suna
 import { TRU_Diagnostics, TRU_GeographicData, Entities } from "../../../DataService/DataServiceRequests.g";
 import { GetAddressPurposesRequest, GetAddressPurposesResponse } from "../../../DataService/AddressPurposesRequest";
 import { GetCustomerGroupsRequest, GetCustomerGroupsResponse } from "../../../DataService/CustomerGroupsRequest";
+import { CustomerSearchRequest, CustomerSearchResponse } from "../../../DataService/CustomerSearchRequest";
 
 const GUARD_KEY: string = "__customerInlineDialogActive";
 
@@ -54,6 +55,8 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _initialSearchText: string;
     private readonly _sunatService: SunatCustomerService;
     private _lastSunatData: ISunatCustomerData | null;
+    private readonly _searchTop: number = 50;
+    private _searchSkip: number = 0;
 
     constructor() {
         super();
@@ -105,6 +108,25 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         if (searchBtn) {
             searchBtn.onclick = () => {
                 this._executeSearch(element, false);
+            };
+        }
+
+        const nativeSearchBtn: HTMLElement = element.querySelector("#customerInlineSearchNativeBtn");
+        if (nativeSearchBtn) {
+            nativeSearchBtn.onclick = () => {
+                this._openNativeSearch(element);
+            };
+        }
+
+        // Enter en el campo de búsqueda dispara la búsqueda: en caja se teclea, no se apunta.
+        const searchInput: HTMLInputElement =
+            element.querySelector("#customerInlineSearchText") as HTMLInputElement;
+        if (searchInput) {
+            searchInput.onkeydown = (event: KeyboardEvent): void => {
+                if (event.keyCode === 13) {
+                    event.preventDefault();
+                    this._executeSearch(element, false);
+                }
             };
         }
 
@@ -327,11 +349,9 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     /**
-     * El SDK del POS no expone una búsqueda de clientes que devuelva datos sin abrir UI
-     * (`SelectCustomerClientRequest` siempre dibuja la grilla nativa). Por eso el modal no
-     * resuelve la búsqueda: cierra y delega en el trigger que lo abrió, pasándole el texto
-     * escrito. El trigger es quien sigue vivo después de cerrar el diálogo y puede ejecutar
-     * la búsqueda y la asignación al carrito sin trabajar sobre un DOM ya destruido.
+     * Busca clientes y dibuja los resultados DENTRO del modal, que es el criterio funcional
+     * que se venía persiguiendo. Usa la acción estándar `Customers/Search` de Retail Server
+     * declarada a mano — ver CustomerSearchRequest para por qué no alcanza el SDK del POS.
      */
     private _executeSearch(element: HTMLElement, isPagination: boolean = false): Promise<void> {
         const searchText: string = this._getValue(element, "customerInlineSearchText") || this._initialSearchText;
@@ -339,6 +359,110 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         if (searchText.indexOf(DIAG_PREFIX) === 0) {
             return this._runSchemaDiagnostic(element, searchText.substring(DIAG_PREFIX.length));
         }
+
+        if (!searchText) {
+            this._showMessage(element, "Escriba un nombre, cuenta o número de documento.");
+            return Promise.resolve();
+        }
+
+        if (!isPagination) {
+            this._searchSkip = 0;
+        }
+
+        this._showMessage(element, "Buscando...");
+
+        return this.context.runtime
+            .executeAsync(new CustomerSearchRequest<CustomerSearchResponse>(searchText, this._searchTop, this._searchSkip))
+            .then((response: any): void => {
+                const results: any[] = (response && response.data && response.data.result) || [];
+                this._renderSearchResults(element, results);
+
+                if (results.length === 0) {
+                    this._showMessage(element, this._searchSkip > 0
+                        ? "No hay más resultados."
+                        : "Sin coincidencias para \"" + searchText + "\".");
+                } else {
+                    this._showMessage(element, results.length + " resultado(s). Toque uno para asignarlo a la venta.");
+                }
+            })
+            .catch((reason: any): void => {
+                this._logError("Busqueda de clientes fallo: " + this._stringify(reason));
+                this._renderSearchResults(element, []);
+                this._showMessage(element,
+                    "No se pudo buscar: " + this._getErrorMessage(reason)
+                    + " Puede usar el buscador del POS.");
+            });
+    }
+
+    /**
+     * `GlobalCustomer` ya trae nombre, cuenta y dirección, así que la tabla se dibuja sin una
+     * segunda consulta por fila.
+     */
+    private _renderSearchResults(element: HTMLElement, results: any[]): void {
+        const container: HTMLElement = element.querySelector("#customerInlineSearchResults") as HTMLElement;
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = "";
+        if (results.length === 0) {
+            return;
+        }
+
+        const table: HTMLTableElement = document.createElement("table");
+        const head: HTMLTableRowElement = table.createTHead().insertRow();
+        const columns: string[] = ["Cuenta", "Nombre", "Dirección", "Teléfono"];
+        for (let c: number = 0; c < columns.length; c++) {
+            const th: HTMLElement = document.createElement("th");
+            th.textContent = columns[c];
+            head.appendChild(th);
+        }
+
+        const body: HTMLTableSectionElement = table.createTBody();
+        for (let i: number = 0; i < results.length; i++) {
+            const customer: any = results[i];
+            const row: HTMLTableRowElement = body.insertRow();
+            row.insertCell().textContent = customer.AccountNumber || "";
+            row.insertCell().textContent = customer.FullName || "";
+            row.insertCell().textContent = customer.FullAddress || "";
+            row.insertCell().textContent = customer.Phone || "";
+
+            // El accountNumber se captura por closure: en ES5 `customer` es de la iteración
+            // actual porque se declara dentro del for, pero se guarda explícito por claridad.
+            const accountNumber: string = customer.AccountNumber || "";
+            row.onclick = (): void => {
+                this._selectCustomerFromSearch(element, accountNumber);
+            };
+        }
+
+        container.appendChild(table);
+    }
+
+    private _selectCustomerFromSearch(element: HTMLElement, accountNumber: string): void {
+        if (!accountNumber) {
+            this._showMessage(element, "Ese resultado no tiene número de cuenta.");
+            return;
+        }
+
+        this._showMessage(element, "Asignando " + accountNumber + " a la venta...");
+
+        this._setCustomerOnCart(accountNumber)
+            .then((): void => {
+                this._complete({
+                    mode: "search",
+                    action: "searchAndSetCustomerOnCart",
+                    customerAccountNumber: accountNumber
+                });
+            })
+            .catch((reason: any): void => {
+                this._logError("SetCustomerOnCart desde busqueda fallo: " + this._stringify(reason));
+                this._showMessage(element, "No se pudo asignar el cliente: " + this._getErrorMessage(reason));
+            });
+    }
+
+    /** Salida de emergencia: delega en la pantalla nativa como hacía antes. */
+    private _openNativeSearch(element: HTMLElement): Promise<void> {
+        const searchText: string = this._getValue(element, "customerInlineSearchText") || this._initialSearchText;
 
         this.closeDialog();
         if (this._resolve) {
