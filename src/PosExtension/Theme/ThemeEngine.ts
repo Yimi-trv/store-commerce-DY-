@@ -5,6 +5,57 @@ import { construirCss, TEMA_ACTIVO, CLASE_AMBITO, CLASE_AMPLIO, CLASE_COMPACTO }
  *
  * Implementa un MutationObserver dual (DOM y Estilos) y soporta dinámicamente
  * layout amplio (1920) y layout compacto (1024) según el ancho de la ventana.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * DOS REGLAS QUE HAY QUE RESPETAR AL TOCAR ESTE FICHERO
+ * ---------------------------------------------------------------------------------------------
+ *
+ * 1) NUNCA escribir una clase o un estilo de forma incondicional.
+ *    El MutationObserver observa los atributos "class" y "style". Si una pasada escribe siempre
+ *    (aunque sea el mismo valor), cada escritura relanza el observador y el motor entra en un
+ *    bucle de mutaciones: es el parpadeo de ~1s al agregar un producto que ya costo arreglar una
+ *    vez. Patron correcto:  if (!el.classList.contains(x)) el.classList.add(x);
+ *    El helper estilo() ya compara antes de escribir; usarlo en vez de style.setProperty directo.
+ *
+ * 2) El umbral amplio/compacto vive en DOS sitios y tienen que coincidir:
+ *    aqui en esCompacto() y en las @media de ThemeAssets.ts (max-width:1366 / min-width:1367).
+ *    Si se cambia uno, se cambia el otro en el mismo commit.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * CAMBIOS DE ESTA TANDA (v1.2.0 desplegada + endurecimiento posterior)
+ * ---------------------------------------------------------------------------------------------
+ *
+ * DESPLEGADO EN 1.2.0:
+ *   - esCompacto(): 1200 -> 1366. Entre 1201 y 1366px el tema quedaba mixto (CSS compacto con JS
+ *     amplio). HQ sirve un layout de 1366x768, asi que la franja no era teorica.
+ *   - aplicarPestanas(): rotulo de la 4a pestana BOLETO -> BOLETEO.
+ *   - ThemeAssets: #ButtonGrid1/2/3{overflow:visible} (la zona de HQ mide 300px con
+ *     overflow:hidden y recortaba las esquinas redondeadas del control de 316px) y la regla del
+ *     titulo de la tarjeta Boleta en compacto.
+ *
+ * PENDIENTE DE COMPILAR (va en POS 1.2.1 / paquete 2.9.8.0):
+ *   - zonaBoleta(), marcarTituloBoleta() y decorarBoleto(): tres ayudantes nuevos que ANTES
+ *     estaban duplicados y divergidos entre aplicarLayoutCompacto() y aplicarLayoutAmplio().
+ *     Esa divergencia era el origen de un hueco real: el titulo de la tarjeta Boleta solo se
+ *     marcaba en el layout amplio.
+ *   - decorarBoleto() identifica los botones por su PROPIO texto, no por posicion. El tema
+ *     reescribe el rotulo del boton; con orden por indice, un orden distinto en HQ pegaria
+ *     "A Cuenta" sobre la accion de terceros. En una caja que emite documentos tributarios eso
+ *     no es cosmetico.
+ *   - aplicarCliente() reescrita: detectaba si habia cliente por el FORMATO del numero de cuenta
+ *     (/[A-Z]{2,4}-\d{4,}/). El cliente de pruebas TRV-000001 casaba; uno real trae un GUID y no,
+ *     asi que con clientes reales el panel se quedaba SIN ESTILO. Ahora se detecta por las clases
+ *     del propio POS. Ver el aviso dentro de la funcion.
+ *   - soltarAlturaVacio(): NO BORRAR. Suelta los height:100% inline que pone el estado "sin
+ *     cliente"; sin ella se quedan pegados al cargar un cliente.
+ *   - propLineas: la caja de lineas pasa a left -12 / width 626 / height 400 para cuadrar la
+ *     columna izquierda. Va emparejada con #TotalsPanel de ThemeAssets.
+ *   - Geometria fina del layout compacto (numpad, separaciones, tiles de pago, ficha de cliente
+ *     y direccion): toda en ThemeAssets. Antes de tocar un numero de ahi, leer el bloque de
+ *     anclas que encabeza cssCompacto — los valores estan emparejados entre si.
+ *
+ * La bitacora completa (medidas en vivo, bugs y por que de cada decision) esta en el vault de
+ * Obsidian, carpeta 006-MEMORIA, notas 14 (bitacora) y 23 (bugs de 1024x768).
  */
 export class ThemeEngine {
 
@@ -17,7 +68,6 @@ export class ThemeEngine {
     private static eventosRegistrados: boolean = false;
     private static sondaEstilos: HTMLElement | null = null;
     private static estilosNormalizados: { [clave: string]: string } = {};
-    private static altoOriginalLineas: number | null = null;
     private static recalculoPestanasSolicitado: boolean = false;
 
     private static readonly SELECTORES_OBSERVADOS: string[] = [
@@ -287,9 +337,15 @@ export class ThemeEngine {
 
     private static aplicarPestanas(): void {
         // El rotulo de la 4a pestana es BOLETEO (la cuadricula se llama "Boleteos" en HQ).
-        // OJO: esta pestana solo existe cuando el layout activo asigna una cuadricula a la zona
-        // TransactionScreen3. El layout de 1366x768 la trae; el de 1024x768 NO, y por eso ahi el
-        // riel solo muestra tres pestanas. Eso se corrige en HQ, no aqui.
+        //
+        // PARA EL QUE LEA ESTO: la 4a pestana NO depende del tema. Existe solo si el layout que HQ
+        // le sirve a ESE usuario asigna una cuadricula a la zona TransactionScreen3. Confirmado en
+        // vivo leyendo Commerce.ApplicationContext.Instance._tillLayoutProxy: con el usuario
+        // administrador el POS descarga el layout "MPOS_ADMIN" (Diseño Administrador), variante
+        // 1024x768, con 7 zonas y SIN entrada para TransactionScreen3 (200 Cliente, 210
+        // Transacciones, hueco, 230 Metodos de Pago). Con el usuario de caja el layout si la trae.
+        // O sea: si falta la pestana, es el layout del usuario, no el CSS. El bucle recorre las
+        // pestanas que existan, asi que con 3 o con 4 funciona igual.
         var rotulos: string[] = ["NUMPAD", "CLIENTE", "TRANSAC.", "BOLETEO"];
         var pestanas: HTMLElement[] = ThemeEngine.todos(".commerceTabControl.righttabs .tabsContainer .tab");
         for (var i: number = 0; i < pestanas.length && i < rotulos.length; i++) {
@@ -329,47 +385,85 @@ export class ThemeEngine {
     }
 
     private static aplicarCliente(): void {
-        var zonaCliente: HTMLElement | null = ThemeEngine.zona(/Agregue un cliente|CLIENTE DESCRIPTIVO/i);
+        // ¡¡NO VOLVER A DETECTAR POR TEXTO NI POR FORMATO DE DATOS EN ESTA FUNCION!!
+        // Es el error que ya se cometio TRES veces aqui y el que produjo el bug de abajo. Si algo
+        // no se encuentra, la respuesta NO es afinar la expresion regular: es buscar la clase
+        // estructural que use el POS para eso.
+        //
+        // BUG CORREGIDO — "al agregar un cliente se pierden los estilos y vuelve el anterior".
+        //
+        // La deteccion anterior daba por hecho dos cosas que solo son ciertas con el cliente por
+        // defecto de pruebas, y con un cliente REAL fallaban las dos:
+        //
+        //   1) Que el numero de cuenta tiene formato XXX-0000:
+        //          /[A-Z]{2,4}-\d{4,}/.test(candidato.textContent)
+        //      El cliente por defecto es "TRV-000001" y casaba. Un cliente real trae un GUID
+        //      ("5f41e99f-c811-4e86-864b-539c06da3e8f") y NO casa. Sin ese codigo el motor creia
+        //      que el panel estaba VACIO, aplicaba el estilo de "sin cliente" y la tarjeta real se
+        //      quedaba con el estilo nativo del POS. Medido en vivo con el cliente
+        //      "BENITO ROGGIO E HIJOS SA SUCURSAL DEL PERU".
+        //
+        //   2) Que la tarjeta de direccion empieza por "DOMICILIO":
+        //          /^DOMICILIO/.test(seccion.textContent)
+        //      Ese rotulo es el TIPO de direccion del cliente. Con "OFICINA", "ALMACEN", etc.
+        //      tampoco casaba y la tarjeta de direccion se quedaba sin estilo.
+        //
+        // Ahora se usan las clases del PROPIO POS, que no dependen de los datos del cliente:
+        //   .customerDetailsCardStyle    -> existe (con altura) solo cuando HAY cliente cargado
+        //   .customerPanelPrimaryAddress -> la tarjeta de direccion, se llame como se llame
+        var zonaCliente: HTMLElement | null = ThemeEngine.q("#CustomerPanel");
+        if (!zonaCliente) zonaCliente = ThemeEngine.zona(/Agregue un cliente|CLIENTE DESCRIPTIVO/i);
         if (!zonaCliente) return;
-        var listaCandidatos: NodeListOf<Element> = zonaCliente.querySelectorAll("div,span,label,h1,h2,h3,h4");
-        var conCodigo: HTMLElement | null = null;
-        for (var i: number = 0; i < listaCandidatos.length; i++) {
-            var candidato: HTMLElement = listaCandidatos[i] as HTMLElement;
-            if (candidato.children.length === 0 && /[A-Z]{2,4}-\d{4,}/.test((candidato.textContent || "").trim()) && candidato.getBoundingClientRect().width > 0) {
-                conCodigo = candidato;
+
+        var detalle: HTMLElement | null = zonaCliente.querySelector(".customerDetailsCardStyle") as HTMLElement | null;
+        var conCliente: boolean = !!detalle && detalle.getBoundingClientRect().height > 0;
+        var tarjetaVieja: HTMLElement | null = ThemeEngine.q(".sct-cli-card");
+        var domVieja: HTMLElement | null = ThemeEngine.q(".sct-dom-card");
+
+        if (conCliente && detalle) {
+            // Los dos estados son EXCLUYENTES. Antes las clases solo se anadian, nunca se
+            // quitaban, asi que .sct-cli-card y .sct-cli-empty acababan conviviendo y sus estilos
+            // se peleaban. Se comprobo en vivo: las tres clases presentes a la vez.
+            var vaciaVieja: HTMLElement | null = ThemeEngine.q(".sct-cli-empty");
+            if (vaciaVieja) vaciaVieja.classList.remove("sct-cli-empty");
+            ThemeEngine.soltarAlturaVacio();
+
+            var tarjeta: HTMLElement | null = detalle.querySelector(".primaryPanelBackgroundColor.highContrastBorderThin") as HTMLElement | null;
+            if (!tarjeta) tarjeta = detalle;
+            if (tarjetaVieja && tarjetaVieja !== tarjeta) tarjetaVieja.classList.remove("sct-cli-card");
+            if (!tarjeta.classList.contains("sct-cli-card")) tarjeta.classList.add("sct-cli-card");
+
+            var nombre: HTMLElement | null = null;
+            var hijos: NodeListOf<Element> = tarjeta.querySelectorAll("*");
+            for (var j: number = 0; j < hijos.length; j++) {
+                var hijo: HTMLElement = hijos[j] as HTMLElement;
+                var textoHijo: string = (hijo.textContent || "").trim();
+                if (hijo.children.length === 0 && textoHijo.length > 14 && !/\d{4,}/.test(textoHijo)) {
+                    nombre = hijo; break;
+                }
             }
-        }
-        if (conCodigo) {
-            var tarjeta: HTMLElement | null = ThemeEngine.ancestroTarjeta(conCodigo);
-            if (tarjeta && tarjeta.parentElement && tarjeta.parentElement.parentElement) {
-                tarjeta.classList.add("sct-cli-card");
-                var nombre: HTMLElement | null = null;
-                var hijos: NodeListOf<Element> = tarjeta.querySelectorAll("*");
-                for (var j: number = 0; j < hijos.length; j++) {
-                    var hijo: HTMLElement = hijos[j] as HTMLElement;
-                    var textoHijo: string = (hijo.textContent || "").trim();
-                    if (hijo.children.length === 0 && textoHijo.length > 14 && !/\d{4,}/.test(textoHijo)) {
-                        nombre = hijo; break;
-                    }
+            ThemeEngine.estilo(nombre, { "white-space": "normal", "font-size": "13px", "line-height": "1.25" });
+
+            var direccion: HTMLElement | null = zonaCliente.querySelector(".customerPanelPrimaryAddress") as HTMLElement | null;
+            if (domVieja && domVieja !== direccion) domVieja.classList.remove("sct-dom-card");
+            if (direccion) {
+                if (!direccion.classList.contains("sct-dom-card")) direccion.classList.add("sct-dom-card");
+                var internos: NodeListOf<Element> = direccion.querySelectorAll("*");
+                for (var m: number = 0; m < internos.length; m++) {
+                    var interno: HTMLElement = internos[m] as HTMLElement;
+                    ThemeEngine.estilo(interno, { "background": "transparent", "border": "none", "white-space": "normal" });
                 }
-                ThemeEngine.estilo(nombre, { "white-space": "normal", "font-size": "13px", "line-height": "1.25" });
-                var pila: HTMLElement = tarjeta.parentElement.parentElement;
-                for (var k: number = 0; k < pila.children.length; k++) {
-                    var seccion: HTMLElement = pila.children[k] as HTMLElement;
-                    if (/^DOMICILIO/.test((seccion.textContent || "").trim())) {
-                        seccion.classList.add("sct-dom-card");
-                        var internos: NodeListOf<Element> = seccion.querySelectorAll("*");
-                        for (var m: number = 0; m < internos.length; m++) {
-                            var interno: HTMLElement = internos[m] as HTMLElement;
-                            ThemeEngine.estilo(interno, { "background": "transparent", "border": "none", "white-space": "normal" });
-                            if (interno.children.length === 0 && (interno.textContent || "").trim() === "DOMICILIO") interno.classList.add("sct-dom-h");
-                        }
-                        break;
-                    }
-                }
+                var cabecera: HTMLElement | null = direccion.querySelector(".headerBackground .h4") as HTMLElement | null;
+                if (cabecera && !cabecera.classList.contains("sct-dom-h")) cabecera.classList.add("sct-dom-h");
             }
             return;
         }
+
+        // ESTADO VACIO. Se exige que el rotulo de "Agregue un cliente" este VISIBLE (width > 0).
+        // Es lo que amortigua el parpadeo: mientras el POS reconstruye el panel hay instantes en
+        // que ni la tarjeta ni el vacio miden nada. Si no se ve ninguno de los dos, se sale sin
+        // tocar NADA en vez de repintar el estado contrario y volver.
+        var listaCandidatos: NodeListOf<Element> = zonaCliente.querySelectorAll("div,span,label,h1,h2,h3,h4");
         var vacio: HTMLElement | null = null;
         for (var v: number = 0; v < listaCandidatos.length; v++) {
             var candidatoVacio: HTMLElement = listaCandidatos[v] as HTMLElement;
@@ -380,14 +474,29 @@ export class ThemeEngine {
         if (!vacio) return;
         var tarjetaVacia: HTMLElement | null = ThemeEngine.ancestroTarjeta(vacio);
         if (!tarjetaVacia) return;
-        tarjetaVacia.classList.add("sct-cli-empty");
+        if (tarjetaVieja) tarjetaVieja.classList.remove("sct-cli-card");
+        if (domVieja) domVieja.classList.remove("sct-dom-card");
+        if (!tarjetaVacia.classList.contains("sct-cli-empty")) tarjetaVacia.classList.add("sct-cli-empty");
         var raiz: HTMLElement | null = ThemeEngine.raiz();
         var subir: HTMLElement | null = tarjetaVacia;
         while (subir && subir.parentElement && subir.parentElement !== raiz) {
+            if (!subir.classList.contains("sct-alto-vacio")) subir.classList.add("sct-alto-vacio");
             ThemeEngine.estilo(subir, { "height": "100%" });
             subir = subir.parentElement;
         }
         ThemeEngine.estilo(tarjetaVacia, { "height": "100%" });
+    }
+
+    // Al pasar de "sin cliente" a "con cliente" hay que SOLTAR los height:100% que se pusieron para
+    // estirar la tarjeta vacia. Se escriben como estilo INLINE, asi que no desaparecen solos al
+    // quitar la clase: hay que borrarlos a mano. Por eso se marcan con .sct-alto-vacio al ponerlos.
+    // Solo escribe cuando queda alguno marcado, asi que en reposo no genera mutaciones.
+    private static soltarAlturaVacio(): void {
+        var marcados: HTMLElement[] = ThemeEngine.todos(".sct-alto-vacio");
+        for (var i: number = 0; i < marcados.length; i++) {
+            marcados[i].style.removeProperty("height");
+            marcados[i].classList.remove("sct-alto-vacio");
+        }
     }
 
     private static limpiarTooltips(): void {
@@ -397,6 +506,15 @@ export class ThemeEngine {
         }
     }
 
+    // REVISAR (hipotesis descartada, se deja por si el autor ve algo que se nos escapa).
+    // Esto nacio de suponer que con menos de 4 pestanas el control de WinJS no habia recalculado su
+    // layout, y por eso fuerza forceLayout/updateLayout y lanza un evento "resize" sintetico.
+    // Medido despues: el numero de pestanas lo fija el LAYOUT que HQ le sirve al usuario, no el
+    // recalculo del control (ver el comentario de aplicarPestanas). Con 3 pestanas esta condicion
+    // se cumple SIEMPRE, asi que en cada entrada a la pantalla se dispara un resize sintetico que
+    // provoca otra pasada completa del motor, para nada. Esta acotado por la bandera
+    // recalculoPestanasSolicitado (solo una vez por carga), asi que no hace dano; pero es trabajo
+    // inutil y un efecto secundario global. Candidato a borrarse.
     private static solicitarRecalculoPestanas(): void {
         var cantidad: number = document.querySelectorAll("#TabControl .tabsContainer .tab").length;
         if (cantidad >= 4 || ThemeEngine.recalculoPestanasSolicitado) return;
@@ -438,12 +556,39 @@ export class ThemeEngine {
     }
 
     private static aplicarLayoutCompacto(): void {
-        var panelLineas = ThemeEngine.q("#TransactionGrid");
-        if (panelLineas && ThemeEngine.altoOriginalLineas === null) {
-            ThemeEngine.altoOriginalLineas = Math.round(panelLineas.getBoundingClientRect().height);
-        }
-        var propLineas: any = { "left": "0px", "right": "auto", "width": "600px", "box-sizing": "border-box" };
-        if (ThemeEngine.altoOriginalLineas && ThemeEngine.altoOriginalLineas > 120) propLineas["height"] = (ThemeEngine.altoOriginalLineas - 8) + "px";
+        // ¡¡NO CAMBIAR ESTOS TRES NUMEROS SIN LEER EL BLOQUE "CSS COMPACTO" DE ThemeAssets.ts!!
+        // Van emparejados con #TotalsPanel{width:298px} de alli. Si se toca uno solo, las dos cajas
+        // de la izquierda dejan de acabar en el mismo punto y se descuadra la pantalla entera.
+        //
+        // Caja de lineas: left 0 -> -12px, ancho 600 -> 626px, alto fijo 400px.
+        // Deja la columna izquierda cuadrada.
+        //
+        // Estaba descuadrada por los dos lados:
+        //   - Por la izquierda, el carrito empezaba en x=20 y la tarjeta de cliente que tiene
+        //     debajo en x=8. Con left:-12px los dos arrancan en 8.
+        //   - Por la derecha, el carrito acababa en 620 y la caja de montos en 648, pegada a la
+        //     columna derecha (que empieza en 650: quedaban 2px). Con 626 de ancho el carrito
+        //     acaba en 634, igual que #TotalsPanel (298px desde x=336), y quedan 16px de aire
+        //     hasta la columna derecha — el mismo ritmo que se usa en vertical.
+        //   - Por abajo, el carrito acababa en y=488 mientras la tarjeta del numpad acaba en 508.
+        //     Con alto 400 (arranca en y=108) los dos cierran en 508, y quedan 16px hasta la
+        //     tarjeta de cliente de abajo.
+        // Resultado: toda la columna izquierda va de x=8 a x=634, y arriba cierra a la misma
+        // altura que la columna derecha.
+        //
+        // El alto ANTES se calculaba midiendo el panel en la primera pasada y restandole 8px
+        // (altoOriginalLineas). Se sustituye por el valor fijo porque en compacto toda la
+        // geometria es fija, y de paso desaparece un cache que nunca se invalidaba: al
+        // redimensionar la ventana cruzando el umbral, el motor seguia usando una altura medida
+        // bajo el OTRO juego de reglas.
+        //
+        // OJO: estas propiedades se escriben como estilo INLINE con !important, asi que NO se
+        // pueden ajustar desde ThemeAssets con reglas de "width"/"left" — el inline gana. Si hay
+        // que cambiarlas, se cambian AQUI. Y el ancho va emparejado con el de #TotalsPanel en
+        // ThemeAssets: los dos tienen que acabar en el mismo punto o se descuadra otra vez.
+        // (Para probarlo en vivo desde la consola: min-width si le gana a un width inline, y
+        // margin-left si le gana a un left inline.)
+        var propLineas: any = { "left": "-12px", "right": "auto", "width": "626px", "height": "400px", "box-sizing": "border-box" };
         ThemeEngine.establecer("#TransactionGrid", propLineas);
         
         // Paneles ahora manejados por CSS Media Queries

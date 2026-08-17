@@ -283,50 +283,56 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     }
                 };
                 ThemeEngine.aplicarCliente = function () {
-                    var zonaCliente = ThemeEngine.zona(/Agregue un cliente|CLIENTE DESCRIPTIVO/i);
+                    var zonaCliente = ThemeEngine.q("#CustomerPanel");
+                    if (!zonaCliente)
+                        zonaCliente = ThemeEngine.zona(/Agregue un cliente|CLIENTE DESCRIPTIVO/i);
                     if (!zonaCliente)
                         return;
-                    var listaCandidatos = zonaCliente.querySelectorAll("div,span,label,h1,h2,h3,h4");
-                    var conCodigo = null;
-                    for (var i = 0; i < listaCandidatos.length; i++) {
-                        var candidato = listaCandidatos[i];
-                        if (candidato.children.length === 0 && /[A-Z]{2,4}-\d{4,}/.test((candidato.textContent || "").trim()) && candidato.getBoundingClientRect().width > 0) {
-                            conCodigo = candidato;
-                        }
-                    }
-                    if (conCodigo) {
-                        var tarjeta = ThemeEngine.ancestroTarjeta(conCodigo);
-                        if (tarjeta && tarjeta.parentElement && tarjeta.parentElement.parentElement) {
+                    var detalle = zonaCliente.querySelector(".customerDetailsCardStyle");
+                    var conCliente = !!detalle && detalle.getBoundingClientRect().height > 0;
+                    var tarjetaVieja = ThemeEngine.q(".sct-cli-card");
+                    var domVieja = ThemeEngine.q(".sct-dom-card");
+                    if (conCliente && detalle) {
+                        var vaciaVieja = ThemeEngine.q(".sct-cli-empty");
+                        if (vaciaVieja)
+                            vaciaVieja.classList.remove("sct-cli-empty");
+                        ThemeEngine.soltarAlturaVacio();
+                        var tarjeta = detalle.querySelector(".primaryPanelBackgroundColor.highContrastBorderThin");
+                        if (!tarjeta)
+                            tarjeta = detalle;
+                        if (tarjetaVieja && tarjetaVieja !== tarjeta)
+                            tarjetaVieja.classList.remove("sct-cli-card");
+                        if (!tarjeta.classList.contains("sct-cli-card"))
                             tarjeta.classList.add("sct-cli-card");
-                            var nombre = null;
-                            var hijos = tarjeta.querySelectorAll("*");
-                            for (var j = 0; j < hijos.length; j++) {
-                                var hijo = hijos[j];
-                                var textoHijo = (hijo.textContent || "").trim();
-                                if (hijo.children.length === 0 && textoHijo.length > 14 && !/\d{4,}/.test(textoHijo)) {
-                                    nombre = hijo;
-                                    break;
-                                }
+                        var nombre = null;
+                        var hijos = tarjeta.querySelectorAll("*");
+                        for (var j = 0; j < hijos.length; j++) {
+                            var hijo = hijos[j];
+                            var textoHijo = (hijo.textContent || "").trim();
+                            if (hijo.children.length === 0 && textoHijo.length > 14 && !/\d{4,}/.test(textoHijo)) {
+                                nombre = hijo;
+                                break;
                             }
-                            ThemeEngine.estilo(nombre, { "white-space": "normal", "font-size": "13px", "line-height": "1.25" });
-                            var pila = tarjeta.parentElement.parentElement;
-                            for (var k = 0; k < pila.children.length; k++) {
-                                var seccion = pila.children[k];
-                                if (/^DOMICILIO/.test((seccion.textContent || "").trim())) {
-                                    seccion.classList.add("sct-dom-card");
-                                    var internos = seccion.querySelectorAll("*");
-                                    for (var m = 0; m < internos.length; m++) {
-                                        var interno = internos[m];
-                                        ThemeEngine.estilo(interno, { "background": "transparent", "border": "none", "white-space": "normal" });
-                                        if (interno.children.length === 0 && (interno.textContent || "").trim() === "DOMICILIO")
-                                            interno.classList.add("sct-dom-h");
-                                    }
-                                    break;
-                                }
+                        }
+                        ThemeEngine.estilo(nombre, { "white-space": "normal", "font-size": "13px", "line-height": "1.25" });
+                        var direccion = zonaCliente.querySelector(".customerPanelPrimaryAddress");
+                        if (domVieja && domVieja !== direccion)
+                            domVieja.classList.remove("sct-dom-card");
+                        if (direccion) {
+                            if (!direccion.classList.contains("sct-dom-card"))
+                                direccion.classList.add("sct-dom-card");
+                            var internos = direccion.querySelectorAll("*");
+                            for (var m = 0; m < internos.length; m++) {
+                                var interno = internos[m];
+                                ThemeEngine.estilo(interno, { "background": "transparent", "border": "none", "white-space": "normal" });
                             }
+                            var cabecera = direccion.querySelector(".headerBackground .h4");
+                            if (cabecera && !cabecera.classList.contains("sct-dom-h"))
+                                cabecera.classList.add("sct-dom-h");
                         }
                         return;
                     }
+                    var listaCandidatos = zonaCliente.querySelectorAll("div,span,label,h1,h2,h3,h4");
                     var vacio = null;
                     for (var v = 0; v < listaCandidatos.length; v++) {
                         var candidatoVacio = listaCandidatos[v];
@@ -340,14 +346,28 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     var tarjetaVacia = ThemeEngine.ancestroTarjeta(vacio);
                     if (!tarjetaVacia)
                         return;
-                    tarjetaVacia.classList.add("sct-cli-empty");
+                    if (tarjetaVieja)
+                        tarjetaVieja.classList.remove("sct-cli-card");
+                    if (domVieja)
+                        domVieja.classList.remove("sct-dom-card");
+                    if (!tarjetaVacia.classList.contains("sct-cli-empty"))
+                        tarjetaVacia.classList.add("sct-cli-empty");
                     var raiz = ThemeEngine.raiz();
                     var subir = tarjetaVacia;
                     while (subir && subir.parentElement && subir.parentElement !== raiz) {
+                        if (!subir.classList.contains("sct-alto-vacio"))
+                            subir.classList.add("sct-alto-vacio");
                         ThemeEngine.estilo(subir, { "height": "100%" });
                         subir = subir.parentElement;
                     }
                     ThemeEngine.estilo(tarjetaVacia, { "height": "100%" });
+                };
+                ThemeEngine.soltarAlturaVacio = function () {
+                    var marcados = ThemeEngine.todos(".sct-alto-vacio");
+                    for (var i = 0; i < marcados.length; i++) {
+                        marcados[i].style.removeProperty("height");
+                        marcados[i].classList.remove("sct-alto-vacio");
+                    }
                 };
                 ThemeEngine.limpiarTooltips = function () {
                     var tooltips = ThemeEngine.todos(".ui-tooltip");
@@ -398,13 +418,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     }
                 };
                 ThemeEngine.aplicarLayoutCompacto = function () {
-                    var panelLineas = ThemeEngine.q("#TransactionGrid");
-                    if (panelLineas && ThemeEngine.altoOriginalLineas === null) {
-                        ThemeEngine.altoOriginalLineas = Math.round(panelLineas.getBoundingClientRect().height);
-                    }
-                    var propLineas = { "left": "0px", "right": "auto", "width": "600px", "box-sizing": "border-box" };
-                    if (ThemeEngine.altoOriginalLineas && ThemeEngine.altoOriginalLineas > 120)
-                        propLineas["height"] = (ThemeEngine.altoOriginalLineas - 8) + "px";
+                    var propLineas = { "left": "-12px", "right": "auto", "width": "626px", "height": "400px", "box-sizing": "border-box" };
                     ThemeEngine.establecer("#TransactionGrid", propLineas);
                     var botonesC = ThemeEngine.todos("#ButtonGrid1Control .buttonGridButton");
                     for (var i = 0; i < botonesC.length; i++) {
@@ -649,7 +663,6 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                 ThemeEngine.eventosRegistrados = false;
                 ThemeEngine.sondaEstilos = null;
                 ThemeEngine.estilosNormalizados = {};
-                ThemeEngine.altoOriginalLineas = null;
                 ThemeEngine.recalculoPestanasSolicitado = false;
                 ThemeEngine.SELECTORES_OBSERVADOS = [
                     "#TransactionGrid", "#TotalsPanel", "#TotalsPanel .fields.row", "#TotalsPanel .panel-footer",
