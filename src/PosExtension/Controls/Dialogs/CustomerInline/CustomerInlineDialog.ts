@@ -121,6 +121,12 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _searchInFlight: boolean = false;
 
     /**
+     * RecordId de la dirección que se está editando. Sin él D365 agrega una dirección nueva en
+     * vez de actualizar la existente, y el cliente termina con duplicados.
+     */
+    private _editingAddressRecordId: number = 0;
+
+    /**
      * Resultados por término de búsqueda, compartidos entre aperturas del modal — que crea una
      * instancia nueva cada vez. Vive en memoria y se pierde al recargar el POS.
      */
@@ -780,7 +786,70 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             this._setValue(element, "customerInlineEditPhone", this._currentCustomer.Phone || "");
             this._setValue(element, "customerInlineEditEmail", this._currentCustomer.Email || "");
             this._showTextResult(element, "customerInlineEditResult", this._formatCustomerSummary(this._currentCustomer));
+
+            // El cliente que entrega el trigger puede venir sin direcciones. En ese caso se
+            // relee por cuenta, o el formulario de edición saldría vacío y el cajero
+            // terminaría creando una dirección nueva sin darse cuenta.
+            const addresses: any[] = this._currentCustomer.Addresses || [];
+            if (addresses.length > 0) {
+                this._prefillAddressFromCustomer(element, this._currentCustomer);
+            } else if (this._currentCustomer.AccountNumber) {
+                this._getCustomerByAccount(this._currentCustomer.AccountNumber)
+                    .then((full: ProxyEntities.Customer | null): void => {
+                        if (full) {
+                            this._currentCustomer = full;
+                            this._prefillAddressFromCustomer(element, full);
+                        }
+                    })
+                    .catch((reason: any): void => {
+                        this._logError("No se pudo releer el cliente para editar: " + this._stringify(reason));
+                    });
+            }
         }
+    }
+
+    /**
+     * Carga la dirección actual del cliente en la sección compartida, para que editar sea
+     * modificar lo que hay y no volver a escribirlo todo.
+     *
+     * Se prefiere la dirección marcada como principal; si ninguna lo está, la primera.
+     */
+    private _prefillAddressFromCustomer(element: HTMLElement, customer: ProxyEntities.Customer): void {
+        const addresses: any[] = (customer && customer.Addresses) || [];
+        if (addresses.length === 0) {
+            this._logChunked("=== Direccion actual del cliente ===", "el cliente no tiene direcciones cargadas");
+            return;
+        }
+
+        let address: any = addresses[0];
+        for (let i: number = 0; i < addresses.length; i++) {
+            if (addresses[i].IsPrimary) {
+                address = addresses[i];
+                break;
+            }
+        }
+
+        this._setValue(element, "customerInlineCreateAddress", address.Street || "");
+        this._setChecked(element, "customerInlineCreateAddressPrimary", address.IsPrimary !== false);
+
+        const purposeSelect: HTMLSelectElement =
+            element.querySelector("#customerInlineCreateAddressPurpose") as HTMLSelectElement;
+        if (purposeSelect && address.AddressTypeValue) {
+            purposeSelect.value = String(address.AddressTypeValue);
+        }
+
+        this._logChunked("=== Direccion actual del cliente ===",
+            "Street=" + (address.Street || "")
+            + " | State=" + (address.State || "") + " County=" + (address.County || "")
+            + " City=" + (address.City || "") + " | AddressType=" + (address.AddressTypeValue || ""));
+
+        // La cascada se posiciona con los códigos que ya tiene la dirección guardada: no hay
+        // nada que resolver, salen del maestro.
+        this._preselectGeography(element, address.State || "", address.County || "", address.City || "");
+
+        // RecordId identifica la dirección existente: sin él, D365 agrega una nueva en vez de
+        // actualizar la que el cajero está editando.
+        this._editingAddressRecordId = address.RecordId || 0;
     }
 
     /**
@@ -1637,6 +1706,35 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
                 this._applyEditableFields(customer, this._getValue(element, "customerInlineEditName"), this._getValue(element, "customerInlineEditPhone"), this._getValue(element, "customerInlineEditEmail"));
 
+                // La dirección es lo que más cambia en un cliente, y hasta ahora editar no la
+                // tocaba. Se reemplaza la que se estaba editando conservando su RecordId, y se
+                // dejan intactas las demás direcciones del cliente.
+                const editedAddress: ProxyEntities.Address | null =
+                    this._buildAddressFromForm(element, this._editingAddressRecordId);
+
+                if (editedAddress) {
+                    const existingAddresses: any[] = (customer.Addresses || []).slice();
+                    let replaced: boolean = false;
+
+                    for (let i: number = 0; i < existingAddresses.length; i++) {
+                        if (this._editingAddressRecordId && existingAddresses[i].RecordId === this._editingAddressRecordId) {
+                            existingAddresses[i] = editedAddress;
+                            replaced = true;
+                            break;
+                        }
+                    }
+
+                    if (!replaced) {
+                        existingAddresses.push(editedAddress);
+                    }
+
+                    customer.Addresses = existingAddresses;
+
+                    this._logChunked("=== Direccion que se guarda ===",
+                        (replaced ? "actualiza RecordId=" + this._editingAddressRecordId : "agrega una nueva")
+                        + "\n" + this._stringify(editedAddress));
+                }
+
                 const updateWithCustomer: (customerToUpdate: ProxyEntities.Customer) => Promise<void> =
                     (customerToUpdate: ProxyEntities.Customer): Promise<void> => {
                         const request: UpdateCustomerServiceRequest =
@@ -1747,6 +1845,50 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         customer.Email = email || "";
     }
 
+    /**
+     * Arma la dirección desde la sección compartida. Devuelve null si no hay nada que guardar.
+     *
+     * `recordId` distingue los dos casos: 0 crea una dirección nueva, y el RecordId de una
+     * existente la actualiza. Sin eso, editar una dirección dejaba al cliente con dos.
+     */
+    private _buildAddressFromForm(element: HTMLElement, recordId: number): ProxyEntities.Address | null {
+        const street: string = this._getValue(element, "customerInlineCreateAddress");
+        const stateId: string = this._getValue(element, "customerInlineCreateDepartment");
+        const countyId: string = this._getValue(element, "customerInlineCreateProvince");
+        const cityCode: string = this._getValue(element, "customerInlineCreateDistrict");
+
+        if (!street && !stateId) {
+            return null;
+        }
+
+        const purposeSelect: HTMLSelectElement =
+            element.querySelector("#customerInlineCreateAddressPurpose") as HTMLSelectElement;
+        const purposeValue: number = purposeSelect && purposeSelect.value
+            ? parseInt(purposeSelect.value, 10)
+            : ProxyEntities.AddressType.Business;
+
+        const address: ProxyEntities.Address = new ProxyEntities.AddressClass();
+        address.RecordId = recordId || 0;
+        address.ThreeLetterISORegionName = "PER";
+        address.Name = purposeSelect && purposeSelect.selectedIndex >= 0
+            ? purposeSelect.options[purposeSelect.selectedIndex].text
+            : "Negocio";
+        address.Street = street;
+        address.AddressTypeValue = purposeValue;
+        address.IsPrimary = this._getChecked(element, "customerInlineCreateAddressPrimary");
+        address.Deactivate = false;
+        address.ExtensionProperties = [];
+
+        if (stateId && countyId && cityCode) {
+            address.State = stateId;
+            address.County = countyId;
+            address.City = cityCode;
+            address.DistrictName = this._getSelectedLabel(element, "customerInlineCreateDistrict");
+        }
+
+        return address;
+    }
+
     private _setMode(element: HTMLElement, mode: CustomerInlineDialogMode): void {
         this._mode = mode;
 
@@ -1756,6 +1898,13 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         this._toggle(element, "customerInlinePanelSearch", mode === "search");
         this._toggle(element, "customerInlinePanelCreate", mode === "create");
         this._toggle(element, "customerInlinePanelEdit", mode === "edit");
+
+        // La sección de dirección es compartida: se llena igual al crear y al editar.
+        const addressSection: HTMLElement =
+            element.querySelector("#customerInlineAddressSection") as HTMLElement;
+        if (addressSection) {
+            addressSection.style.display = (mode === "create" || mode === "edit") ? "" : "none";
+        }
 
         if (mode === "search") {
             this._showMessage(element, "Busque clientes existentes por documento, nombre o cuenta.");

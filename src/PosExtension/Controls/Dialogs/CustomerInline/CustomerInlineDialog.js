@@ -69,6 +69,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     _this._searchTop = 25;
                     _this._searchSkip = 0;
                     _this._searchInFlight = false;
+                    _this._editingAddressRecordId = 0;
                     _this._mode = "search";
                     _this._resolve = null;
                     _this._currentCustomer = null;
@@ -514,6 +515,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     };
                 };
                 CustomerInlineDialog.prototype._prefillInitialValues = function (element) {
+                    var _this = this;
                     if (this._initialSearchText) {
                         this._setValue(element, "customerInlineSearchText", this._initialSearchText);
                         this._setValue(element, "customerInlineCreateDocument", this._initialSearchText);
@@ -525,7 +527,48 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this._setValue(element, "customerInlineEditPhone", this._currentCustomer.Phone || "");
                         this._setValue(element, "customerInlineEditEmail", this._currentCustomer.Email || "");
                         this._showTextResult(element, "customerInlineEditResult", this._formatCustomerSummary(this._currentCustomer));
+                        var addresses = this._currentCustomer.Addresses || [];
+                        if (addresses.length > 0) {
+                            this._prefillAddressFromCustomer(element, this._currentCustomer);
+                        }
+                        else if (this._currentCustomer.AccountNumber) {
+                            this._getCustomerByAccount(this._currentCustomer.AccountNumber)
+                                .then(function (full) {
+                                if (full) {
+                                    _this._currentCustomer = full;
+                                    _this._prefillAddressFromCustomer(element, full);
+                                }
+                            })
+                                .catch(function (reason) {
+                                _this._logError("No se pudo releer el cliente para editar: " + _this._stringify(reason));
+                            });
+                        }
                     }
+                };
+                CustomerInlineDialog.prototype._prefillAddressFromCustomer = function (element, customer) {
+                    var addresses = (customer && customer.Addresses) || [];
+                    if (addresses.length === 0) {
+                        this._logChunked("=== Direccion actual del cliente ===", "el cliente no tiene direcciones cargadas");
+                        return;
+                    }
+                    var address = addresses[0];
+                    for (var i = 0; i < addresses.length; i++) {
+                        if (addresses[i].IsPrimary) {
+                            address = addresses[i];
+                            break;
+                        }
+                    }
+                    this._setValue(element, "customerInlineCreateAddress", address.Street || "");
+                    this._setChecked(element, "customerInlineCreateAddressPrimary", address.IsPrimary !== false);
+                    var purposeSelect = element.querySelector("#customerInlineCreateAddressPurpose");
+                    if (purposeSelect && address.AddressTypeValue) {
+                        purposeSelect.value = String(address.AddressTypeValue);
+                    }
+                    this._logChunked("=== Direccion actual del cliente ===", "Street=" + (address.Street || "")
+                        + " | State=" + (address.State || "") + " County=" + (address.County || "")
+                        + " City=" + (address.City || "") + " | AddressType=" + (address.AddressTypeValue || ""));
+                    this._preselectGeography(element, address.State || "", address.County || "", address.City || "");
+                    this._editingAddressRecordId = address.RecordId || 0;
                 };
                 CustomerInlineDialog.prototype._executeSearch = function (element, isPagination) {
                     var _this = this;
@@ -1146,6 +1189,24 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         .then(function (customer) {
                         var documentNumber = _this._sunatService.normalizeDocument(_this._getValue(element, "customerInlineEditDocument"));
                         _this._applyEditableFields(customer, _this._getValue(element, "customerInlineEditName"), _this._getValue(element, "customerInlineEditPhone"), _this._getValue(element, "customerInlineEditEmail"));
+                        var editedAddress = _this._buildAddressFromForm(element, _this._editingAddressRecordId);
+                        if (editedAddress) {
+                            var existingAddresses = (customer.Addresses || []).slice();
+                            var replaced = false;
+                            for (var i = 0; i < existingAddresses.length; i++) {
+                                if (_this._editingAddressRecordId && existingAddresses[i].RecordId === _this._editingAddressRecordId) {
+                                    existingAddresses[i] = editedAddress;
+                                    replaced = true;
+                                    break;
+                                }
+                            }
+                            if (!replaced) {
+                                existingAddresses.push(editedAddress);
+                            }
+                            customer.Addresses = existingAddresses;
+                            _this._logChunked("=== Direccion que se guarda ===", (replaced ? "actualiza RecordId=" + _this._editingAddressRecordId : "agrega una nueva")
+                                + "\n" + _this._stringify(editedAddress));
+                        }
                         var updateWithCustomer = function (customerToUpdate) {
                             var request = new Customer_1.UpdateCustomerServiceRequest(_this._getCorrelationId(), customerToUpdate);
                             return _this.context.runtime.executeAsync(request)
@@ -1236,6 +1297,37 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     customer.Phone = phone || "";
                     customer.Email = email || "";
                 };
+                CustomerInlineDialog.prototype._buildAddressFromForm = function (element, recordId) {
+                    var street = this._getValue(element, "customerInlineCreateAddress");
+                    var stateId = this._getValue(element, "customerInlineCreateDepartment");
+                    var countyId = this._getValue(element, "customerInlineCreateProvince");
+                    var cityCode = this._getValue(element, "customerInlineCreateDistrict");
+                    if (!street && !stateId) {
+                        return null;
+                    }
+                    var purposeSelect = element.querySelector("#customerInlineCreateAddressPurpose");
+                    var purposeValue = purposeSelect && purposeSelect.value
+                        ? parseInt(purposeSelect.value, 10)
+                        : Entities_1.ProxyEntities.AddressType.Business;
+                    var address = new Entities_1.ProxyEntities.AddressClass();
+                    address.RecordId = recordId || 0;
+                    address.ThreeLetterISORegionName = "PER";
+                    address.Name = purposeSelect && purposeSelect.selectedIndex >= 0
+                        ? purposeSelect.options[purposeSelect.selectedIndex].text
+                        : "Negocio";
+                    address.Street = street;
+                    address.AddressTypeValue = purposeValue;
+                    address.IsPrimary = this._getChecked(element, "customerInlineCreateAddressPrimary");
+                    address.Deactivate = false;
+                    address.ExtensionProperties = [];
+                    if (stateId && countyId && cityCode) {
+                        address.State = stateId;
+                        address.County = countyId;
+                        address.City = cityCode;
+                        address.DistrictName = this._getSelectedLabel(element, "customerInlineCreateDistrict");
+                    }
+                    return address;
+                };
                 CustomerInlineDialog.prototype._setMode = function (element, mode) {
                     this._mode = mode;
                     this._toggle(element, "customerInlineTabSearch", mode === "search");
@@ -1244,6 +1336,10 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     this._toggle(element, "customerInlinePanelSearch", mode === "search");
                     this._toggle(element, "customerInlinePanelCreate", mode === "create");
                     this._toggle(element, "customerInlinePanelEdit", mode === "edit");
+                    var addressSection = element.querySelector("#customerInlineAddressSection");
+                    if (addressSection) {
+                        addressSection.style.display = (mode === "create" || mode === "edit") ? "" : "none";
+                    }
                     if (mode === "search") {
                         this._showMessage(element, "Busque clientes existentes por documento, nombre o cuenta.");
                     }
