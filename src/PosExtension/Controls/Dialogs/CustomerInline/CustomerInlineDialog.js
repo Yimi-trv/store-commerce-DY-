@@ -562,6 +562,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         }
                     }
                     this._setValue(element, "customerInlineCreateAddress", address.Street || "");
+                    this._setValue(element, "customerInlineCreateStreetNumber", address.StreetNumber || "");
+                    this._setValue(element, "customerInlineCreateBuildingCompliment", address.BuildingCompliment || "");
                     this._setChecked(element, "customerInlineCreateAddressPrimary", address.IsPrimary !== false);
                     var purposeSelect = element.querySelector("#customerInlineCreateAddressPurpose");
                     if (purposeSelect && address.AddressTypeValue) {
@@ -874,6 +876,14 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         return null;
                     });
                 };
+                CustomerInlineDialog.prototype._extractDuplicateAccount = function (reason) {
+                    var text = this._stringify(reason);
+                    if (text.indexOf("30104") === -1 && !/ya existe para el cliente/i.test(text)) {
+                        return "";
+                    }
+                    var match = text.match(/ya existe para el cliente:?\s*([A-Za-z0-9\-]+)/i);
+                    return match && match[1] ? match[1] : "";
+                };
                 CustomerInlineDialog.prototype._executeCreate = function (element) {
                     var _this = this;
                     var rawDocument = this._getValue(element, "customerInlineCreateDocument");
@@ -894,6 +904,22 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             return _this._blockDuplicate(element, existing, documentNumber);
                         }
                         return _this._continueCreate(element, documentNumber, name);
+                    })
+                        .catch(function (reason) {
+                        var duplicateAccount = _this._extractDuplicateAccount(reason);
+                        if (!duplicateAccount) {
+                            return Promise.reject(reason);
+                        }
+                        _this._logChunked("=== Duplicado detectado por el servidor ===", "documento=" + documentNumber + " ya pertenece a la cuenta " + duplicateAccount);
+                        return _this._getCustomerByAccount(duplicateAccount)
+                            .then(function (existing) {
+                            var stub = existing
+                                || { AccountNumber: duplicateAccount, Name: "" };
+                            return _this._blockDuplicate(element, stub, documentNumber);
+                        })
+                            .catch(function () {
+                            return _this._blockDuplicate(element, { AccountNumber: duplicateAccount, Name: "" }, documentNumber);
+                        });
                     });
                 };
                 CustomerInlineDialog.prototype._blockDuplicate = function (element, existing, documentNumber) {
@@ -1014,7 +1040,6 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         });
                     }
                     return resolvePromise.then(function (u) {
-                        var addressStreet = _this._getValue(element, "customerInlineCreateAddress");
                         _this._logChunked("=== ResolveUbigeo ===", u
                             ? "IsValid=" + u.IsValid
                                 + " | StateId=" + (u.StateId || "(vacio)")
@@ -1022,46 +1047,23 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 + " | CityName=" + (u.CityName || "(vacio)")
                                 + " | Notes=" + (u.Notes || "")
                             : "sin resultado (no se consultó o falló)");
-                        if ((u && u.IsValid) || addressStreet) {
-                            var purposeSelect = element.querySelector("#customerInlineCreateAddressPurpose");
-                            var purposeValue = purposeSelect && purposeSelect.value
-                                ? parseInt(purposeSelect.value, 10)
-                                : Entities_1.ProxyEntities.AddressType.Business;
-                            var purposeLabel = purposeSelect && purposeSelect.selectedIndex >= 0
-                                ? purposeSelect.options[purposeSelect.selectedIndex].text
-                                : "Negocio";
-                            var address = new Entities_1.ProxyEntities.AddressClass();
-                            address.ThreeLetterISORegionName = "PER";
-                            address.Name = _this._resolveAddressName(sunatData.documentType, purposeValue, purposeLabel);
-                            address.Street = addressStreet;
-                            address.AddressTypeValue = purposeValue;
-                            address.IsPrimary = _this._getChecked(element, "customerInlineCreateAddressPrimary");
-                            address.RecordId = 0;
-                            address.Deactivate = false;
-                            address.ExtensionProperties = [];
-                            var stateId = _this._getValue(element, "customerInlineCreateDepartment");
-                            var countyId = _this._getValue(element, "customerInlineCreateProvince");
-                            var cityCode = _this._getValue(element, "customerInlineCreateDistrict");
-                            if (stateId && countyId && cityCode) {
-                                address.State = stateId;
-                                address.County = countyId;
-                                address.City = cityCode;
-                                address.DistrictName = _this._getSelectedLabel(element, "customerInlineCreateDistrict");
-                            }
-                            else if (u && u.IsValid) {
+                        var address = _this._buildAddressFromForm(element, 0);
+                        if (address) {
+                            address.Name = _this._resolveAddressName(sunatData.documentType, address.AddressTypeValue, address.Name);
+                            if (!address.State && u && u.IsValid) {
                                 address.State = u.StateId;
                                 address.County = u.CountyId;
                                 address.City = u.CityName;
                                 address.DistrictName = sunatData.district || "";
                             }
-                            else {
+                            if (!address.State) {
                                 _this._logChunked("=== Direccion sin ubigeo ===", "se envia solo la calle; complete departamento, provincia y distrito para que quede completa");
                             }
                             customer.Addresses = [address];
                             _this._logChunked("=== Address enviada ===", _this._stringify(address));
                         }
                         else {
-                            _this._logChunked("=== Address NO enviada ===", "ubigeo invalido y calle vacia — el cliente se crea sin direccion");
+                            _this._logChunked("=== Address NO enviada ===", "sin calle ni departamento — el cliente se crea sin direccion");
                         }
                         _this._showMessage(element, "Paso 2: Aplicando valores por defecto del canal...");
                         return _this._applyChannelDefaults(customer).then(function () {
@@ -1369,6 +1371,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         ? purposeSelect.options[purposeSelect.selectedIndex].text
                         : "Negocio";
                     address.Street = street;
+                    address.StreetNumber = this._getValue(element, "customerInlineCreateStreetNumber");
+                    address.BuildingCompliment = this._getValue(element, "customerInlineCreateBuildingCompliment");
                     address.AddressTypeValue = purposeValue;
                     address.IsPrimary = this._getChecked(element, "customerInlineCreateAddressPrimary");
                     address.Deactivate = false;
@@ -1389,9 +1393,18 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     this._toggle(element, "customerInlinePanelSearch", mode === "search");
                     this._toggle(element, "customerInlinePanelCreate", mode === "create");
                     this._toggle(element, "customerInlinePanelEdit", mode === "edit");
-                    var addressSection = element.querySelector("#customerInlineAddressSection");
-                    if (addressSection) {
-                        addressSection.style.display = (mode === "create" || mode === "edit") ? "" : "none";
+                    var blocks = [
+                        { id: "customerInlineAddressSection", visible: mode === "create" || mode === "edit" },
+                        { id: "customerInlineCreateActions", visible: mode === "create" },
+                        { id: "customerInlineEditActions", visible: mode === "edit" },
+                        { id: "customerInlineCreateResult", visible: mode === "create" },
+                        { id: "customerInlineEditResult", visible: mode === "edit" }
+                    ];
+                    for (var i = 0; i < blocks.length; i++) {
+                        var block = element.querySelector("#" + blocks[i].id);
+                        if (block) {
+                            block.style.display = blocks[i].visible ? "" : "none";
+                        }
                     }
                     if (mode === "search") {
                         this._showMessage(element, "Busque clientes existentes por documento, nombre o cuenta.");

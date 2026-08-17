@@ -296,52 +296,9 @@
             <!-- El caso "documento ya registrado" se resuelve con la alerta flotante del POS
                  (ShowMessageDialogClientRequest), no con un botón aquí: es una decisión que el
                  cajero debe tomar y no algo que pueda pasar por alto. -->
-            <button id="customerInlineCreateButton" class="customer-inline-dialog__action" type="button">2. Crear en Sistema y Asignar</button>
         </div>
-        <div id="customerInlineCreateResult" class="customer-inline-dialog__result"></div>
     </div>
 
-    <!-- SECCION DE DIRECCION — COMPARTIDA POR CREAR Y EDITAR
-         Vive fuera de los paneles a propósito: la dirección se llena igual en ambos flujos y
-         duplicarla obligaría a mantener dos cascadas geográficas. _setMode la muestra en crear
-         y editar, y la oculta en buscar.
-         Los ids conservan el prefijo "Create" por historia; hoy son compartidos. -->
-    <div id="customerInlineAddressSection" style="display: none;">
-        <h3 style="margin: 18px 0 8px; font-size: 15px; font-weight: 600; color: #333; border-top: 1px solid #d8d8d8; padding-top: 14px;">Dirección</h3>
-        <div class="customer-inline-dialog__grid">
-            <div class="customer-inline-dialog__field">
-                <label for="customerInlineCreateAddressPurpose">Propósito de la dirección:</label>
-                <!-- Las opciones se cargan en onReady desde los propósitos del canal, o desde
-                     el enum AddressType de D365 si el canal no los expone. El value es el
-                     AddressType numérico, no una etiqueta. -->
-                <select id="customerInlineCreateAddressPurpose"></select>
-            </div>
-            <div class="customer-inline-dialog__field">
-                <label style="font-weight: normal; font-size: 14px; display: flex; align-items: center; gap: 6px; margin-top: 22px;">
-                    <input id="customerInlineCreateAddressPrimary" type="checkbox" checked /> Dirección principal
-                </label>
-            </div>
-            <div class="customer-inline-dialog__field" style="grid-column: 1 / -1;">
-                <label for="customerInlineCreateAddress">Dirección fiscal:</label>
-                <input id="customerInlineCreateAddress" type="text" />
-            </div>
-            <!-- Desplegables en cascada alimentados desde los maestros geográficos de D365.
-                 Antes eran texto libre y un solo carácter distinto hacía que el ubigeo no
-                 resolviera y la dirección se descartara en silencio. -->
-            <div class="customer-inline-dialog__field">
-                <label for="customerInlineCreateDepartment">Departamento:</label>
-                <select id="customerInlineCreateDepartment"></select>
-            </div>
-            <div class="customer-inline-dialog__field">
-                <label for="customerInlineCreateProvince">Provincia:</label>
-                <select id="customerInlineCreateProvince" disabled></select>
-            </div>
-            <div class="customer-inline-dialog__field">
-                <label for="customerInlineCreateDistrict">Distrito:</label>
-                <select id="customerInlineCreateDistrict" disabled></select>
-            </div>
-        </div>
-    </div>
 
     <!-- PANEL EDITAR -->
     <div id="customerInlinePanelEdit" class="customer-inline-dialog__panel">
@@ -368,13 +325,76 @@
             </div>
         </div>
 
-        <div class="customer-inline-dialog__actions">
-            <button id="customerInlineEditSunatButton" class="customer-inline-dialog__action customer-inline-dialog__action--secondary" type="button">Validar con SUNAT</button>
-            <button id="customerInlineEditButton" class="customer-inline-dialog__action" type="button">Guardar Cambios</button>
-        </div>
-
-        <div id="customerInlineEditResult" class="customer-inline-dialog__result"></div>
     </div>
+
+    <!-- SECCION DE DIRECCION — COMPARTIDA POR CREAR Y EDITAR
+         Vive fuera de los paneles a propósito: la dirección se llena igual en ambos flujos y
+         duplicarla obligaría a mantener dos cascadas geográficas. _setMode la muestra en crear
+         y editar, y la oculta en buscar.
+         Los ids conservan el prefijo "Create" por historia; hoy son compartidos. -->
+    <div id="customerInlineAddressSection" style="display: none;">
+        <h3 style="margin: 18px 0 8px; font-size: 15px; font-weight: 600; color: #333; border-top: 1px solid #d8d8d8; padding-top: 14px;">Dirección</h3>
+        <div class="customer-inline-dialog__grid">
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateAddressPurpose">Propósito de la dirección:</label>
+                <!-- Las opciones se cargan en onReady desde los propósitos del canal, o desde
+                     el enum AddressType de D365 si el canal no los expone. El value es el
+                     AddressType numérico, no una etiqueta. -->
+                <select id="customerInlineCreateAddressPurpose"></select>
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label style="font-weight: normal; font-size: 14px; display: flex; align-items: center; gap: 6px; margin-top: 22px;">
+                    <input id="customerInlineCreateAddressPrimary" type="checkbox" checked /> Dirección principal
+                </label>
+            </div>
+            <div class="customer-inline-dialog__field" style="grid-column: 1 / -1;">
+                <label for="customerInlineCreateAddress">Calle / Dirección fiscal:</label>
+                <input id="customerInlineCreateAddress" type="text" />
+            </div>
+            <!-- Los mismos campos que la pantalla estándar de dirección: sin ellos la dirección
+                 se creaba sin número ni piso/interior. -->
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateStreetNumber">Número de calle:</label>
+                <input id="customerInlineCreateStreetNumber" type="text" />
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateBuildingCompliment">Complemento (piso, interior, mz/lote):</label>
+                <input id="customerInlineCreateBuildingCompliment" type="text" />
+            </div>
+            <!-- Desplegables en cascada alimentados desde los maestros geográficos de D365.
+                 Antes eran texto libre y un solo carácter distinto hacía que el ubigeo no
+                 resolviera y la dirección se descartara en silencio. -->
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateDepartment">Departamento:</label>
+                <select id="customerInlineCreateDepartment"></select>
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateProvince">Provincia:</label>
+                <select id="customerInlineCreateProvince" disabled></select>
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateDistrict">Distrito:</label>
+                <select id="customerInlineCreateDistrict" disabled></select>
+            </div>
+        </div>
+    </div>
+
+    <!-- ACCIONES Y RESULTADO — SIEMPRE AL FINAL
+         Salen de los paneles para quedar debajo de la sección de dirección: al mover la
+         dirección fuera del panel de Crear, el botón de crear quedaba a media pantalla y el
+         cajero podía darle antes de completar la dirección. _setMode muestra el juego que
+         corresponde al modo. -->
+    <div id="customerInlineCreateActions" class="customer-inline-dialog__actions" style="display: none;">
+        <button id="customerInlineCreateButton" class="customer-inline-dialog__action" type="button">2. Crear en Sistema y Asignar</button>
+    </div>
+
+    <div id="customerInlineEditActions" class="customer-inline-dialog__actions" style="display: none;">
+        <button id="customerInlineEditSunatButton" class="customer-inline-dialog__action customer-inline-dialog__action--secondary" type="button">Validar con SUNAT</button>
+        <button id="customerInlineEditButton" class="customer-inline-dialog__action" type="button">Guardar Cambios</button>
+    </div>
+
+    <div id="customerInlineCreateResult" class="customer-inline-dialog__result" style="display: none;"></div>
+    <div id="customerInlineEditResult" class="customer-inline-dialog__result" style="display: none;"></div>
 
     <div id="customerInlineMessage" class="customer-inline-dialog__message"></div>
 </div>

@@ -840,6 +840,8 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         }
 
         this._setValue(element, "customerInlineCreateAddress", address.Street || "");
+        this._setValue(element, "customerInlineCreateStreetNumber", address.StreetNumber || "");
+        this._setValue(element, "customerInlineCreateBuildingCompliment", address.BuildingCompliment || "");
         this._setChecked(element, "customerInlineCreateAddressPrimary", address.IsPrimary !== false);
 
         const purposeSelect: HTMLSelectElement =
@@ -1284,6 +1286,30 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             });
     }
 
+    /**
+     * Detecta el rechazo por documento duplicado que devuelve el propio servidor.
+     *
+     * La comprobación previa depende de la búsqueda por documento, que hoy no encuentra nada:
+     * la búsqueda por palabra clave no cubre DPNUMBERDOCUMID_PE. Pero la localización Perú SÍ
+     * valida el duplicado al crear y en el error incluye la cuenta del cliente que ya lo tiene:
+     *
+     *   "El tipo: 1 y número: 71289964 de documento, ya existe para el cliente: TRV-061687"
+     *   errorCode Microsoft_Dynamics_Commerce_30104
+     *
+     * Esa es la fuente autoritativa. Se aprovecha para mostrar la misma alerta que la
+     * comprobación previa, en vez de dejar al cajero con un error crudo.
+     */
+    private _extractDuplicateAccount(reason: any): string {
+        const text: string = this._stringify(reason);
+
+        if (text.indexOf("30104") === -1 && !/ya existe para el cliente/i.test(text)) {
+            return "";
+        }
+
+        const match: RegExpMatchArray = text.match(/ya existe para el cliente:?\s*([A-Za-z0-9\-]+)/i);
+        return match && match[1] ? match[1] : "";
+    }
+
     private _executeCreate(element: HTMLElement): Promise<void> {
         let rawDocument: string = this._getValue(element, "customerInlineCreateDocument");
         let documentNumber: string = this._sunatService.normalizeDocument(rawDocument);
@@ -1307,6 +1333,33 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                     return this._blockDuplicate(element, existing, documentNumber);
                 }
                 return this._continueCreate(element, documentNumber, name);
+            })
+            // Red de seguridad real: la comprobación previa depende de la búsqueda por documento,
+            // que hoy no encuentra nada. El servidor sí valida el duplicado y en el error informa
+            // la cuenta del cliente que ya lo tiene, así que se aprovecha para mostrar la misma
+            // alerta en vez de dejar al cajero con un error crudo.
+            .catch((reason: any): Promise<void> => {
+                const duplicateAccount: string = this._extractDuplicateAccount(reason);
+                if (!duplicateAccount) {
+                    return Promise.reject(reason);
+                }
+
+                this._logChunked("=== Duplicado detectado por el servidor ===",
+                    "documento=" + documentNumber + " ya pertenece a la cuenta " + duplicateAccount);
+
+                return this._getCustomerByAccount(duplicateAccount)
+                    .then((existing: ProxyEntities.Customer | null): Promise<void> => {
+                        const stub: ProxyEntities.Customer = existing
+                            || ({ AccountNumber: duplicateAccount, Name: "" } as ProxyEntities.Customer);
+                        return this._blockDuplicate(element, stub, documentNumber);
+                    })
+                    .catch((): Promise<void> => {
+                        // Aunque no se pueda releer el cliente, la alerta debe salir igual.
+                        return this._blockDuplicate(
+                            element,
+                            { AccountNumber: duplicateAccount, Name: "" } as ProxyEntities.Customer,
+                            documentNumber);
+                    });
             });
     }
 
@@ -1478,8 +1531,6 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         }
 
         return resolvePromise.then((u: Entities.UbigeoResolutionResult | null): Promise<void> => {
-            let addressStreet = this._getValue(element, "customerInlineCreateAddress");
-
             // ResolveUbigeo devuelve 200 tanto si resolvió como si no: IsValid es el único dato
             // que distingue una dirección completa de una que D365 descartará en silencio por
             // no traer State/County/City. Se registra siempre para no tener que adivinar.
@@ -1491,63 +1542,38 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 + " | Notes=" + (u.Notes || "")
                 : "sin resultado (no se consultó o falló)");
 
-            if ((u && u.IsValid) || addressStreet) {
-                // El combo ya trae el AddressType numérico como value: no hay que traducir
-                // etiquetas, que es donde estaban los cuatro valores equivocados.
-                const purposeSelect: HTMLSelectElement =
-                    element.querySelector("#customerInlineCreateAddressPurpose") as HTMLSelectElement;
-                const purposeValue: number = purposeSelect && purposeSelect.value
-                    ? parseInt(purposeSelect.value, 10)
-                    : ProxyEntities.AddressType.Business;
-                const purposeLabel: string = purposeSelect && purposeSelect.selectedIndex >= 0
-                    ? purposeSelect.options[purposeSelect.selectedIndex].text
-                    : "Negocio";
+            // Se arma con el MISMO método que usa la edición. Antes cada flujo la construía por
+            // su cuenta y ya se habían separado: los campos de número de calle y complemento
+            // llegaron solo a uno de los dos.
+            const address: ProxyEntities.Address | null = this._buildAddressFromForm(element, 0);
 
-                const address: ProxyEntities.Address = new ProxyEntities.AddressClass();
-                address.ThreeLetterISORegionName = "PER";
-                // Criterio funcional de Terranova para "info de contacto": OFICINA en empresas,
-                // DOMICILIO en personas. Si el cajero eligió un propósito distinto al que
-                // corresponde al documento, manda su elección.
-                address.Name = this._resolveAddressName(sunatData.documentType, purposeValue, purposeLabel);
-                address.Street = addressStreet;
-                address.AddressTypeValue = purposeValue;
-                address.IsPrimary = this._getChecked(element, "customerInlineCreateAddressPrimary");
-                // Construido a mano: los numéricos se fijan explícitamente para no viajar como
-                // undefined, que es lo que hacía reventar el alta del cliente.
-                address.RecordId = 0;
-                address.Deactivate = false;
+            if (address) {
+                // "Info de contacto" según el criterio funcional: OFICINA en empresas, DOMICILIO
+                // en personas. Si el cajero eligió otro propósito, manda su elección.
+                address.Name = this._resolveAddressName(
+                    sunatData.documentType,
+                    address.AddressTypeValue,
+                    address.Name);
 
-                address.ExtensionProperties = [];
-                
-                // Los códigos salen de la cascada, no de ResolveUbigeo: el desplegable los tomó
-                // del maestro, así que no hay nada que resolver ni que pueda venir mal escrito.
-                // ResolveUbigeo solo sirvió para dejar la cascada preseleccionada.
-                const stateId: string = this._getValue(element, "customerInlineCreateDepartment");
-                const countyId: string = this._getValue(element, "customerInlineCreateProvince");
-                const cityCode: string = this._getValue(element, "customerInlineCreateDistrict");
-
-                if (stateId && countyId && cityCode) {
-                    address.State = stateId;
-                    address.County = countyId;
-                    address.City = cityCode;
-                    address.DistrictName = this._getSelectedLabel(element, "customerInlineCreateDistrict");
-                } else if (u && u.IsValid) {
-                    // Respaldo: la cascada no llegó a completarse pero el ubigeo sí resolvió.
+                // Respaldo: si la cascada no se completó pero el ubigeo de SUNAT sí resolvió, se
+                // usan esos códigos en vez de dejar la dirección sin ubigeo.
+                if (!address.State && u && u.IsValid) {
                     address.State = u.StateId;
                     address.County = u.CountyId;
                     address.City = u.CityName;
                     address.DistrictName = sunatData.district || "";
-                } else {
+                }
+
+                if (!address.State) {
                     this._logChunked("=== Direccion sin ubigeo ===",
                         "se envia solo la calle; complete departamento, provincia y distrito para que quede completa");
                 }
-                
-                customer.Addresses = [address];
 
+                customer.Addresses = [address];
                 this._logChunked("=== Address enviada ===", this._stringify(address));
             } else {
                 this._logChunked("=== Address NO enviada ===",
-                    "ubigeo invalido y calle vacia — el cliente se crea sin direccion");
+                    "sin calle ni departamento — el cliente se crea sin direccion");
             }
 
             this._showMessage(element, "Paso 2: Aplicando valores por defecto del canal...");
@@ -1973,6 +1999,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             ? purposeSelect.options[purposeSelect.selectedIndex].text
             : "Negocio";
         address.Street = street;
+        // La pantalla estándar manda estos dos por separado; el modal los enviaba vacíos y la
+        // dirección quedaba sin número ni piso/interior.
+        address.StreetNumber = this._getValue(element, "customerInlineCreateStreetNumber");
+        address.BuildingCompliment = this._getValue(element, "customerInlineCreateBuildingCompliment");
         address.AddressTypeValue = purposeValue;
         address.IsPrimary = this._getChecked(element, "customerInlineCreateAddressPrimary");
         address.Deactivate = false;
@@ -1998,11 +2028,21 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         this._toggle(element, "customerInlinePanelCreate", mode === "create");
         this._toggle(element, "customerInlinePanelEdit", mode === "edit");
 
-        // La sección de dirección es compartida: se llena igual al crear y al editar.
-        const addressSection: HTMLElement =
-            element.querySelector("#customerInlineAddressSection") as HTMLElement;
-        if (addressSection) {
-            addressSection.style.display = (mode === "create" || mode === "edit") ? "" : "none";
+        // La sección de dirección, las acciones y los resultados viven fuera de los paneles para
+        // quedar SIEMPRE al final. Se muestran según el modo.
+        const blocks: Array<{ id: string; visible: boolean }> = [
+            { id: "customerInlineAddressSection", visible: mode === "create" || mode === "edit" },
+            { id: "customerInlineCreateActions", visible: mode === "create" },
+            { id: "customerInlineEditActions", visible: mode === "edit" },
+            { id: "customerInlineCreateResult", visible: mode === "create" },
+            { id: "customerInlineEditResult", visible: mode === "edit" }
+        ];
+
+        for (let i: number = 0; i < blocks.length; i++) {
+            const block: HTMLElement = element.querySelector("#" + blocks[i].id) as HTMLElement;
+            if (block) {
+                block.style.display = blocks[i].visible ? "" : "none";
+            }
         }
 
         if (mode === "search") {
