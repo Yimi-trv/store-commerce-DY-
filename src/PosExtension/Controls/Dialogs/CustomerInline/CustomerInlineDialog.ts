@@ -966,8 +966,43 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         return "Error desconocido. Revise F12.";
     }
 
+    /**
+     * `JSON.stringify` de un Error devuelve `{}` porque message y stack no son enumerables.
+     * Por eso los fallos llegaban al log como "error: {}", sin nada accionable — que fue
+     * exactamente lo que pasó cuando el proveedor SUNAT devolvió 502.
+     */
     private _stringify(value: any): string {
-        try { return JSON.stringify(value); } catch (error) { return value ? value.toString() : ""; }
+        if (value === null || value === undefined) {
+            return "";
+        }
+
+        if (value instanceof Error) {
+            return value.name + ": " + value.message + (value.stack ? "\n" + value.stack : "");
+        }
+
+        // El POS suele entregar los errores como arreglo de CommerceError.
+        if (Array.isArray(value)) {
+            const parts: string[] = [];
+            for (let i: number = 0; i < value.length; i++) {
+                parts.push(this._stringify(value[i]));
+            }
+            return parts.join(" | ");
+        }
+
+        try {
+            const serialized: string = JSON.stringify(value);
+            if (serialized && serialized !== "{}") {
+                return serialized;
+            }
+        } catch (error) {
+            // sigue a los fallbacks
+        }
+
+        if (value.message) {
+            return String(value.message);
+        }
+
+        return value.toString ? value.toString() : "";
     }
 
     private _logError(message: string): void {

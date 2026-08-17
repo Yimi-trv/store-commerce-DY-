@@ -30,6 +30,23 @@ export interface ISunatCustomerData {
 export default class SunatCustomerService {
     private static readonly _apiKey: string = "cGVydWRldnMucHJvZHVjdGlvbi5maXRjb2RlcnMuNjgxY2IzYzE5ZmE0MTczZjYxMzIwYWVh";
 
+    /** Corte de espera antes de dar por caido al proveedor. */
+    private static readonly _timeoutMs: number = 8000;
+
+    /**
+     * Vigencia de una consulta en cache. Media hora es suficiente para cubrir un pico de caja
+     * y lo bastante corto para que un cambio de padron se refleje el mismo dia.
+     */
+    private static readonly _cacheTtlMs: number = 30 * 60 * 1000;
+
+    /**
+     * Cache por numero de documento, compartida por todas las instancias del servicio: el modal
+     * crea una instancia nueva en cada apertura, asi que guardarla en la instancia no serviria
+     * de nada. Vive en memoria y se pierde al recargar el POS, que es el comportamiento
+     * deseado — no se persisten datos de clientes en el navegador.
+     */
+    private static _cache: { [documentNumber: string]: { data: ISunatCustomerData; expiresAt: number } } = {};
+
     public normalizeDocument(documentNumber: string): string {
         return (documentNumber || "").replace(/\D/g, "");
     }
@@ -56,19 +73,110 @@ export default class SunatCustomerService {
             return Promise.reject(new Error("Ingrese un DNI de 8 digitos o RUC de 11 digitos."));
         }
 
+        // Un documento ya consultado no vuelve a salir a la red. Además de ahorrar llamadas,
+        // esto mantiene el flujo vivo durante una caída del proveedor para los documentos que
+        // ya pasaron por caja en el turno.
+        const cached: ISunatCustomerData | null = SunatCustomerService._readCache(normalizedDocument);
+        if (cached) {
+            return Promise.resolve(cached);
+        }
+
         const url: string = documentType === "RUC"
             ? "https://api.perudevs.com/api/v1/ruc?document=" + normalizedDocument + "&key=" + SunatCustomerService._apiKey
             : "https://api.perudevs.com/api/v1/dni/complete?document=" + normalizedDocument + "&key=" + SunatCustomerService._apiKey;
 
-        return fetch(url, { method: "GET" })
-            .then((response: Response): Promise<any> => response.json())
+        return this._fetchWithTimeout(url)
+            .then((response: Response): Promise<any> => {
+                // `response.json()` sobre un 502 intenta parsear la página de error del gateway
+                // y lanza un SyntaxError que no dice nada útil. El estado HTTP se revisa antes.
+                if (!response.ok) {
+                    throw new Error(SunatCustomerService._describeHttpFailure(response.status));
+                }
+
+                return response.json().then(
+                    (parsed: any): any => parsed,
+                    (): any => {
+                        throw new Error(
+                            "El servicio de consulta SUNAT respondio algo que no se pudo interpretar. "
+                            + "Ingrese los datos manualmente.");
+                    });
+            })
             .then((apiData: any): ISunatCustomerData => {
                 if (apiData && apiData.estado === true && apiData.resultado) {
-                    return this._mapResult(apiData.resultado, documentType, normalizedDocument);
+                    const mapped: ISunatCustomerData =
+                        this._mapResult(apiData.resultado, documentType, normalizedDocument);
+                    SunatCustomerService._writeCache(normalizedDocument, mapped);
+                    return mapped;
                 }
 
                 throw new Error(apiData && apiData.mensaje ? apiData.mensaje : "No se encontro el documento en SUNAT.");
             });
+    }
+
+    /**
+     * `fetch` no tiene timeout propio: si el proveedor deja la conexion abierta, el cajero se
+     * queda esperando sin saber por que. La carrera contra un temporizador acota esa espera.
+     */
+    private _fetchWithTimeout(url: string): Promise<Response> {
+        const timeoutPromise: Promise<Response> = new Promise((_resolve: any, reject: (reason: any) => void): void => {
+            setTimeout((): void => {
+                reject(new Error(
+                    "El servicio de consulta SUNAT no respondio en "
+                    + (SunatCustomerService._timeoutMs / 1000) + " segundos. "
+                    + "Reintente o ingrese los datos manualmente."));
+            }, SunatCustomerService._timeoutMs);
+        });
+
+        const networkPromise: Promise<Response> = fetch(url, { method: "GET" })
+            .then(
+                (response: Response): Response => response,
+                (): Response => {
+                    // Un fallo de fetch no trae detalle util: puede ser DNS, CORS o falta de red.
+                    throw new Error(
+                        "No se pudo contactar el servicio de consulta SUNAT. "
+                        + "Verifique la conexion o ingrese los datos manualmente.");
+                });
+
+        return Promise.race([networkPromise, timeoutPromise]);
+    }
+
+    /** Traduce el estado HTTP a algo que un cajero pueda entender y accionar. */
+    private static _describeHttpFailure(status: number): string {
+        if (status === 401 || status === 403) {
+            return "La clave del servicio de consulta SUNAT fue rechazada (HTTP " + status
+                + "). Avise a sistemas; ingrese los datos manualmente.";
+        }
+        if (status === 429) {
+            return "Se alcanzo el limite de consultas del servicio SUNAT. "
+                + "Espere unos minutos o ingrese los datos manualmente.";
+        }
+        if (status >= 500) {
+            return "El servicio de consulta SUNAT no esta disponible en este momento (HTTP " + status
+                + "). No es un problema de la caja: ingrese los datos manualmente y continue la venta.";
+        }
+        return "El servicio de consulta SUNAT rechazo la consulta (HTTP " + status
+            + "). Verifique el documento o ingrese los datos manualmente.";
+    }
+
+    private static _readCache(documentNumber: string): ISunatCustomerData | null {
+        const entry: { data: ISunatCustomerData; expiresAt: number } = SunatCustomerService._cache[documentNumber];
+        if (!entry) {
+            return null;
+        }
+
+        if (new Date().getTime() > entry.expiresAt) {
+            delete SunatCustomerService._cache[documentNumber];
+            return null;
+        }
+
+        return entry.data;
+    }
+
+    private static _writeCache(documentNumber: string, data: ISunatCustomerData): void {
+        SunatCustomerService._cache[documentNumber] = {
+            data: data,
+            expiresAt: new Date().getTime() + SunatCustomerService._cacheTtlMs
+        };
     }
 
     public getDocumentNumber(customer: ProxyEntities.Customer): string {

@@ -384,31 +384,11 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             address.ThreeLetterISORegionName = "PER";
                             address.Name = _this._resolveAddressName(sunatData.documentType, purposeValue, purposeLabel);
                             address.Street = addressStreet;
-<<<<<<< HEAD
                             address.AddressTypeValue = purposeValue;
                             address.IsPrimary = _this._getChecked(element, "customerInlineCreateAddressPrimary");
                             address.RecordId = 0;
                             address.Deactivate = false;
                             address.ExtensionProperties = [];
-=======
-                            address.IsPrimary = true;
-<<<<<<< Updated upstream
->>>>>>> 3ef2e5af97826f953ad157ca3af3ecfd9ca9ddcd
-=======
-                            if (addressPurpose === "Entrega") {
-                                address.AddressTypeValue = 1;
-                            }
-                            else if (addressPurpose === "Factura") {
-                                address.AddressTypeValue = 4;
-                            }
-                            else if (addressPurpose === "Casa") {
-                                address.AddressTypeValue = 3;
-                            }
-                            else {
-                                address.AddressTypeValue = 2;
-                            }
-                            address.ExtensionProperties = [];
->>>>>>> Stashed changes
                             if (u && u.IsValid) {
                                 address.State = u.StateId;
                                 address.County = u.CountyId;
@@ -791,12 +771,31 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     return "Error desconocido. Revise F12.";
                 };
                 CustomerInlineDialog.prototype._stringify = function (value) {
+                    if (value === null || value === undefined) {
+                        return "";
+                    }
+                    if (value instanceof Error) {
+                        return value.name + ": " + value.message + (value.stack ? "\n" + value.stack : "");
+                    }
+                    if (Array.isArray(value)) {
+                        var parts = [];
+                        for (var i = 0; i < value.length; i++) {
+                            parts.push(this._stringify(value[i]));
+                        }
+                        return parts.join(" | ");
+                    }
                     try {
-                        return JSON.stringify(value);
+                        var serialized = JSON.stringify(value);
+                        if (serialized && serialized !== "{}") {
+                            return serialized;
+                        }
                     }
                     catch (error) {
-                        return value ? value.toString() : "";
                     }
+                    if (value.message) {
+                        return String(value.message);
+                    }
+                    return value.toString ? value.toString() : "";
                 };
                 CustomerInlineDialog.prototype._logError = function (message) {
                     if (this.context && this.context.logger)

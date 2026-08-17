@@ -32,17 +32,79 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     if (!documentType) {
                         return Promise.reject(new Error("Ingrese un DNI de 8 digitos o RUC de 11 digitos."));
                     }
+                    var cached = SunatCustomerService._readCache(normalizedDocument);
+                    if (cached) {
+                        return Promise.resolve(cached);
+                    }
                     var url = documentType === "RUC"
                         ? "https://api.perudevs.com/api/v1/ruc?document=" + normalizedDocument + "&key=" + SunatCustomerService._apiKey
                         : "https://api.perudevs.com/api/v1/dni/complete?document=" + normalizedDocument + "&key=" + SunatCustomerService._apiKey;
-                    return fetch(url, { method: "GET" })
-                        .then(function (response) { return response.json(); })
+                    return this._fetchWithTimeout(url)
+                        .then(function (response) {
+                        if (!response.ok) {
+                            throw new Error(SunatCustomerService._describeHttpFailure(response.status));
+                        }
+                        return response.json().then(function (parsed) { return parsed; }, function () {
+                            throw new Error("El servicio de consulta SUNAT respondio algo que no se pudo interpretar. "
+                                + "Ingrese los datos manualmente.");
+                        });
+                    })
                         .then(function (apiData) {
                         if (apiData && apiData.estado === true && apiData.resultado) {
-                            return _this._mapResult(apiData.resultado, documentType, normalizedDocument);
+                            var mapped = _this._mapResult(apiData.resultado, documentType, normalizedDocument);
+                            SunatCustomerService._writeCache(normalizedDocument, mapped);
+                            return mapped;
                         }
                         throw new Error(apiData && apiData.mensaje ? apiData.mensaje : "No se encontro el documento en SUNAT.");
                     });
+                };
+                SunatCustomerService.prototype._fetchWithTimeout = function (url) {
+                    var timeoutPromise = new Promise(function (_resolve, reject) {
+                        setTimeout(function () {
+                            reject(new Error("El servicio de consulta SUNAT no respondio en "
+                                + (SunatCustomerService._timeoutMs / 1000) + " segundos. "
+                                + "Reintente o ingrese los datos manualmente."));
+                        }, SunatCustomerService._timeoutMs);
+                    });
+                    var networkPromise = fetch(url, { method: "GET" })
+                        .then(function (response) { return response; }, function () {
+                        throw new Error("No se pudo contactar el servicio de consulta SUNAT. "
+                            + "Verifique la conexion o ingrese los datos manualmente.");
+                    });
+                    return Promise.race([networkPromise, timeoutPromise]);
+                };
+                SunatCustomerService._describeHttpFailure = function (status) {
+                    if (status === 401 || status === 403) {
+                        return "La clave del servicio de consulta SUNAT fue rechazada (HTTP " + status
+                            + "). Avise a sistemas; ingrese los datos manualmente.";
+                    }
+                    if (status === 429) {
+                        return "Se alcanzo el limite de consultas del servicio SUNAT. "
+                            + "Espere unos minutos o ingrese los datos manualmente.";
+                    }
+                    if (status >= 500) {
+                        return "El servicio de consulta SUNAT no esta disponible en este momento (HTTP " + status
+                            + "). No es un problema de la caja: ingrese los datos manualmente y continue la venta.";
+                    }
+                    return "El servicio de consulta SUNAT rechazo la consulta (HTTP " + status
+                        + "). Verifique el documento o ingrese los datos manualmente.";
+                };
+                SunatCustomerService._readCache = function (documentNumber) {
+                    var entry = SunatCustomerService._cache[documentNumber];
+                    if (!entry) {
+                        return null;
+                    }
+                    if (new Date().getTime() > entry.expiresAt) {
+                        delete SunatCustomerService._cache[documentNumber];
+                        return null;
+                    }
+                    return entry.data;
+                };
+                SunatCustomerService._writeCache = function (documentNumber, data) {
+                    SunatCustomerService._cache[documentNumber] = {
+                        data: data,
+                        expiresAt: new Date().getTime() + SunatCustomerService._cacheTtlMs
+                    };
                 };
                 SunatCustomerService.prototype.getDocumentNumber = function (customer) {
                     var valueFromProperty = this._getStringProperty(customer, "DPNUMBERDOCUMID_PE");
@@ -219,6 +281,9 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     return (value || "").toUpperCase().replace(/\s+/g, " ").trim();
                 };
                 SunatCustomerService._apiKey = "cGVydWRldnMucHJvZHVjdGlvbi5maXRjb2RlcnMuNjgxY2IzYzE5ZmE0MTczZjYxMzIwYWVh";
+                SunatCustomerService._timeoutMs = 8000;
+                SunatCustomerService._cacheTtlMs = 30 * 60 * 1000;
+                SunatCustomerService._cache = {};
                 return SunatCustomerService;
             }());
             exports_1("default", SunatCustomerService);
