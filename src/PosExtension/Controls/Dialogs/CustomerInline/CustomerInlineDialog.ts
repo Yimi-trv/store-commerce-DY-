@@ -22,6 +22,7 @@ import { ProxyEntities } from "PosApi/Entities";
 import SunatCustomerService, { ISunatCustomerData } from "../../../Services/SunatCustomerService";
 import { TRU_Diagnostics, TRU_GeographicData, Entities } from "../../../DataService/DataServiceRequests.g";
 import { GetAddressPurposesRequest, GetAddressPurposesResponse } from "../../../DataService/AddressPurposesRequest";
+import { GetCustomerGroupsRequest, GetCustomerGroupsResponse } from "../../../DataService/CustomerGroupsRequest";
 
 const GUARD_KEY: string = "__customerInlineDialogActive";
 
@@ -122,6 +123,66 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         this._prefillInitialValues(element);
         this._setMode(element, this._mode);
         this._loadAddressPurposes(element);
+        this._loadCustomerGroups(element);
+    }
+
+    /**
+     * Llena el combo de grupo de clientes con los grupos configurados en el canal, igual que
+     * hace la pantalla estándar. Si Retail Server no responde, queda una sola opción con valor
+     * vacío y el grupo lo resuelve `_applyChannelDefaults` copiándolo del cliente que la venta
+     * ya tiene asignado — que es el comportamiento que ya venía funcionando.
+     */
+    private _loadCustomerGroups(element: HTMLElement): Promise<void> {
+        return this.context.runtime
+            .executeAsync(new GetCustomerGroupsRequest<GetCustomerGroupsResponse>())
+            .then((response: any): void => {
+                const groups: any[] = (response && response.data && response.data.result) || [];
+
+                if (groups.length === 0) {
+                    this._logChunked("=== Grupos de cliente ===", "el canal no devolvio ninguno; se usa el del canal por defecto");
+                    this._fillGroupSelect(element, []);
+                    return;
+                }
+
+                const options: Array<{ value: string; label: string }> = [];
+                for (let i: number = 0; i < groups.length; i++) {
+                    const group: any = groups[i];
+                    const number: string = group.CustomerGroupNumber || "";
+                    const name: string = group.CustomerGroupName || number;
+                    options.push({ value: number, label: name });
+                }
+
+                this._logChunked("=== Grupos de cliente (del canal) ===", this._stringify(options));
+                this._fillGroupSelect(element, options);
+            })
+            .catch((reason: any): void => {
+                this._logChunked("=== Grupos de cliente ===",
+                    "GetCustomerGroups fallo, se usa el del canal por defecto: " + this._getErrorMessage(reason));
+                this._fillGroupSelect(element, []);
+            });
+    }
+
+    private _fillGroupSelect(element: HTMLElement, options: Array<{ value: string; label: string }>): void {
+        const select: HTMLSelectElement =
+            element.querySelector("#customerInlineCreateCustomerGroup") as HTMLSelectElement;
+        if (!select) {
+            return;
+        }
+
+        select.innerHTML = "";
+
+        // Valor vacío = dejar que el canal decida. Va siempre disponible como salida.
+        const fallbackOption: HTMLOptionElement = document.createElement("option");
+        fallbackOption.value = "";
+        fallbackOption.text = "(Por defecto del canal)";
+        select.appendChild(fallbackOption);
+
+        for (let i: number = 0; i < options.length; i++) {
+            const option: HTMLOptionElement = document.createElement("option");
+            option.value = options[i].value;
+            option.text = options[i].label;
+            select.appendChild(option);
+        }
     }
 
     /**
@@ -383,6 +444,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 this._setChecked(element, "customerInlineCreateOthers", sunatData.isOthers);
                 this._setChecked(element, "customerInlineCreateNotDomiciled", sunatData.isNotDomiciled);
                 this._selectPurposeForDocumentType(element, sunatData.documentType);
+                // RUC 20 es organización; DNI y demás documentos de persona son Persona.
+                this._setValue(element, "customerInlineCreateCustomerType",
+                    String(sunatData.documentType === "RUC"
+                        ? ProxyEntities.CustomerType.Organization
+                        : ProxyEntities.CustomerType.Person));
                 this._showTextResult(element, "customerInlineCreateResult", this._formatSunatSummary(sunatData));
                 this._showMessage(element, "Datos obtenidos. Complete si falta algo y presione Crear en Sistema.");
             });
@@ -430,10 +496,28 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _resolveAndCreateCustomer(element: HTMLElement, sunatData: ISunatCustomerData, overrideName: string, phone: string, email: string): Promise<void> {
         const customer: ProxyEntities.Customer = new ProxyEntities.CustomerClass({});
         this._sunatService.applySunatIdentity(customer, sunatData);
-        
+
         customer.Name = overrideName || customer.Name;
         customer.Phone = phone || "";
         customer.Email = email || "";
+
+        // Lo que el cajero eligió en los combos manda sobre lo que dedujo la consulta SUNAT.
+        // Va después de applySunatIdentity, que fija CustomerTypeValue por su cuenta.
+        const selectedType: string = this._getValue(element, "customerInlineCreateCustomerType");
+        if (selectedType) {
+            customer.CustomerTypeValue = parseInt(selectedType, 10);
+        }
+
+        // Vacío significa "que lo resuelva el canal": se deja sin asignar para que
+        // _applyChannelDefaults lo copie del cliente que la venta ya tiene.
+        const selectedGroup: string = this._getValue(element, "customerInlineCreateCustomerGroup");
+        if (selectedGroup) {
+            customer.CustomerGroup = selectedGroup;
+        }
+
+        this._logChunked("=== Identidad del cliente ===",
+            "CustomerTypeValue=" + customer.CustomerTypeValue
+            + " | CustomerGroup=" + (customer.CustomerGroup || "(lo resuelve el canal)"));
         
         let resolvePromise: Promise<Entities.UbigeoResolutionResult | null> = Promise.resolve(null);
 

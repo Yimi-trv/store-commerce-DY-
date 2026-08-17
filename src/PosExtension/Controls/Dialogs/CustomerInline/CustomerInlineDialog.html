@@ -162,6 +162,20 @@
                 <input id="customerInlineCreateName" type="text" />
             </div>
             <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateCustomerType">Tipo de cliente:</label>
+                <!-- Se preselecciona al consultar SUNAT: RUC 20 es Organización, DNI es Persona.
+                     El value es el CustomerType numérico del SDK. -->
+                <select id="customerInlineCreateCustomerType">
+                    <option value="1">Persona</option>
+                    <option value="2">Organización</option>
+                </select>
+            </div>
+            <div class="customer-inline-dialog__field">
+                <label for="customerInlineCreateCustomerGroup">Grupo de clientes:</label>
+                <!-- Se carga en onReady desde los grupos configurados en el canal. -->
+                <select id="customerInlineCreateCustomerGroup"></select>
+            </div>
+            <div class="customer-inline-dialog__field">
                 <label for="customerInlineCreatePhone">Telefono:</label>
                 <input id="customerInlineCreatePhone" type="text" />
             </div>

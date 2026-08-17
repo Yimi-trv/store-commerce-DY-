@@ -1,4 +1,4 @@
-System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest"], function (exports_1, context_1) {
+System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest"], function (exports_1, context_1) {
     "use strict";
     var __extends = (this && this.__extends) || (function () {
         var extendStatics = function (d, b) {
@@ -15,7 +15,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
+    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -42,6 +42,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             },
             function (AddressPurposesRequest_1_1) {
                 AddressPurposesRequest_1 = AddressPurposesRequest_1_1;
+            },
+            function (CustomerGroupsRequest_1_1) {
+                CustomerGroupsRequest_1 = CustomerGroupsRequest_1_1;
             }
         ],
         execute: function () {
@@ -106,6 +109,50 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     this._prefillInitialValues(element);
                     this._setMode(element, this._mode);
                     this._loadAddressPurposes(element);
+                    this._loadCustomerGroups(element);
+                };
+                CustomerInlineDialog.prototype._loadCustomerGroups = function (element) {
+                    var _this = this;
+                    return this.context.runtime
+                        .executeAsync(new CustomerGroupsRequest_1.GetCustomerGroupsRequest())
+                        .then(function (response) {
+                        var groups = (response && response.data && response.data.result) || [];
+                        if (groups.length === 0) {
+                            _this._logChunked("=== Grupos de cliente ===", "el canal no devolvio ninguno; se usa el del canal por defecto");
+                            _this._fillGroupSelect(element, []);
+                            return;
+                        }
+                        var options = [];
+                        for (var i = 0; i < groups.length; i++) {
+                            var group = groups[i];
+                            var number = group.CustomerGroupNumber || "";
+                            var name_1 = group.CustomerGroupName || number;
+                            options.push({ value: number, label: name_1 });
+                        }
+                        _this._logChunked("=== Grupos de cliente (del canal) ===", _this._stringify(options));
+                        _this._fillGroupSelect(element, options);
+                    })
+                        .catch(function (reason) {
+                        _this._logChunked("=== Grupos de cliente ===", "GetCustomerGroups fallo, se usa el del canal por defecto: " + _this._getErrorMessage(reason));
+                        _this._fillGroupSelect(element, []);
+                    });
+                };
+                CustomerInlineDialog.prototype._fillGroupSelect = function (element, options) {
+                    var select = element.querySelector("#customerInlineCreateCustomerGroup");
+                    if (!select) {
+                        return;
+                    }
+                    select.innerHTML = "";
+                    var fallbackOption = document.createElement("option");
+                    fallbackOption.value = "";
+                    fallbackOption.text = "(Por defecto del canal)";
+                    select.appendChild(fallbackOption);
+                    for (var i = 0; i < options.length; i++) {
+                        var option = document.createElement("option");
+                        option.value = options[i].value;
+                        option.text = options[i].label;
+                        select.appendChild(option);
+                    }
                 };
                 CustomerInlineDialog.prototype._loadAddressPurposes = function (element) {
                     var _this = this;
@@ -305,6 +352,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._setChecked(element, "customerInlineCreateOthers", sunatData.isOthers);
                         _this._setChecked(element, "customerInlineCreateNotDomiciled", sunatData.isNotDomiciled);
                         _this._selectPurposeForDocumentType(element, sunatData.documentType);
+                        _this._setValue(element, "customerInlineCreateCustomerType", String(sunatData.documentType === "RUC"
+                            ? Entities_1.ProxyEntities.CustomerType.Organization
+                            : Entities_1.ProxyEntities.CustomerType.Person));
                         _this._showTextResult(element, "customerInlineCreateResult", _this._formatSunatSummary(sunatData));
                         _this._showMessage(element, "Datos obtenidos. Complete si falta algo y presione Crear en Sistema.");
                     });
@@ -348,6 +398,16 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     customer.Name = overrideName || customer.Name;
                     customer.Phone = phone || "";
                     customer.Email = email || "";
+                    var selectedType = this._getValue(element, "customerInlineCreateCustomerType");
+                    if (selectedType) {
+                        customer.CustomerTypeValue = parseInt(selectedType, 10);
+                    }
+                    var selectedGroup = this._getValue(element, "customerInlineCreateCustomerGroup");
+                    if (selectedGroup) {
+                        customer.CustomerGroup = selectedGroup;
+                    }
+                    this._logChunked("=== Identidad del cliente ===", "CustomerTypeValue=" + customer.CustomerTypeValue
+                        + " | CustomerGroup=" + (customer.CustomerGroup || "(lo resuelve el canal)"));
                     var resolvePromise = Promise.resolve(null);
                     if (sunatData.department || sunatData.province || sunatData.district) {
                         var request = new DataServiceRequests_g_1.TRU_GeographicData.ResolveUbigeoRequest(sunatData.department || "", sunatData.province || "", sunatData.district || "");
