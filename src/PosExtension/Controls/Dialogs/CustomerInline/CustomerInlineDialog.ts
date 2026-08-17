@@ -76,6 +76,13 @@ import { TRU_Diagnostics, TRU_GeographicData, Entities } from "../../../DataServ
 import { GetAddressPurposesRequest, GetAddressPurposesResponse } from "../../../DataService/AddressPurposesRequest";
 import { GetCustomerGroupsRequest, GetCustomerGroupsResponse } from "../../../DataService/CustomerGroupsRequest";
 import { CustomerSearchRequest, CustomerSearchResponse } from "../../../DataService/CustomerSearchRequest";
+import {
+    GetCitiesRequest,
+    GetCitiesResponse,
+    GetCountiesRequest,
+    GetCountiesResponse
+} from "../../../DataService/GeographicRequests";
+import { GetStateProvincesServiceRequest } from "PosApi/Consume/StoreOperations";
 
 const GUARD_KEY: string = "__customerInlineDialogActive";
 
@@ -207,6 +214,24 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         this._setMode(element, this._mode);
         this._loadAddressPurposes(element);
         this._loadCustomerGroups(element);
+        this._loadDepartments(element);
+
+        // Cascada: cada nivel repuebla el siguiente.
+        const departmentSelect: HTMLSelectElement =
+            element.querySelector("#customerInlineCreateDepartment") as HTMLSelectElement;
+        if (departmentSelect) {
+            departmentSelect.onchange = (): void => {
+                this._loadProvinces(element, departmentSelect.value);
+            };
+        }
+
+        const provinceSelect: HTMLSelectElement =
+            element.querySelector("#customerInlineCreateProvince") as HTMLSelectElement;
+        if (provinceSelect) {
+            provinceSelect.onchange = (): void => {
+                this._loadDistricts(element, departmentSelect ? departmentSelect.value : "", provinceSelect.value);
+            };
+        }
     }
 
     /**
@@ -278,6 +303,198 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 this._logChunked("=== Grupos de cliente ===",
                     "GetCustomerGroups fallo, se usa el del canal por defecto: " + this._getErrorMessage(reason));
                 this._fillGroupSelect(element, []);
+            });
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // CASCADA GEOGRÁFICA — Departamento -> Provincia -> Distrito
+    //
+    // Alimentada desde los maestros de D365, no escrita a mano. Antes eran tres campos de texto
+    // libre y un solo carácter distinto ("Huanuco" por "Huánuco") hacía que ResolveUbigeo no
+    // encontrara nada y la dirección se descartara sin aviso.
+    //
+    // Los códigos salen directo del maestro, así que para el camino manual no hace falta
+    // resolver nada. ResolveUbigeo se sigue usando solo para preseleccionar la cascada cuando
+    // SUNAT devuelve los nombres.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * SUNAT entrega los nombres del ubigeo; la cascada trabaja con códigos. ResolveUbigeo hace
+     * de puente una sola vez, al momento de la consulta. A partir de ahí manda la cascada.
+     *
+     * Para DNI no hay ubigeo que resolver: la cascada queda vacía y el cajero la completa.
+     */
+    private _preselectGeographyFromSunat(element: HTMLElement, sunatData: ISunatCustomerData): Promise<void> {
+        if (!sunatData.department && !sunatData.province && !sunatData.district) {
+            return Promise.resolve();
+        }
+
+        const request: TRU_GeographicData.ResolveUbigeoRequest<TRU_GeographicData.ResolveUbigeoResponse> =
+            new TRU_GeographicData.ResolveUbigeoRequest(
+                sunatData.department || "", sunatData.province || "", sunatData.district || "");
+
+        return this.context.runtime.executeAsync(request)
+            .then((response: any): Promise<void> => {
+                const resolved: any = response && response.data && response.data.result && response.data.result[0];
+
+                if (!resolved || !resolved.IsValid) {
+                    this._logChunked("=== Cascada geografica ===",
+                        "el ubigeo de SUNAT no resolvio; el cajero debe elegirlo del desplegable. "
+                        + (resolved ? resolved.Notes || "" : ""));
+                    return Promise.resolve();
+                }
+
+                return this._preselectGeography(element, resolved.StateId, resolved.CountyId, resolved.CityName);
+            })
+            .catch((reason: any): void => {
+                this._logError("Preseleccion de ubigeo fallo: " + this._stringify(reason));
+            });
+    }
+
+    private _loadDepartments(element: HTMLElement): Promise<void> {
+        return this.context.runtime
+            .executeAsync(new GetStateProvincesServiceRequest(this._getCorrelationId(), "PER"))
+            .then((response: any): void => {
+                const states: any[] = (response && response.data && response.data.stateProvinces) || [];
+                const options: Array<{ value: string; label: string }> = [];
+
+                for (let i: number = 0; i < states.length; i++) {
+                    options.push({
+                        value: states[i].StateId || "",
+                        label: states[i].StateName || states[i].StateId || ""
+                    });
+                }
+
+                this._fillGeoSelect(element, "customerInlineCreateDepartment", options, "Seleccione departamento");
+                this._logChunked("=== Departamentos ===", options.length + " cargados");
+            })
+            .catch((reason: any): void => {
+                this._logChunked("=== Departamentos ===", "no se pudieron cargar: " + this._getErrorMessage(reason));
+            });
+    }
+
+    private _loadProvinces(element: HTMLElement, stateId: string): Promise<void> {
+        this._fillGeoSelect(element, "customerInlineCreateProvince", [], "Seleccione provincia");
+        this._fillGeoSelect(element, "customerInlineCreateDistrict", [], "Seleccione distrito");
+
+        if (!stateId) {
+            return Promise.resolve();
+        }
+
+        return this.context.runtime
+            .executeAsync(new GetCountiesRequest<GetCountiesResponse>(stateId))
+            .then((response: any): void => {
+                const counties: any[] = (response && response.data && response.data.result) || [];
+                const options: Array<{ value: string; label: string }> = [];
+
+                for (let i: number = 0; i < counties.length; i++) {
+                    options.push({
+                        value: counties[i].CountyId || "",
+                        label: counties[i].Name || counties[i].CountyId || ""
+                    });
+                }
+
+                this._fillGeoSelect(element, "customerInlineCreateProvince", options, "Seleccione provincia");
+            })
+            .catch((reason: any): void => {
+                this._logChunked("=== Provincias ===", "no se pudieron cargar: " + this._getErrorMessage(reason));
+            });
+    }
+
+    private _loadDistricts(element: HTMLElement, stateId: string, countyId: string): Promise<void> {
+        this._fillGeoSelect(element, "customerInlineCreateDistrict", [], "Seleccione distrito");
+
+        if (!stateId || !countyId) {
+            return Promise.resolve();
+        }
+
+        return this.context.runtime
+            .executeAsync(new GetCitiesRequest<GetCitiesResponse>(stateId, countyId))
+            .then((response: any): void => {
+                const cities: any[] = (response && response.data && response.data.result) || [];
+                const options: Array<{ value: string; label: string }> = [];
+
+                for (let i: number = 0; i < cities.length; i++) {
+                    // Convención del entorno: Name es el CÓDIGO de ciudad y Description el
+                    // nombre legible. Ver GeographicDataService en el CommerceRuntime.
+                    options.push({
+                        value: cities[i].Name || "",
+                        label: cities[i].Description || cities[i].Name || ""
+                    });
+                }
+
+                this._fillGeoSelect(element, "customerInlineCreateDistrict", options, "Seleccione distrito");
+            })
+            .catch((reason: any): void => {
+                this._logChunked("=== Distritos ===", "no se pudieron cargar: " + this._getErrorMessage(reason));
+            });
+    }
+
+    private _fillGeoSelect(
+        element: HTMLElement,
+        id: string,
+        options: Array<{ value: string; label: string }>,
+        placeholder: string
+    ): void {
+        const select: HTMLSelectElement = element.querySelector("#" + id) as HTMLSelectElement;
+        if (!select) {
+            return;
+        }
+
+        select.innerHTML = "";
+
+        const empty: HTMLOptionElement = document.createElement("option");
+        empty.value = "";
+        empty.text = options.length > 0 ? placeholder : "(sin opciones)";
+        select.appendChild(empty);
+
+        for (let i: number = 0; i < options.length; i++) {
+            const option: HTMLOptionElement = document.createElement("option");
+            option.value = options[i].value;
+            option.text = options[i].label;
+            select.appendChild(option);
+        }
+
+        select.disabled = options.length === 0;
+    }
+
+    /** Selecciona por valor si existe. Devuelve si lo encontró, para poder registrar el fallo. */
+    private _trySelectByValue(element: HTMLElement, id: string, value: string): boolean {
+        const select: HTMLSelectElement = element.querySelector("#" + id) as HTMLSelectElement;
+        if (!select || !value) {
+            return false;
+        }
+
+        for (let i: number = 0; i < select.options.length; i++) {
+            if (select.options[i].value === value) {
+                select.selectedIndex = i;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Deja la cascada posicionada en los códigos que devolvió ResolveUbigeo tras una consulta
+     * SUNAT. Si alguno no está en el maestro, el cajero lo completa a mano desde el desplegable
+     * — que es exactamente el caso que antes se perdía en silencio.
+     */
+    private _preselectGeography(element: HTMLElement, stateId: string, countyId: string, cityCode: string): Promise<void> {
+        if (!this._trySelectByValue(element, "customerInlineCreateDepartment", stateId)) {
+            this._logChunked("=== Cascada geografica ===", "departamento " + stateId + " no esta en el maestro");
+            return Promise.resolve();
+        }
+
+        return this._loadProvinces(element, stateId)
+            .then((): Promise<void> => {
+                if (!this._trySelectByValue(element, "customerInlineCreateProvince", countyId)) {
+                    this._logChunked("=== Cascada geografica ===", "provincia " + countyId + " no esta en el maestro");
+                    return Promise.resolve();
+                }
+                return this._loadDistricts(element, stateId, countyId)
+                    .then((): void => {
+                        this._trySelectByValue(element, "customerInlineCreateDistrict", cityCode);
+                    });
             });
     }
 
@@ -693,9 +910,6 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 this._lastSunatData = sunatData;
                 this._setValue(element, "customerInlineCreateName", sunatData.name || "");
                 this._setValue(element, "customerInlineCreateAddress", sunatData.address || "");
-                this._setValue(element, "customerInlineCreateDepartment", sunatData.department || "");
-                this._setValue(element, "customerInlineCreateProvince", sunatData.province || "");
-                this._setValue(element, "customerInlineCreateDistrict", sunatData.district || "");
                 this._setValue(element, "customerInlineCreateCondition", (sunatData.raw && sunatData.raw.condicion) || "");
                 this._setChecked(element, "customerInlineCreateRetention", sunatData.isRetentionAgent);
                 this._setChecked(element, "customerInlineCreatePerception", sunatData.isPerceptionAgent);
@@ -705,6 +919,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 this._setChecked(element, "customerInlineCreateFinalConsumer", sunatData.isFinalConsumer);
                 this._setChecked(element, "customerInlineCreateOthers", sunatData.isOthers);
                 this._setChecked(element, "customerInlineCreateNotDomiciled", sunatData.isNotDomiciled);
+                // SUNAT devuelve NOMBRES de ubigeo; la cascada trabaja con CÓDIGOS. Se resuelven
+                // una vez y se deja la cascada posicionada. Si algún nivel no está en el maestro,
+                // el cajero lo elige del desplegable — el caso que antes se perdía en silencio.
+                this._preselectGeographyFromSunat(element, sunatData);
                 this._selectPurposeForDocumentType(element, sunatData.documentType);
                 // RUC 20 es organización; DNI y demás documentos de persona son Persona.
                 this._setValue(element, "customerInlineCreateCustomerType",
@@ -842,11 +1060,27 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
                 address.ExtensionProperties = [];
                 
-                if (u && u.IsValid) {
+                // Los códigos salen de la cascada, no de ResolveUbigeo: el desplegable los tomó
+                // del maestro, así que no hay nada que resolver ni que pueda venir mal escrito.
+                // ResolveUbigeo solo sirvió para dejar la cascada preseleccionada.
+                const stateId: string = this._getValue(element, "customerInlineCreateDepartment");
+                const countyId: string = this._getValue(element, "customerInlineCreateProvince");
+                const cityCode: string = this._getValue(element, "customerInlineCreateDistrict");
+
+                if (stateId && countyId && cityCode) {
+                    address.State = stateId;
+                    address.County = countyId;
+                    address.City = cityCode;
+                    address.DistrictName = this._getSelectedLabel(element, "customerInlineCreateDistrict");
+                } else if (u && u.IsValid) {
+                    // Respaldo: la cascada no llegó a completarse pero el ubigeo sí resolvió.
                     address.State = u.StateId;
                     address.County = u.CountyId;
                     address.City = u.CityName;
                     address.DistrictName = sunatData.district || "";
+                } else {
+                    this._logChunked("=== Direccion sin ubigeo ===",
+                        "se envia solo la calle; complete departamento, provincia y distrito para que quede completa");
                 }
                 
                 customer.Addresses = [address];
@@ -1239,6 +1473,14 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _setValue(element: HTMLElement, id: string, value: string): void {
         const target: HTMLInputElement = element.querySelector("#" + id) as HTMLInputElement;
         if (target) target.value = value || "";
+    }
+
+    private _getSelectedLabel(element: HTMLElement, id: string): string {
+        const select: HTMLSelectElement = element.querySelector("#" + id) as HTMLSelectElement;
+        if (!select || select.selectedIndex < 0) {
+            return "";
+        }
+        return select.options[select.selectedIndex].text || "";
     }
 
     private _getChecked(element: HTMLElement, id: string): boolean {

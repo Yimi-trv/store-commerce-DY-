@@ -1,4 +1,4 @@
-System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest", "../../../DataService/CustomerSearchRequest"], function (exports_1, context_1) {
+System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest", "../../../DataService/CustomerSearchRequest", "../../../DataService/GeographicRequests", "PosApi/Consume/StoreOperations"], function (exports_1, context_1) {
     "use strict";
     var __extends = (this && this.__extends) || (function () {
         var extendStatics = function (d, b) {
@@ -15,7 +15,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, CustomerSearchRequest_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
+    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, CustomerSearchRequest_1, GeographicRequests_1, StoreOperations_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -48,6 +48,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             },
             function (CustomerSearchRequest_1_1) {
                 CustomerSearchRequest_1 = CustomerSearchRequest_1_1;
+            },
+            function (GeographicRequests_1_1) {
+                GeographicRequests_1 = GeographicRequests_1_1;
+            },
+            function (StoreOperations_1_1) {
+                StoreOperations_1 = StoreOperations_1_1;
             }
         ],
         execute: function () {
@@ -132,6 +138,19 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     this._setMode(element, this._mode);
                     this._loadAddressPurposes(element);
                     this._loadCustomerGroups(element);
+                    this._loadDepartments(element);
+                    var departmentSelect = element.querySelector("#customerInlineCreateDepartment");
+                    if (departmentSelect) {
+                        departmentSelect.onchange = function () {
+                            _this._loadProvinces(element, departmentSelect.value);
+                        };
+                    }
+                    var provinceSelect = element.querySelector("#customerInlineCreateProvince");
+                    if (provinceSelect) {
+                        provinceSelect.onchange = function () {
+                            _this._loadDistricts(element, departmentSelect ? departmentSelect.value : "", provinceSelect.value);
+                        };
+                    }
                 };
                 CustomerInlineDialog.prototype._widenHostDialog = function (element) {
                     var TARGET_WIDTH = 900;
@@ -174,6 +193,142 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         .catch(function (reason) {
                         _this._logChunked("=== Grupos de cliente ===", "GetCustomerGroups fallo, se usa el del canal por defecto: " + _this._getErrorMessage(reason));
                         _this._fillGroupSelect(element, []);
+                    });
+                };
+                CustomerInlineDialog.prototype._preselectGeographyFromSunat = function (element, sunatData) {
+                    var _this = this;
+                    if (!sunatData.department && !sunatData.province && !sunatData.district) {
+                        return Promise.resolve();
+                    }
+                    var request = new DataServiceRequests_g_1.TRU_GeographicData.ResolveUbigeoRequest(sunatData.department || "", sunatData.province || "", sunatData.district || "");
+                    return this.context.runtime.executeAsync(request)
+                        .then(function (response) {
+                        var resolved = response && response.data && response.data.result && response.data.result[0];
+                        if (!resolved || !resolved.IsValid) {
+                            _this._logChunked("=== Cascada geografica ===", "el ubigeo de SUNAT no resolvio; el cajero debe elegirlo del desplegable. "
+                                + (resolved ? resolved.Notes || "" : ""));
+                            return Promise.resolve();
+                        }
+                        return _this._preselectGeography(element, resolved.StateId, resolved.CountyId, resolved.CityName);
+                    })
+                        .catch(function (reason) {
+                        _this._logError("Preseleccion de ubigeo fallo: " + _this._stringify(reason));
+                    });
+                };
+                CustomerInlineDialog.prototype._loadDepartments = function (element) {
+                    var _this = this;
+                    return this.context.runtime
+                        .executeAsync(new StoreOperations_1.GetStateProvincesServiceRequest(this._getCorrelationId(), "PER"))
+                        .then(function (response) {
+                        var states = (response && response.data && response.data.stateProvinces) || [];
+                        var options = [];
+                        for (var i = 0; i < states.length; i++) {
+                            options.push({
+                                value: states[i].StateId || "",
+                                label: states[i].StateName || states[i].StateId || ""
+                            });
+                        }
+                        _this._fillGeoSelect(element, "customerInlineCreateDepartment", options, "Seleccione departamento");
+                        _this._logChunked("=== Departamentos ===", options.length + " cargados");
+                    })
+                        .catch(function (reason) {
+                        _this._logChunked("=== Departamentos ===", "no se pudieron cargar: " + _this._getErrorMessage(reason));
+                    });
+                };
+                CustomerInlineDialog.prototype._loadProvinces = function (element, stateId) {
+                    var _this = this;
+                    this._fillGeoSelect(element, "customerInlineCreateProvince", [], "Seleccione provincia");
+                    this._fillGeoSelect(element, "customerInlineCreateDistrict", [], "Seleccione distrito");
+                    if (!stateId) {
+                        return Promise.resolve();
+                    }
+                    return this.context.runtime
+                        .executeAsync(new GeographicRequests_1.GetCountiesRequest(stateId))
+                        .then(function (response) {
+                        var counties = (response && response.data && response.data.result) || [];
+                        var options = [];
+                        for (var i = 0; i < counties.length; i++) {
+                            options.push({
+                                value: counties[i].CountyId || "",
+                                label: counties[i].Name || counties[i].CountyId || ""
+                            });
+                        }
+                        _this._fillGeoSelect(element, "customerInlineCreateProvince", options, "Seleccione provincia");
+                    })
+                        .catch(function (reason) {
+                        _this._logChunked("=== Provincias ===", "no se pudieron cargar: " + _this._getErrorMessage(reason));
+                    });
+                };
+                CustomerInlineDialog.prototype._loadDistricts = function (element, stateId, countyId) {
+                    var _this = this;
+                    this._fillGeoSelect(element, "customerInlineCreateDistrict", [], "Seleccione distrito");
+                    if (!stateId || !countyId) {
+                        return Promise.resolve();
+                    }
+                    return this.context.runtime
+                        .executeAsync(new GeographicRequests_1.GetCitiesRequest(stateId, countyId))
+                        .then(function (response) {
+                        var cities = (response && response.data && response.data.result) || [];
+                        var options = [];
+                        for (var i = 0; i < cities.length; i++) {
+                            options.push({
+                                value: cities[i].Name || "",
+                                label: cities[i].Description || cities[i].Name || ""
+                            });
+                        }
+                        _this._fillGeoSelect(element, "customerInlineCreateDistrict", options, "Seleccione distrito");
+                    })
+                        .catch(function (reason) {
+                        _this._logChunked("=== Distritos ===", "no se pudieron cargar: " + _this._getErrorMessage(reason));
+                    });
+                };
+                CustomerInlineDialog.prototype._fillGeoSelect = function (element, id, options, placeholder) {
+                    var select = element.querySelector("#" + id);
+                    if (!select) {
+                        return;
+                    }
+                    select.innerHTML = "";
+                    var empty = document.createElement("option");
+                    empty.value = "";
+                    empty.text = options.length > 0 ? placeholder : "(sin opciones)";
+                    select.appendChild(empty);
+                    for (var i = 0; i < options.length; i++) {
+                        var option = document.createElement("option");
+                        option.value = options[i].value;
+                        option.text = options[i].label;
+                        select.appendChild(option);
+                    }
+                    select.disabled = options.length === 0;
+                };
+                CustomerInlineDialog.prototype._trySelectByValue = function (element, id, value) {
+                    var select = element.querySelector("#" + id);
+                    if (!select || !value) {
+                        return false;
+                    }
+                    for (var i = 0; i < select.options.length; i++) {
+                        if (select.options[i].value === value) {
+                            select.selectedIndex = i;
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                CustomerInlineDialog.prototype._preselectGeography = function (element, stateId, countyId, cityCode) {
+                    var _this = this;
+                    if (!this._trySelectByValue(element, "customerInlineCreateDepartment", stateId)) {
+                        this._logChunked("=== Cascada geografica ===", "departamento " + stateId + " no esta en el maestro");
+                        return Promise.resolve();
+                    }
+                    return this._loadProvinces(element, stateId)
+                        .then(function () {
+                        if (!_this._trySelectByValue(element, "customerInlineCreateProvince", countyId)) {
+                            _this._logChunked("=== Cascada geografica ===", "provincia " + countyId + " no esta en el maestro");
+                            return Promise.resolve();
+                        }
+                        return _this._loadDistricts(element, stateId, countyId)
+                            .then(function () {
+                            _this._trySelectByValue(element, "customerInlineCreateDistrict", cityCode);
+                        });
                     });
                 };
                 CustomerInlineDialog.prototype._fillGroupSelect = function (element, options) {
@@ -497,9 +652,6 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._lastSunatData = sunatData;
                         _this._setValue(element, "customerInlineCreateName", sunatData.name || "");
                         _this._setValue(element, "customerInlineCreateAddress", sunatData.address || "");
-                        _this._setValue(element, "customerInlineCreateDepartment", sunatData.department || "");
-                        _this._setValue(element, "customerInlineCreateProvince", sunatData.province || "");
-                        _this._setValue(element, "customerInlineCreateDistrict", sunatData.district || "");
                         _this._setValue(element, "customerInlineCreateCondition", (sunatData.raw && sunatData.raw.condicion) || "");
                         _this._setChecked(element, "customerInlineCreateRetention", sunatData.isRetentionAgent);
                         _this._setChecked(element, "customerInlineCreatePerception", sunatData.isPerceptionAgent);
@@ -509,6 +661,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._setChecked(element, "customerInlineCreateFinalConsumer", sunatData.isFinalConsumer);
                         _this._setChecked(element, "customerInlineCreateOthers", sunatData.isOthers);
                         _this._setChecked(element, "customerInlineCreateNotDomiciled", sunatData.isNotDomiciled);
+                        _this._preselectGeographyFromSunat(element, sunatData);
                         _this._selectPurposeForDocumentType(element, sunatData.documentType);
                         _this._setValue(element, "customerInlineCreateCustomerType", String(sunatData.documentType === "RUC"
                             ? Entities_1.ProxyEntities.CustomerType.Organization
@@ -607,11 +760,23 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             address.RecordId = 0;
                             address.Deactivate = false;
                             address.ExtensionProperties = [];
-                            if (u && u.IsValid) {
+                            var stateId = _this._getValue(element, "customerInlineCreateDepartment");
+                            var countyId = _this._getValue(element, "customerInlineCreateProvince");
+                            var cityCode = _this._getValue(element, "customerInlineCreateDistrict");
+                            if (stateId && countyId && cityCode) {
+                                address.State = stateId;
+                                address.County = countyId;
+                                address.City = cityCode;
+                                address.DistrictName = _this._getSelectedLabel(element, "customerInlineCreateDistrict");
+                            }
+                            else if (u && u.IsValid) {
                                 address.State = u.StateId;
                                 address.County = u.CountyId;
                                 address.City = u.CityName;
                                 address.DistrictName = sunatData.district || "";
+                            }
+                            else {
+                                _this._logChunked("=== Direccion sin ubigeo ===", "se envia solo la calle; complete departamento, provincia y distrito para que quede completa");
                             }
                             customer.Addresses = [address];
                             _this._logChunked("=== Address enviada ===", _this._stringify(address));
@@ -914,6 +1079,13 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     var target = element.querySelector("#" + id);
                     if (target)
                         target.value = value || "";
+                };
+                CustomerInlineDialog.prototype._getSelectedLabel = function (element, id) {
+                    var select = element.querySelector("#" + id);
+                    if (!select || select.selectedIndex < 0) {
+                        return "";
+                    }
+                    return select.options[select.selectedIndex].text || "";
                 };
                 CustomerInlineDialog.prototype._getChecked = function (element, id) {
                     var target = element.querySelector("#" + id);

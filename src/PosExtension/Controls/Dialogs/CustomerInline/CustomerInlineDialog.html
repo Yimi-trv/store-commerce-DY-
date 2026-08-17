@@ -262,17 +262,20 @@
                 <label for="customerInlineCreateAddress">Dirección fiscal:</label>
                 <input id="customerInlineCreateAddress" type="text" />
             </div>
+            <!-- Desplegables en cascada alimentados desde los maestros geográficos de D365.
+                 Antes eran texto libre y un solo carácter distinto hacía que el ubigeo no
+                 resolviera y la dirección se descartara en silencio. -->
             <div class="customer-inline-dialog__field">
                 <label for="customerInlineCreateDepartment">Departamento:</label>
-                <input id="customerInlineCreateDepartment" type="text" />
+                <select id="customerInlineCreateDepartment"></select>
             </div>
             <div class="customer-inline-dialog__field">
                 <label for="customerInlineCreateProvince">Provincia:</label>
-                <input id="customerInlineCreateProvince" type="text" />
+                <select id="customerInlineCreateProvince" disabled></select>
             </div>
             <div class="customer-inline-dialog__field">
                 <label for="customerInlineCreateDistrict">Distrito:</label>
-                <input id="customerInlineCreateDistrict" type="text" />
+                <select id="customerInlineCreateDistrict" disabled></select>
             </div>
             <div class="customer-inline-dialog__field">
                 <label for="customerInlineCreateCondition">Condición:</label>
