@@ -40,7 +40,6 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
                     if (window[CustomerModalHelper_1.GUARD_KEY] || window[CustomerModalHelper_1.PROGRAMMATIC_KEY]) {
                         return Promise.resolve({ canceled: false });
                     }
-<<<<<<< HEAD
                     var initialSearchText = (options && options.searchText) || "";
                     window[CustomerModalHelper_1.GUARD_KEY] = true;
                     var dialog = new CustomerInlineDialog_1.default();
@@ -51,15 +50,6 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
                         }
                         window[CustomerModalHelper_1.GUARD_KEY] = false;
                         return Promise.resolve({ canceled: true });
-=======
-                    var dialog = new CustomerInlineDialog_1.default();
-                    return dialog.open("search", null, "")
-                        .then(function (result) {
-                        if (result && result.action === "native_search") {
-                            return { canceled: false };
-                        }
-                        return { canceled: true };
->>>>>>> 3ef2e5af97826f953ad157ca3af3ecfd9ca9ddcd
                     })
                         .catch(function (reason) {
                         window[CustomerModalHelper_1.GUARD_KEY] = false;

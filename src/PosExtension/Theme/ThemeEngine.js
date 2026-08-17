@@ -74,22 +74,38 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                 };
                 ThemeEngine.zonaBoleta = function () {
                     var encontrada = ThemeEngine.zona(/seleccionar una preferencia/i);
-                    if (!encontrada)
-                        encontrada = ThemeEngine.q("#CustomControl1");
-                    return encontrada;
+                    if (encontrada)
+                        return encontrada;
+                    var control = ThemeEngine.q("#CustomControl1");
+                    var raiz = ThemeEngine.raiz();
+                    if (!control || !raiz)
+                        return null;
+                    var actual = control;
+                    while (actual && actual.parentElement !== raiz)
+                        actual = actual.parentElement;
+                    return actual;
                 };
                 ThemeEngine.marcarTituloBoleta = function (zonaBoleta) {
                     if (!zonaBoleta)
                         return;
+                    var objetivo = null;
                     var posibles = zonaBoleta.querySelectorAll("*");
                     for (var i = 0; i < posibles.length; i++) {
                         var elemento = posibles[i];
                         var texto = (elemento.textContent || "").trim();
                         if (elemento.children.length === 0 && (texto === "Boleta" || texto === "Factura") && !elemento.closest("select")) {
-                            elemento.classList.add("sct-titulo");
-                            return;
+                            objetivo = elemento;
+                            break;
                         }
                     }
+                    var previos = zonaBoleta.querySelectorAll(".sct-titulo");
+                    for (var p = 0; p < previos.length; p++) {
+                        var viejo = previos[p];
+                        if (viejo !== objetivo)
+                            viejo.classList.remove("sct-titulo");
+                    }
+                    if (objetivo && !objetivo.classList.contains("sct-titulo"))
+                        objetivo.classList.add("sct-titulo");
                 };
                 ThemeEngine.decorarBoleto = function (botones) {
                     var defs = [
@@ -97,27 +113,58 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         { n: 2, re: /tercero|honorario/i, titulo: "A cuenta de terceros", sub: "RECIBO POR HONORARIOS" }
                     ];
                     var usados = {};
-                    for (var i = 0; i < botones.length; i++) {
+                    var asignadas = [];
+                    var i = 0;
+                    var j = 0;
+                    for (i = 0; i < botones.length; i++) {
+                        asignadas[i] = null;
                         var texto = botones[i].textContent || "";
-                        var def = null;
-                        for (var j = 0; j < defs.length; j++) {
+                        for (j = 0; j < defs.length; j++) {
                             if (!usados[defs[j].n] && defs[j].re.test(texto)) {
-                                def = defs[j];
+                                asignadas[i] = defs[j];
+                                usados[defs[j].n] = true;
                                 break;
                             }
                         }
-                        if (!def && i < defs.length && !usados[defs[i].n])
-                            def = defs[i];
-                        if (!def)
+                    }
+                    for (i = 0; i < botones.length; i++) {
+                        if (asignadas[i])
                             continue;
-                        usados[def.n] = true;
-                        botones[i].classList.add("sct-bbtn", "sct-b" + def.n);
+                        for (j = 0; j < defs.length; j++) {
+                            if (!usados[defs[j].n]) {
+                                asignadas[i] = defs[j];
+                                usados[defs[j].n] = true;
+                                break;
+                            }
+                        }
+                    }
+                    for (i = 0; i < botones.length; i++) {
+                        var def = asignadas[i];
+                        var clases = botones[i].classList;
+                        if (!def) {
+                            if (clases.contains("sct-bbtn"))
+                                clases.remove("sct-bbtn", "sct-b1", "sct-b2");
+                            continue;
+                        }
+                        var clase = "sct-b" + def.n;
+                        if (!clases.contains(clase)) {
+                            if (clases.contains("sct-b1"))
+                                clases.remove("sct-b1");
+                            if (clases.contains("sct-b2"))
+                                clases.remove("sct-b2");
+                            clases.add(clase);
+                        }
+                        if (!clases.contains("sct-bbtn"))
+                            clases.add("sct-bbtn");
                         ThemeEngine.estilo(botones[i], { "background-color": "#1B1A19", "color": "#FFFFFF", "background-image": "none" });
                         ThemeEngine.icono(botones[i], "sct-ic-b" + def.n);
                         var etiqueta = botones[i].querySelector("div");
-                        if (etiqueta && !etiqueta.querySelector(".sct-b-t")) {
-                            var destino = etiqueta.querySelector(".h4") || etiqueta;
-                            destino.innerHTML = "<span class=\"sct-b-t\">" + def.titulo + "</span><span class=\"sct-b-s\">" + def.sub + "</span>";
+                        if (etiqueta) {
+                            var marca = etiqueta.querySelector(".sct-b-t");
+                            if (!marca || (marca.textContent || "") !== def.titulo) {
+                                var destino = etiqueta.querySelector(".h4") || etiqueta;
+                                destino.innerHTML = "<span class=\"sct-b-t\">" + def.titulo + "</span><span class=\"sct-b-s\">" + def.sub + "</span>";
+                            }
                         }
                     }
                 };

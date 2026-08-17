@@ -214,7 +214,7 @@ System.register([], function (exports_1, context_1) {
             + "#ButtonGrid3Control .sct-b-t{font-size:16px !important;}\n"
             + "#ButtonGrid3Control .sct-b-s{font-size:12px !important;}\n"
             + "#CustomControl1{width:340px !important;height:94px !important;min-height:0 !important;max-height:94px !important;padding:6px 10px 7px !important;box-sizing:border-box !important;overflow:hidden !important;border:1px solid rgba(255,255,255,0.12) !important;border-radius:14px !important;background:rgba(22,21,20,0.6) !important;}\n"
-            + "#CustomControl1 .sct-titulo{font-size:12px !important;font-weight:600 !important;color:#FFFFFF !important;line-height:1.1 !important;}\n"
+            + "#CustomControl1 .sct-titulo,.sct-boleta .sct-titulo{font-size:12px !important;font-weight:600 !important;color:#FFFFFF !important;line-height:1.1 !important;margin:0 !important;}\n"
             + "#CustomControl1 select{width:100% !important;height:24px !important;min-height:24px !important;font-size:11px !important;}\n"
             + "#CustomControl1 #btnToggle{width:100% !important;height:26px !important;min-height:26px !important;max-height:26px !important;font-size:11px !important;line-height:1 !important;}\n"
             + "#ButtonGrid4, #ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer{width:340px !important;height:127px !important;min-height:0 !important;max-height:127px !important;overflow:hidden !important;padding:0 !important;}\n"
