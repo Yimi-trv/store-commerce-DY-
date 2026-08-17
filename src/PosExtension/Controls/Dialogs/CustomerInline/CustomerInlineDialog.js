@@ -533,15 +533,24 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this._setValue(element, "customerInlineEditPhone", this._currentCustomer.Phone || "");
                         this._setValue(element, "customerInlineEditEmail", this._currentCustomer.Email || "");
                         this._showTextResult(element, "customerInlineEditResult", this._formatCustomerSummary(this._currentCustomer));
+                        this._logCustomerIdentity("desde el trigger", this._currentCustomer);
                         var addresses = this._currentCustomer.Addresses || [];
+                        var hasDocument = !!this._sunatService.getDocumentNumber(this._currentCustomer);
                         if (addresses.length > 0) {
                             this._prefillAddressFromCustomer(element, this._currentCustomer);
                         }
-                        else if (this._currentCustomer.AccountNumber) {
+                        if ((addresses.length === 0 || !hasDocument) && this._currentCustomer.AccountNumber) {
                             this._getCustomerByAccount(this._currentCustomer.AccountNumber)
                                 .then(function (full) {
-                                if (full) {
-                                    _this._currentCustomer = full;
+                                if (!full) {
+                                    return;
+                                }
+                                _this._currentCustomer = full;
+                                _this._logCustomerIdentity("releído por cuenta", full);
+                                if (!_this._getValue(element, "customerInlineEditDocument")) {
+                                    _this._setValue(element, "customerInlineEditDocument", _this._sunatService.getDocumentNumber(full) || "");
+                                }
+                                if ((full.Addresses || []).length > 0) {
                                     _this._prefillAddressFromCustomer(element, full);
                                 }
                             })
@@ -550,6 +559,22 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             });
                         }
                     }
+                };
+                CustomerInlineDialog.prototype._logCustomerIdentity = function (origen, customer) {
+                    var properties = (customer && customer.ExtensionProperties) || [];
+                    var lines = [];
+                    for (var i = 0; i < properties.length; i++) {
+                        var property = properties[i];
+                        var value = property && property.Value;
+                        lines.push("  " + (property && property.Key)
+                            + " = " + this._stringify(value && (value.StringValue || value.IntegerValue || value)));
+                    }
+                    this._logChunked("=== Identidad del cliente (" + origen + ") ===", "AccountNumber=" + ((customer && customer.AccountNumber) || "(vacio)")
+                        + " | PartyNumber=" + ((customer && customer.PartyNumber) || "(vacio)")
+                        + " | IdentificationNumber=" + ((customer && customer.IdentificationNumber) || "(vacio)")
+                        + " | documento resuelto=" + (this._sunatService.getDocumentNumber(customer) || "(vacio)")
+                        + "\nExtensionProperties (" + properties.length + "):\n"
+                        + (lines.length > 0 ? lines.join("\n") : "  (ninguna)"));
                 };
                 CustomerInlineDialog.prototype._prefillAddressFromCustomer = function (element, customer) {
                     var addresses = (customer && customer.Addresses) || [];

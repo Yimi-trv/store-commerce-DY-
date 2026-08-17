@@ -806,17 +806,37 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             this._setValue(element, "customerInlineEditEmail", this._currentCustomer.Email || "");
             this._showTextResult(element, "customerInlineEditResult", this._formatCustomerSummary(this._currentCustomer));
 
-            // El cliente que entrega el trigger puede venir sin direcciones. En ese caso se
-            // relee por cuenta, o el formulario de edición saldría vacío y el cajero
-            // terminaría creando una dirección nueva sin darse cuenta.
+            this._logCustomerIdentity("desde el trigger", this._currentCustomer);
+
+            // El cliente que entrega el trigger viene INCOMPLETO: puede llegar sin direcciones y
+            // sin propiedades de extensión —o sea, sin el documento—. Se relee por cuenta cuando
+            // falte cualquiera de las dos cosas; si no, el formulario sale vacío y el cajero
+            // termina creando una dirección nueva o perdiendo el documento sin darse cuenta.
             const addresses: any[] = this._currentCustomer.Addresses || [];
+            const hasDocument: boolean = !!this._sunatService.getDocumentNumber(this._currentCustomer);
+
             if (addresses.length > 0) {
                 this._prefillAddressFromCustomer(element, this._currentCustomer);
-            } else if (this._currentCustomer.AccountNumber) {
+            }
+
+            if ((addresses.length === 0 || !hasDocument) && this._currentCustomer.AccountNumber) {
                 this._getCustomerByAccount(this._currentCustomer.AccountNumber)
                     .then((full: ProxyEntities.Customer | null): void => {
-                        if (full) {
-                            this._currentCustomer = full;
+                        if (!full) {
+                            return;
+                        }
+
+                        this._currentCustomer = full;
+                        this._logCustomerIdentity("releído por cuenta", full);
+
+                        // Solo se completa lo que faltaba: si el trigger ya trajo el documento,
+                        // no se pisa.
+                        if (!this._getValue(element, "customerInlineEditDocument")) {
+                            this._setValue(element, "customerInlineEditDocument",
+                                this._sunatService.getDocumentNumber(full) || "");
+                        }
+
+                        if ((full.Addresses || []).length > 0) {
                             this._prefillAddressFromCustomer(element, full);
                         }
                     })
@@ -825,6 +845,34 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                     });
             }
         }
+    }
+
+    /**
+     * Vuelca qué identificadores trae realmente el cliente.
+     *
+     * Hizo falta porque el formulario de edición mostraba el PartyNumber como documento y no
+     * había forma de saber, desde fuera, si el problema era que la propiedad de extensión venía
+     * vacía o que se estaba leyendo la equivocada. Se listan los NOMBRES de todas las
+     * propiedades de extensión: cuáles llegan al POS no está documentado en ningún sitio.
+     */
+    private _logCustomerIdentity(origen: string, customer: ProxyEntities.Customer): void {
+        const properties: any[] = (customer && customer.ExtensionProperties) || [];
+        const lines: string[] = [];
+
+        for (let i: number = 0; i < properties.length; i++) {
+            const property: any = properties[i];
+            const value: any = property && property.Value;
+            lines.push("  " + (property && property.Key)
+                + " = " + this._stringify(value && (value.StringValue || value.IntegerValue || value)));
+        }
+
+        this._logChunked("=== Identidad del cliente (" + origen + ") ===",
+            "AccountNumber=" + ((customer && customer.AccountNumber) || "(vacio)")
+            + " | PartyNumber=" + ((customer && customer.PartyNumber) || "(vacio)")
+            + " | IdentificationNumber=" + ((customer && customer.IdentificationNumber) || "(vacio)")
+            + " | documento resuelto=" + (this._sunatService.getDocumentNumber(customer) || "(vacio)")
+            + "\nExtensionProperties (" + properties.length + "):\n"
+            + (lines.length > 0 ? lines.join("\n") : "  (ninguna)"));
     }
 
     /**

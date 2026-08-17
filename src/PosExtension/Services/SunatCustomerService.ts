@@ -318,6 +318,18 @@ export default class SunatCustomerService {
         };
     }
 
+    /**
+     * Documento fiscal del cliente. Cadena vacía si no tiene.
+     *
+     * NO SE USA `PartyNumber` COMO RESPALDO. Lo hacía, y al editar un cliente cuyo
+     * DPNUMBERDOCUMID_PE llega vacío el formulario mostraba algo como "000243421" —el número de
+     * tercero interno de D365— como si fuera su documento. Un identificador interno no es un
+     * documento fiscal y no hay ninguna relación entre los dos.
+     *
+     * Era además una bomba de tiempo: al guardar, ese número se reescribía sobre el documento
+     * del cliente si tenía 8 u 11 dígitos, o sea, si por casualidad pasaba la validación de
+     * longitud. Vale más devolver vacío y que el cajero lo vea que inventar un número.
+     */
     public getDocumentNumber(customer: ProxyEntities.Customer): string {
         const valueFromProperty: string = this._getStringProperty(customer, "DPNUMBERDOCUMID_PE");
 
@@ -325,7 +337,11 @@ export default class SunatCustomerService {
             return valueFromProperty;
         }
 
-        return this.normalizeDocument((customer && (customer.IdentificationNumber || customer.PartyNumber)) || "");
+        // IdentificationNumber sí es un documento: applyDocumentProperties lo escribe junto con
+        // la propiedad de extensión. Solo se acepta si tiene forma de DNI o RUC.
+        const identification: string = this.normalizeDocument((customer && customer.IdentificationNumber) || "");
+
+        return this.getDocumentType(identification) ? identification : "";
     }
 
     public applyDocumentProperties(customer: ProxyEntities.Customer, documentNumber: string): ProxyEntities.Customer {

@@ -162,7 +162,8 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     if (valueFromProperty) {
                         return valueFromProperty;
                     }
-                    return this.normalizeDocument((customer && (customer.IdentificationNumber || customer.PartyNumber)) || "");
+                    var identification = this.normalizeDocument((customer && customer.IdentificationNumber) || "");
+                    return this.getDocumentType(identification) ? identification : "";
                 };
                 SunatCustomerService.prototype.applyDocumentProperties = function (customer, documentNumber) {
                     var normalizedDocument = this.normalizeDocument(documentNumber);
