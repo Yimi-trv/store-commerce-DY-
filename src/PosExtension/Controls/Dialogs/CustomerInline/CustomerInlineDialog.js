@@ -139,6 +139,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     this._loadAddressPurposes(element);
                     this._loadCustomerGroups(element);
                     this._loadDepartments(element);
+                    var customerTypeSelect = element.querySelector("#customerInlineCreateCustomerType");
+                    if (customerTypeSelect) {
+                        customerTypeSelect.onchange = function () {
+                            _this._togglePersonNameFields(element, parseInt(customerTypeSelect.value, 10) !== Entities_1.ProxyEntities.CustomerType.Organization);
+                        };
+                    }
                     var departmentSelect = element.querySelector("#customerInlineCreateDepartment");
                     if (departmentSelect) {
                         departmentSelect.onchange = function () {
@@ -434,6 +440,22 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                     return purposeLabel;
                 };
+                CustomerInlineDialog.prototype._applyCustomerType = function (element, customerTypeValue) {
+                    var select = element.querySelector("#customerInlineCreateCustomerType");
+                    if (select) {
+                        select.value = String(customerTypeValue);
+                    }
+                    this._togglePersonNameFields(element, customerTypeValue !== Entities_1.ProxyEntities.CustomerType.Organization);
+                };
+                CustomerInlineDialog.prototype._togglePersonNameFields = function (element, isPerson) {
+                    var ids = ["customerInlineCreateLastNameField", "customerInlineCreateFirstNameField"];
+                    for (var i = 0; i < ids.length; i++) {
+                        var field = element.querySelector("#" + ids[i]);
+                        if (field) {
+                            field.style.display = isPerson ? "" : "none";
+                        }
+                    }
+                };
                 CustomerInlineDialog.prototype._selectPurposeForDocumentType = function (element, documentType) {
                     var select = element.querySelector("#customerInlineCreateAddressPurpose");
                     if (!select) {
@@ -704,6 +726,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._setChecked(element, "customerInlineCreateFinalConsumer", sunatData.isFinalConsumer);
                         _this._setChecked(element, "customerInlineCreateOthers", sunatData.isOthers);
                         _this._setChecked(element, "customerInlineCreateNotDomiciled", sunatData.isNotDomiciled);
+                        _this._setValue(element, "customerInlineCreateLastName", sunatData.lastName || "");
+                        _this._setValue(element, "customerInlineCreateFirstName", sunatData.firstName || "");
+                        _this._applyCustomerType(element, sunatData.customerTypeValue);
                         _this._preselectGeographyFromSunat(element, sunatData);
                         _this._selectPurposeForDocumentType(element, sunatData.documentType);
                         _this._setValue(element, "customerInlineCreateCustomerType", String(sunatData.documentType === "RUC"
@@ -838,6 +863,24 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     var selectedGroup = this._getValue(element, "customerInlineCreateCustomerGroup");
                     if (selectedGroup) {
                         customer.CustomerGroup = selectedGroup;
+                    }
+                    if (customer.CustomerTypeValue !== Entities_1.ProxyEntities.CustomerType.Organization) {
+                        var lastName = this._getValue(element, "customerInlineCreateLastName");
+                        var firstName = this._getValue(element, "customerInlineCreateFirstName");
+                        if (lastName) {
+                            customer.LastName = lastName;
+                        }
+                        if (firstName) {
+                            customer.FirstName = firstName;
+                        }
+                        if (!customer.LastName && !customer.FirstName && customer.Name) {
+                            var split = this._sunatService.splitPersonName(customer.Name);
+                            customer.LastName = split.lastName;
+                            customer.FirstName = split.firstName;
+                        }
+                        this._logChunked("=== Cliente persona ===", "LastName=" + (customer.LastName || "(vacio)")
+                            + " | FirstName=" + (customer.FirstName || "(vacio)")
+                            + " | Name=" + (customer.Name || "(vacio)"));
                     }
                     this._logChunked("=== Identidad del cliente ===", "CustomerTypeValue=" + customer.CustomerTypeValue
                         + " | CustomerGroup=" + (customer.CustomerGroup || "(lo resuelve el canal)"));

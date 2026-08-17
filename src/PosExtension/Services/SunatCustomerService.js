@@ -15,6 +15,26 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                 SunatCustomerService.prototype.normalizeDocument = function (documentNumber) {
                     return (documentNumber || "").replace(/\D/g, "");
                 };
+                SunatCustomerService.prototype.isOrganizationDocument = function (documentNumber) {
+                    var normalized = this.normalizeDocument(documentNumber);
+                    return normalized.length === 11 && normalized.indexOf("20") === 0;
+                };
+                SunatCustomerService.prototype.splitPersonName = function (fullName) {
+                    var parts = (fullName || "").replace(/\s+/g, " ").trim().split(" ");
+                    if (parts.length === 0 || parts[0] === "") {
+                        return { firstName: "", lastName: "" };
+                    }
+                    if (parts.length === 1) {
+                        return { firstName: "", lastName: parts[0] };
+                    }
+                    if (parts.length === 2) {
+                        return { lastName: parts[0], firstName: parts[1] };
+                    }
+                    return {
+                        lastName: parts[0] + " " + parts[1],
+                        firstName: parts.slice(2).join(" ")
+                    };
+                };
                 SunatCustomerService.prototype.getDocumentType = function (documentNumber) {
                     var normalizedDocument = this.normalizeDocument(documentNumber);
                     if (normalizedDocument.length === 11) {
@@ -122,7 +142,7 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     this._setStringProperty(customer, "DPTYPEDOCID_PE", documentType === "RUC" ? "6" : "1");
                     this._setStringProperty(customer, "DPNUMBERDOCUMID_PE", normalizedDocument);
                     customer.IdentificationNumber = normalizedDocument;
-                    if (documentType === "RUC") {
+                    if (this.isOrganizationDocument(normalizedDocument)) {
                         customer.CustomerTypeValue = 2;
                     }
                     else if (!customer.CustomerTypeValue) {
@@ -149,7 +169,7 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     if (!customer || !sunatData) {
                         return customer;
                     }
-                    if (sunatData.documentType === "RUC") {
+                    if (this.isOrganizationDocument(sunatData.documentNumber)) {
                         customer.Name = sunatData.name || customer.Name || "";
                         customer.CustomerTypeValue = 2;
                     }
@@ -189,12 +209,19 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     var lowerPadrones = padronesText.toLowerCase();
                     var lowerTipo = ((result && result.tipo) || "").toString().toLowerCase();
                     if (documentType === "RUC") {
+                        var razonSocial = (result && result.razon_social) || "";
+                        var isOrganization = this.isOrganizationDocument(documentNumber);
+                        var split = isOrganization
+                            ? { firstName: "", lastName: "" }
+                            : this.splitPersonName(razonSocial);
                         return {
                             documentNumber: documentNumber,
                             documentType: documentType,
                             documentTypeCode: "6",
-                            customerTypeValue: 2,
-                            name: (result && result.razon_social) || "",
+                            customerTypeValue: isOrganization ? 2 : 1,
+                            name: razonSocial,
+                            firstName: split.firstName,
+                            lastName: split.lastName,
                             padronesText: padronesText,
                             isRetentionAgent: lowerPadrones.indexOf("retencion") >= 0 || lowerPadrones.indexOf("retenci\u00f3n") >= 0,
                             isPerceptionAgent: lowerPadrones.indexOf("percepcion") >= 0 || lowerPadrones.indexOf("percepci\u00f3n") >= 0,

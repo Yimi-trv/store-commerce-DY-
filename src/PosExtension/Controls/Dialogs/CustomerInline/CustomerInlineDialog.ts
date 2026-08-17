@@ -216,6 +216,17 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         this._loadCustomerGroups(element);
         this._loadDepartments(element);
 
+        // Cambiar el tipo a mano muestra u oculta apellidos y nombres al instante.
+        const customerTypeSelect: HTMLSelectElement =
+            element.querySelector("#customerInlineCreateCustomerType") as HTMLSelectElement;
+        if (customerTypeSelect) {
+            customerTypeSelect.onchange = (): void => {
+                this._togglePersonNameFields(
+                    element,
+                    parseInt(customerTypeSelect.value, 10) !== ProxyEntities.CustomerType.Organization);
+            };
+        }
+
         // Cascada: cada nivel repuebla el siguiente.
         const departmentSelect: HTMLSelectElement =
             element.querySelector("#customerInlineCreateDepartment") as HTMLSelectElement;
@@ -671,6 +682,29 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         return purposeLabel;
     }
 
+    /**
+     * Posiciona el combo de tipo de cliente y muestra u oculta los campos de apellidos y
+     * nombres, que solo aplican a persona. Para organización D365 usa la razón social.
+     */
+    private _applyCustomerType(element: HTMLElement, customerTypeValue: number): void {
+        const select: HTMLSelectElement =
+            element.querySelector("#customerInlineCreateCustomerType") as HTMLSelectElement;
+        if (select) {
+            select.value = String(customerTypeValue);
+        }
+        this._togglePersonNameFields(element, customerTypeValue !== ProxyEntities.CustomerType.Organization);
+    }
+
+    private _togglePersonNameFields(element: HTMLElement, isPerson: boolean): void {
+        const ids: string[] = ["customerInlineCreateLastNameField", "customerInlineCreateFirstNameField"];
+        for (let i: number = 0; i < ids.length; i++) {
+            const field: HTMLElement = element.querySelector("#" + ids[i]) as HTMLElement;
+            if (field) {
+                field.style.display = isPerson ? "" : "none";
+            }
+        }
+    }
+
     private _selectPurposeForDocumentType(element: HTMLElement, documentType: string): void {
         const select: HTMLSelectElement =
             element.querySelector("#customerInlineCreateAddressPurpose") as HTMLSelectElement;
@@ -1008,6 +1042,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 // SUNAT devuelve NOMBRES de ubigeo; la cascada trabaja con CÓDIGOS. Se resuelven
                 // una vez y se deja la cascada posicionada. Si algún nivel no está en el maestro,
                 // el cajero lo elige del desplegable — el caso que antes se perdía en silencio.
+                this._setValue(element, "customerInlineCreateLastName", sunatData.lastName || "");
+                this._setValue(element, "customerInlineCreateFirstName", sunatData.firstName || "");
+                this._applyCustomerType(element, sunatData.customerTypeValue);
+
                 this._preselectGeographyFromSunat(element, sunatData);
                 this._selectPurposeForDocumentType(element, sunatData.documentType);
                 // RUC 20 es organización; DNI y demás documentos de persona son Persona.
@@ -1184,6 +1222,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         customer.Phone = phone || "";
         customer.Email = email || "";
 
+
         // Lo que el cajero eligió en los combos manda sobre lo que dedujo la consulta SUNAT.
         // Va después de applySunatIdentity, que fija CustomerTypeValue por su cuenta.
         const selectedType: string = this._getValue(element, "customerInlineCreateCustomerType");
@@ -1196,6 +1235,32 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         const selectedGroup: string = this._getValue(element, "customerInlineCreateCustomerGroup");
         if (selectedGroup) {
             customer.CustomerGroup = selectedGroup;
+        }
+
+        // En una PERSONA, D365 exige apellidos y nombres: sin ellos rechaza el alta con
+        // "Los campos de nombre son campos obligatorios". Eso pasaba con los RUC 10, que el
+        // código trataba como organización aunque son personas naturales con RUC.
+        // Va DESPUÉS de fijar CustomerTypeValue desde el combo, porque depende de él.
+        if (customer.CustomerTypeValue !== ProxyEntities.CustomerType.Organization) {
+            const lastName: string = this._getValue(element, "customerInlineCreateLastName");
+            const firstName: string = this._getValue(element, "customerInlineCreateFirstName");
+
+            if (lastName) { customer.LastName = lastName; }
+            if (firstName) { customer.FirstName = firstName; }
+
+            // Último recurso: si los campos quedaron vacíos, se parten del nombre completo en
+            // vez de dejar que el servidor rechace el alta.
+            if (!customer.LastName && !customer.FirstName && customer.Name) {
+                const split: { firstName: string; lastName: string } =
+                    this._sunatService.splitPersonName(customer.Name);
+                customer.LastName = split.lastName;
+                customer.FirstName = split.firstName;
+            }
+
+            this._logChunked("=== Cliente persona ===",
+                "LastName=" + (customer.LastName || "(vacio)")
+                + " | FirstName=" + (customer.FirstName || "(vacio)")
+                + " | Name=" + (customer.Name || "(vacio)"));
         }
 
         this._logChunked("=== Identidad del cliente ===",

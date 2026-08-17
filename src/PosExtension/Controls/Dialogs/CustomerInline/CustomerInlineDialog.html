@@ -224,6 +224,18 @@
                 <label for="customerInlineCreateName">Nombre completo / Razon Social:</label>
                 <input id="customerInlineCreateName" type="text" />
             </div>
+            <!-- Solo para PERSONA (DNI y RUC 10/15/17). D365 exige apellidos y nombres
+                 separados en una persona; con solo el nombre completo rechaza el alta con
+                 "Los campos de nombre son campos obligatorios".
+                 El corte que hace SUNAT es una heurística, así que quedan editables. -->
+            <div class="customer-inline-dialog__field" id="customerInlineCreateLastNameField">
+                <label for="customerInlineCreateLastName">Apellidos:</label>
+                <input id="customerInlineCreateLastName" type="text" />
+            </div>
+            <div class="customer-inline-dialog__field" id="customerInlineCreateFirstNameField">
+                <label for="customerInlineCreateFirstName">Nombres:</label>
+                <input id="customerInlineCreateFirstName" type="text" />
+            </div>
             <div class="customer-inline-dialog__field">
                 <label for="customerInlineCreateCustomerType">Tipo de cliente:</label>
                 <!-- Se preselecciona al consultar SUNAT: RUC 20 es Organización, DNI es Persona.

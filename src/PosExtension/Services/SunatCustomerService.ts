@@ -81,6 +81,48 @@ export default class SunatCustomerService {
         return (documentNumber || "").replace(/\D/g, "");
     }
 
+    /**
+     * Un RUC no implica organización. Según el criterio funcional de Terranova, solo el RUC que
+     * empieza en 20 es organización; los que empiezan en 10, 15 o 17 son PERSONAS naturales con
+     * RUC y D365 los exige con nombres y apellidos, no con razón social.
+     *
+     * Tratarlos a todos como organización provocaba "Los campos de nombre son campos
+     * obligatorios" al crear un RUC 10 — verificado en UAT con 10422774438.
+     */
+    public isOrganizationDocument(documentNumber: string): boolean {
+        const normalized: string = this.normalizeDocument(documentNumber);
+        return normalized.length === 11 && normalized.indexOf("20") === 0;
+    }
+
+    /**
+     * Parte la razón social de una persona natural con RUC en apellidos y nombres.
+     *
+     * SUNAT la entrega concatenada como "APELLIDO_PATERNO APELLIDO_MATERNO NOMBRES", así que se
+     * toman los dos primeros bloques como apellidos y el resto como nombres.
+     *
+     * ES UNA HEURÍSTICA: con apellidos compuestos ("DE LA CRUZ") o un solo nombre parte mal. Por
+     * eso los campos quedan editables en el modal — el cajero corrige lo que haga falta antes de
+     * crear.
+     */
+    public splitPersonName(fullName: string): { firstName: string; lastName: string } {
+        const parts: string[] = (fullName || "").replace(/\s+/g, " ").trim().split(" ");
+
+        if (parts.length === 0 || parts[0] === "") {
+            return { firstName: "", lastName: "" };
+        }
+        if (parts.length === 1) {
+            return { firstName: "", lastName: parts[0] };
+        }
+        if (parts.length === 2) {
+            return { lastName: parts[0], firstName: parts[1] };
+        }
+
+        return {
+            lastName: parts[0] + " " + parts[1],
+            firstName: parts.slice(2).join(" ")
+        };
+    }
+
     public getDocumentType(documentNumber: string): SunatDocumentType | null {
         const normalizedDocument: string = this.normalizeDocument(documentNumber);
 
@@ -231,7 +273,7 @@ export default class SunatCustomerService {
         this._setStringProperty(customer, "DPNUMBERDOCUMID_PE", normalizedDocument);
         customer.IdentificationNumber = normalizedDocument;
 
-        if (documentType === "RUC") {
+        if (this.isOrganizationDocument(normalizedDocument)) {
             customer.CustomerTypeValue = 2;
         } else if (!customer.CustomerTypeValue) {
             customer.CustomerTypeValue = 1;
@@ -264,7 +306,9 @@ export default class SunatCustomerService {
             return customer;
         }
 
-        if (sunatData.documentType === "RUC") {
+        // Lo que decide persona u organización es el PREFIJO del RUC, no el hecho de tener RUC.
+        // Solo el RUC 20 es organización; 10, 15 y 17 son personas naturales con RUC.
+        if (this.isOrganizationDocument(sunatData.documentNumber)) {
             customer.Name = sunatData.name || customer.Name || "";
             customer.CustomerTypeValue = 2;
         } else {
@@ -313,12 +357,23 @@ export default class SunatCustomerService {
         const lowerTipo: string = ((result && result.tipo) || "").toString().toLowerCase();
 
         if (documentType === "RUC") {
+            const razonSocial: string = (result && result.razon_social) || "";
+            const isOrganization: boolean = this.isOrganizationDocument(documentNumber);
+
+            // En un RUC de persona natural (10/15/17) la razón social viene con apellidos y
+            // nombres concatenados; D365 los necesita separados o rechaza el alta.
+            const split: { firstName: string; lastName: string } = isOrganization
+                ? { firstName: "", lastName: "" }
+                : this.splitPersonName(razonSocial);
+
             return {
                 documentNumber: documentNumber,
                 documentType: documentType,
                 documentTypeCode: "6",
-                customerTypeValue: 2,
-                name: (result && result.razon_social) || "",
+                customerTypeValue: isOrganization ? 2 : 1,
+                name: razonSocial,
+                firstName: split.firstName,
+                lastName: split.lastName,
                 padronesText: padronesText,
                 isRetentionAgent: lowerPadrones.indexOf("retencion") >= 0 || lowerPadrones.indexOf("retenci\u00f3n") >= 0,
                 isPerceptionAgent: lowerPadrones.indexOf("percepcion") >= 0 || lowerPadrones.indexOf("percepci\u00f3n") >= 0,
