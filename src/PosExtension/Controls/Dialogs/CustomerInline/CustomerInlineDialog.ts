@@ -77,6 +77,12 @@ import { GetAddressPurposesRequest, GetAddressPurposesResponse } from "../../../
 import { GetCustomerGroupsRequest, GetCustomerGroupsResponse } from "../../../DataService/CustomerGroupsRequest";
 import { CustomerSearchRequest, CustomerSearchResponse } from "../../../DataService/CustomerSearchRequest";
 import {
+    CustomerSearchByFieldsRequest,
+    CustomerSearchByFieldsResponse,
+    GetCustomerSearchFieldsRequest,
+    GetCustomerSearchFieldsResponse
+} from "../../../DataService/CustomerSearchByFieldsRequest";
+import {
     GetCitiesRequest,
     GetCitiesResponse,
     GetCountiesRequest,
@@ -131,6 +137,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      * instancia nueva cada vez. Vive en memoria y se pierde al recargar el POS.
      */
     private static _searchCache: { [key: string]: any[] } = {};
+
+    /** Campo de documento del canal, resuelto una sola vez por sesión. */
+    private static _documentSearchField: any = null;
+    private static _documentSearchFieldResolved: boolean = false;
 
     constructor() {
         super();
@@ -892,8 +902,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         this._setSearchBusy(element, true);
         this._showMessage(element, "Buscando en el sistema... puede tardar unos segundos.");
 
-        return this.context.runtime
-            .executeAsync(new CustomerSearchRequest<CustomerSearchResponse>(searchText, this._searchTop, this._searchSkip))
+        return this._runSearch(searchText)
             .then((response: any): void => {
                 const results: any[] = (response && response.data && response.data.result) || [];
                 CustomerInlineDialog._searchCache[cacheKey] = results;
@@ -918,6 +927,95 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             .then((): void => {
                 this._searchInFlight = false;
                 this._setSearchBusy(element, false);
+            });
+    }
+
+    /**
+     * Elige cómo buscar según lo que escribió el cajero.
+     *
+     * Si el término es un DNI (8 dígitos) o un RUC (11), se dirige a un campo concreto con
+     * `SearchByFields`. La búsqueda por palabra clave NO encuentra por número de documento: ese
+     * dato vive en la propiedad de extensión DPNUMBERDOCUMID_PE y el keyword no la cubre — que
+     * era justamente la búsqueda más usada en caja y la única que fallaba.
+     *
+     * Qué campos admite el canal lo dice `GetCustomerSearchFields()`; no se pueden cablear
+     * porque son una enumeración extensible que cada implantación define.
+     */
+    private _runSearch(searchText: string): Promise<any> {
+        const asDocument: string = this._sunatService.normalizeDocument(searchText);
+        const looksLikeDocument: boolean = asDocument === searchText.trim()
+            && (asDocument.length === 8 || asDocument.length === 11);
+
+        if (!looksLikeDocument) {
+            return this.context.runtime.executeAsync(
+                new CustomerSearchRequest<CustomerSearchResponse>(searchText, this._searchTop, this._searchSkip));
+        }
+
+        return this._getDocumentSearchField()
+            .then((field: any): Promise<any> => {
+                if (!field) {
+                    // El canal no expone un campo de documento: se busca por palabra clave, que
+                    // puede no encontrarlo. Queda registrado para saber si hay que resolverlo
+                    // con un endpoint propio en el CRT contra DPNUMBERDOCUMID_PE.
+                    this._logChunked("=== Busqueda por documento ===",
+                        "el canal no expone un campo de documento; se usa palabra clave");
+                    return this.context.runtime.executeAsync(
+                        new CustomerSearchRequest<CustomerSearchResponse>(searchText, this._searchTop, this._searchSkip));
+                }
+
+                this._logChunked("=== Busqueda por documento ===",
+                    "campo elegido: " + (field.Name || "?") + " (valor " + (field.Value || "?") + ")");
+
+                return this.context.runtime.executeAsync(
+                    new CustomerSearchByFieldsRequest<CustomerSearchByFieldsResponse>(
+                        searchText, field, this._searchTop, this._searchSkip));
+            });
+    }
+
+    /**
+     * Busca en el catálogo de campos del canal cuál corresponde al número de documento.
+     *
+     * El catálogo se consulta una sola vez por sesión y se registra completo: si ninguno encaja,
+     * ese volcado dice qué campos hay realmente y evita adivinar en la siguiente iteración.
+     */
+    private _getDocumentSearchField(): Promise<any> {
+        if (CustomerInlineDialog._documentSearchFieldResolved) {
+            return Promise.resolve(CustomerInlineDialog._documentSearchField);
+        }
+
+        return this.context.runtime
+            .executeAsync(new GetCustomerSearchFieldsRequest<GetCustomerSearchFieldsResponse>())
+            .then((response: any): any => {
+                const fields: any[] = (response && response.data && response.data.result) || [];
+
+                const summary: string[] = [];
+                for (let i: number = 0; i < fields.length; i++) {
+                    const sf: any = fields[i].SearchField || {};
+                    summary.push((sf.Name || "?") + "=" + (sf.Value || "?")
+                        + " [" + (fields[i].DisplayName || "") + "]");
+                }
+                this._logChunked("=== Campos de busqueda del canal ===", summary.join("\n"));
+
+                // Se busca por nombre técnico o por etiqueta: la localización Perú puede haber
+                // agregado el suyo y no hay una convención garantizada.
+                const pattern: RegExp = /doc|identif|tax|ruc|dni|nif/i;
+                for (let i: number = 0; i < fields.length; i++) {
+                    const sf: any = fields[i].SearchField || {};
+                    const haystack: string = (sf.Name || "") + " " + (fields[i].DisplayName || "");
+                    if (pattern.test(haystack)) {
+                        CustomerInlineDialog._documentSearchField = sf;
+                        break;
+                    }
+                }
+
+                CustomerInlineDialog._documentSearchFieldResolved = true;
+                return CustomerInlineDialog._documentSearchField;
+            })
+            .catch((reason: any): any => {
+                this._logChunked("=== Campos de busqueda del canal ===",
+                    "GetCustomerSearchFields fallo: " + this._getErrorMessage(reason));
+                CustomerInlineDialog._documentSearchFieldResolved = true;
+                return null;
             });
     }
 
@@ -1145,8 +1243,9 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return Promise.resolve(null);
         }
 
-        return this.context.runtime
-            .executeAsync(new CustomerSearchRequest<CustomerSearchResponse>(documentNumber, 5, 0))
+        // Usa la misma vía que la búsqueda del modal: por palabra clave el documento no se
+        // encuentra, así que la comprobación de duplicados tampoco lo detectaba.
+        return this._runSearch(documentNumber)
             .then((response: any): Promise<ProxyEntities.Customer | null> => {
                 const candidates: any[] = (response && response.data && response.data.result) || [];
                 if (candidates.length === 0) {

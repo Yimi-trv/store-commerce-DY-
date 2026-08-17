@@ -1,4 +1,4 @@
-System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest", "../../../DataService/CustomerSearchRequest", "../../../DataService/GeographicRequests", "PosApi/Consume/StoreOperations", "PosApi/Consume/Dialogs"], function (exports_1, context_1) {
+System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest", "../../../DataService/CustomerSearchRequest", "../../../DataService/CustomerSearchByFieldsRequest", "../../../DataService/GeographicRequests", "PosApi/Consume/StoreOperations", "PosApi/Consume/Dialogs"], function (exports_1, context_1) {
     "use strict";
     var __extends = (this && this.__extends) || (function () {
         var extendStatics = function (d, b) {
@@ -15,7 +15,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, CustomerSearchRequest_1, GeographicRequests_1, StoreOperations_1, Dialogs_2, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
+    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, CustomerSearchRequest_1, CustomerSearchByFieldsRequest_1, GeographicRequests_1, StoreOperations_1, Dialogs_2, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -48,6 +48,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             },
             function (CustomerSearchRequest_1_1) {
                 CustomerSearchRequest_1 = CustomerSearchRequest_1_1;
+            },
+            function (CustomerSearchByFieldsRequest_1_1) {
+                CustomerSearchByFieldsRequest_1 = CustomerSearchByFieldsRequest_1_1;
             },
             function (GeographicRequests_1_1) {
                 GeographicRequests_1 = GeographicRequests_1_1;
@@ -597,8 +600,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     this._searchInFlight = true;
                     this._setSearchBusy(element, true);
                     this._showMessage(element, "Buscando en el sistema... puede tardar unos segundos.");
-                    return this.context.runtime
-                        .executeAsync(new CustomerSearchRequest_1.CustomerSearchRequest(searchText, this._searchTop, this._searchSkip))
+                    return this._runSearch(searchText)
                         .then(function (response) {
                         var results = (response && response.data && response.data.result) || [];
                         CustomerInlineDialog._searchCache[cacheKey] = results;
@@ -621,6 +623,58 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         .then(function () {
                         _this._searchInFlight = false;
                         _this._setSearchBusy(element, false);
+                    });
+                };
+                CustomerInlineDialog.prototype._runSearch = function (searchText) {
+                    var _this = this;
+                    var asDocument = this._sunatService.normalizeDocument(searchText);
+                    var looksLikeDocument = asDocument === searchText.trim()
+                        && (asDocument.length === 8 || asDocument.length === 11);
+                    if (!looksLikeDocument) {
+                        return this.context.runtime.executeAsync(new CustomerSearchRequest_1.CustomerSearchRequest(searchText, this._searchTop, this._searchSkip));
+                    }
+                    return this._getDocumentSearchField()
+                        .then(function (field) {
+                        if (!field) {
+                            _this._logChunked("=== Busqueda por documento ===", "el canal no expone un campo de documento; se usa palabra clave");
+                            return _this.context.runtime.executeAsync(new CustomerSearchRequest_1.CustomerSearchRequest(searchText, _this._searchTop, _this._searchSkip));
+                        }
+                        _this._logChunked("=== Busqueda por documento ===", "campo elegido: " + (field.Name || "?") + " (valor " + (field.Value || "?") + ")");
+                        return _this.context.runtime.executeAsync(new CustomerSearchByFieldsRequest_1.CustomerSearchByFieldsRequest(searchText, field, _this._searchTop, _this._searchSkip));
+                    });
+                };
+                CustomerInlineDialog.prototype._getDocumentSearchField = function () {
+                    var _this = this;
+                    if (CustomerInlineDialog._documentSearchFieldResolved) {
+                        return Promise.resolve(CustomerInlineDialog._documentSearchField);
+                    }
+                    return this.context.runtime
+                        .executeAsync(new CustomerSearchByFieldsRequest_1.GetCustomerSearchFieldsRequest())
+                        .then(function (response) {
+                        var fields = (response && response.data && response.data.result) || [];
+                        var summary = [];
+                        for (var i = 0; i < fields.length; i++) {
+                            var sf = fields[i].SearchField || {};
+                            summary.push((sf.Name || "?") + "=" + (sf.Value || "?")
+                                + " [" + (fields[i].DisplayName || "") + "]");
+                        }
+                        _this._logChunked("=== Campos de busqueda del canal ===", summary.join("\n"));
+                        var pattern = /doc|identif|tax|ruc|dni|nif/i;
+                        for (var i = 0; i < fields.length; i++) {
+                            var sf = fields[i].SearchField || {};
+                            var haystack = (sf.Name || "") + " " + (fields[i].DisplayName || "");
+                            if (pattern.test(haystack)) {
+                                CustomerInlineDialog._documentSearchField = sf;
+                                break;
+                            }
+                        }
+                        CustomerInlineDialog._documentSearchFieldResolved = true;
+                        return CustomerInlineDialog._documentSearchField;
+                    })
+                        .catch(function (reason) {
+                        _this._logChunked("=== Campos de busqueda del canal ===", "GetCustomerSearchFields fallo: " + _this._getErrorMessage(reason));
+                        CustomerInlineDialog._documentSearchFieldResolved = true;
+                        return null;
                     });
                 };
                 CustomerInlineDialog.prototype._setSearchBusy = function (element, busy) {
@@ -789,8 +843,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (!documentNumber) {
                         return Promise.resolve(null);
                     }
-                    return this.context.runtime
-                        .executeAsync(new CustomerSearchRequest_1.CustomerSearchRequest(documentNumber, 5, 0))
+                    return this._runSearch(documentNumber)
                         .then(function (response) {
                         var candidates = (response && response.data && response.data.result) || [];
                         if (candidates.length === 0) {
@@ -1490,6 +1543,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this.context.logger.logError(message);
                 };
                 CustomerInlineDialog._searchCache = {};
+                CustomerInlineDialog._documentSearchField = null;
+                CustomerInlineDialog._documentSearchFieldResolved = false;
                 return CustomerInlineDialog;
             }(Dialogs_1.ExtensionTemplatedDialogBase));
             exports_1("default", CustomerInlineDialog);
