@@ -1,5 +1,18 @@
 <div class="customer-inline-dialog">
     <style>
+        /* TEMA OSCURO
+           La paleta sale de Theme/ThemeAssets.ts, la misma del tema Trujillo Market que ya
+           aplica el resto de Store Commerce. No se inventan colores: un modal con su propio
+           gris se leería como una pantalla de otra aplicación pegada dentro del POS.
+
+             #1B1A19  fondo             #201F1E  superficie elevada (campos, resultados)
+             #161514  cabeceras         #E8E6E3  texto            #A19F9D  texto secundario
+             #C8102E  acento            #A81020  acento presionado
+
+           El chrome del diálogo del POS —la cabecera "Cliente", la X y el botón Cerrar— NO
+           está dentro de esta plantilla y no se puede alcanzar desde aquí: lo oscurece
+           _applyDialogTheme recorriendo el DOM. */
+
         /* El ancho lo fija _applyDialogWidth sobre el contenedor del POS, calculado contra el
            viewport real (en caja puede ser 1024px). Aquí solo se ocupa todo lo disponible.
            Fijar un ancho mínimo grande aquí desbordaba el diálogo en pantallas chicas. */
@@ -10,6 +23,12 @@
             padding: 16px;
             box-sizing: border-box;
             font-family: "Segoe UI", Arial, sans-serif;
+            background: #1B1A19;
+            color: #E8E6E3;
+            /* Hace que el navegador dibuje en oscuro lo que no controlamos por CSS: la flecha
+               del select, su lista desplegable, el cursor y las barras de scroll. Sin esto los
+               desplegables se abren en blanco sobre el modal oscuro. */
+            color-scheme: dark;
         }
 
         /* Dos columnas cuando hay sitio; una sola en pantallas angostas. */
@@ -21,7 +40,7 @@
             margin-top: 12px;
             max-height: 320px;
             overflow-y: auto;
-            border: 1px solid #d8d8d8;
+            border: 1px solid rgba(255, 255, 255, 0.16);
         }
 
         /* table-layout fijo + anchos por columna: sin esto la columna Cuenta se angosta,
@@ -37,15 +56,16 @@
             position: sticky;
             top: 0;
             padding: 8px 10px;
-            background: #f3f2f1;
-            border-bottom: 1px solid #d8d8d8;
+            background: #161514;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+            color: #E8E6E3;
             text-align: left;
             font-weight: 600;
         }
 
         .customer-inline-dialog__results td {
             padding: 8px 10px;
-            border-bottom: 1px solid #ededed;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.10);
             /* Una sola línea por celda: recortar es preferible a que el texto se encime. */
             white-space: nowrap;
             overflow: hidden;
@@ -63,15 +83,17 @@
             cursor: pointer;
         }
 
+        /* El resaltado es el rojo del tema al 18%: en oscuro un azul claro salta como si fuera
+           un error y además no pertenece a esta paleta. */
         .customer-inline-dialog__results tbody tr:hover {
-            background: #eaf3fb;
+            background: rgba(200, 16, 46, 0.18);
         }
 
         .customer-inline-dialog__tabs {
             display: flex;
             gap: 6px;
             margin-bottom: 16px;
-            border-bottom: 1px solid #d8d8d8;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.16);
         }
 
         .customer-inline-dialog__tab {
@@ -81,16 +103,20 @@
             border: 0;
             border-bottom: 3px solid transparent;
             background: transparent;
-            color: #333;
+            color: #A19F9D;
             text-align: center;
             font-size: 15px;
             cursor: pointer;
             white-space: nowrap;
         }
 
+        .customer-inline-dialog__tab:hover {
+            color: #E8E6E3;
+        }
+
         .customer-inline-dialog__tab.is-active {
-            border-bottom-color: #0063b1;
-            color: #000;
+            border-bottom-color: #C8102E;
+            color: #FFFFFF;
             font-weight: 600;
         }
 
@@ -117,7 +143,7 @@
         }
 
         .customer-inline-dialog__field label {
-            color: #333;
+            color: #E8E6E3;
             font-size: 14px;
             font-weight: 600;
         }
@@ -126,9 +152,26 @@
         .customer-inline-dialog__field select {
             min-height: 36px;
             padding: 6px 10px;
-            border: 1px solid #a6a6a6;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            background: #201F1E;
+            color: #E8E6E3;
             font-size: 15px;
             box-sizing: border-box;
+        }
+
+        .customer-inline-dialog__field input:focus,
+        .customer-inline-dialog__field select:focus {
+            outline: none;
+            border-color: #C8102E;
+        }
+
+        .customer-inline-dialog__field input::placeholder {
+            color: #7A7876;
+        }
+
+        .customer-inline-dialog__field input[readonly] {
+            background: #161514;
+            color: #A19F9D;
         }
 
         .customer-inline-dialog__actions {
@@ -142,23 +185,32 @@
         .customer-inline-dialog__action {
             min-width: 120px;
             min-height: 36px;
-            border: 1px solid #0063b1;
-            background: #0063b1;
+            border: 1px solid #C8102E;
+            background: #C8102E;
             color: #fff;
             font-size: 15px;
             padding: 0 16px;
             cursor: pointer;
         }
 
+        .customer-inline-dialog__action:hover {
+            background: #A81020;
+            border-color: #A81020;
+        }
+
         .customer-inline-dialog__action--secondary {
-            background: #fff;
-            color: #0063b1;
+            background: transparent;
+            color: #E8E6E3;
+        }
+
+        .customer-inline-dialog__action--secondary:hover {
+            background: rgba(200, 16, 46, 0.20);
         }
 
         .customer-inline-dialog__action:disabled {
-            border-color: #9a9a9a;
-            background: #d0d0d0;
-            color: #555;
+            border-color: rgba(255, 255, 255, 0.18);
+            background: #2A2827;
+            color: #7A7876;
             cursor: default;
         }
 
@@ -166,9 +218,9 @@
             min-height: 60px;
             margin-top: 12px;
             padding: 10px;
-            border: 1px solid #d8d8d8;
-            background: #fafafa;
-            color: #222;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: #201F1E;
+            color: #E8E6E3;
             white-space: pre-wrap;
             font-size: 14px;
             line-height: 1.4;
@@ -179,8 +231,17 @@
         .customer-inline-dialog__message {
             min-height: 26px;
             margin-top: 12px;
-            color: #605e5c;
+            color: #A19F9D;
             font-size: 14px;
+        }
+
+        .customer-inline-dialog__section-title {
+            margin: 18px 0 8px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.16);
+            color: #E8E6E3;
+            font-size: 15px;
+            font-weight: 600;
         }
 
         /* ALERTA FLOTANTE PROPIA.
@@ -197,7 +258,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: rgba(0, 0, 0, 0.55);
+            background: rgba(0, 0, 0, 0.70);
             /* Por encima de cualquier capa del POS. */
             z-index: 2147483000;
             padding: 16px;
@@ -207,23 +268,26 @@
         .customer-inline-dialog__alert {
             width: 100%;
             max-width: 460px;
-            background: #fff;
-            border-top: 4px solid #d83b01;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+            background: #201F1E;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-top: 4px solid #C8102E;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65);
             padding: 20px;
             box-sizing: border-box;
         }
 
         .customer-inline-dialog__alert-title {
             margin: 0 0 6px 0;
-            color: #a4262c;
+            /* Sobre oscuro el rojo del tema no tiene contraste suficiente para texto: se usa
+               un tono más claro de la misma familia. */
+            color: #FF6B6B;
             font-size: 18px;
             font-weight: 600;
         }
 
         .customer-inline-dialog__alert-body {
             margin: 0 0 18px 0;
-            color: #222;
+            color: #E8E6E3;
             font-size: 15px;
             line-height: 1.45;
             white-space: pre-wrap;
@@ -239,7 +303,7 @@
 
     <div class="customer-inline-dialog__tabs">
         <button id="customerInlineTabSearch" class="customer-inline-dialog__tab is-active" type="button">Buscar Cliente</button>
-        <button id="customerInlineTabCreate" class="customer-inline-dialog__tab" type="button">Crear con SUNAT</button>
+        <button id="customerInlineTabCreate" class="customer-inline-dialog__tab" type="button">Crear Cliente</button>
         <button id="customerInlineTabEdit" class="customer-inline-dialog__tab" type="button">Editar Actual</button>
     </div>
 
@@ -358,7 +422,7 @@
         <div class="customer-inline-dialog__grid">
             <div class="customer-inline-dialog__field">
                 <label for="customerInlineEditAccount">Cuenta:</label>
-                <input id="customerInlineEditAccount" type="text" readonly style="background:#f3f2f1;" />
+                <input id="customerInlineEditAccount" type="text" readonly />
             </div>
             <div class="customer-inline-dialog__field">
                 <label for="customerInlineEditDocument">Documento SUNAT:</label>
@@ -386,7 +450,7 @@
          y editar, y la oculta en buscar.
          Los ids conservan el prefijo "Create" por historia; hoy son compartidos. -->
     <div id="customerInlineAddressSection" style="display: none;">
-        <h3 style="margin: 18px 0 8px; font-size: 15px; font-weight: 600; color: #333; border-top: 1px solid #d8d8d8; padding-top: 14px;">Dirección</h3>
+        <h3 class="customer-inline-dialog__section-title">Dirección</h3>
         <div class="customer-inline-dialog__grid">
             <div class="customer-inline-dialog__field">
                 <label for="customerInlineCreateAddressPurpose">Propósito de la dirección:</label>

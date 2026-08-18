@@ -172,10 +172,44 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     var _this = this;
                     var attempts = [0, 60, 150, 300, 550, 900];
                     this._applyDialogWidth(element);
+                    this._applyDialogTheme(element);
                     for (var i = 0; i < attempts.length; i++) {
-                        setTimeout(function () { _this._applyDialogWidth(element); }, attempts[i]);
+                        setTimeout(function () {
+                            _this._applyDialogWidth(element);
+                            _this._applyDialogTheme(element);
+                        }, attempts[i]);
                     }
                     setTimeout(function () { _this._reportDialogWidth(element); }, 950);
+                };
+                CustomerInlineDialog.prototype._applyDialogTheme = function (element) {
+                    var host = this._findHostDialog(element);
+                    if (!host) {
+                        return;
+                    }
+                    host.style.setProperty("background-color", CustomerInlineDialog._colorSurface, "important");
+                    host.style.setProperty("color", CustomerInlineDialog._colorText, "important");
+                    var nodes = host.querySelectorAll("*");
+                    for (var i = 0; i < nodes.length; i++) {
+                        var node = nodes[i];
+                        if (element === node || element.contains(node)) {
+                            continue;
+                        }
+                        node.style.setProperty("color", CustomerInlineDialog._colorText, "important");
+                        if (node.tagName !== "BUTTON") {
+                            node.style.setProperty("background-color", "transparent", "important");
+                        }
+                    }
+                };
+                CustomerInlineDialog.prototype._findHostDialog = function (element) {
+                    var node = element.parentElement;
+                    for (var depth = 0; node && depth < 10; depth++) {
+                        var cls = typeof node.className === "string" ? node.className : "";
+                        if (cls.indexOf("extensionTemplatedDialog") >= 0) {
+                            return node;
+                        }
+                        node = node.parentElement;
+                    }
+                    return null;
                 };
                 CustomerInlineDialog.prototype._applyDialogWidth = function (element) {
                     var viewport = (typeof window !== "undefined" && window.innerWidth) ? window.innerWidth : 1024;
@@ -1678,6 +1712,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (this.context && this.context.logger)
                         this.context.logger.logError(message);
                 };
+                CustomerInlineDialog._colorSurface = "#1B1A19";
+                CustomerInlineDialog._colorText = "#E8E6E3";
                 CustomerInlineDialog._searchCache = {};
                 CustomerInlineDialog._documentSearchField = null;
                 CustomerInlineDialog._documentSearchFieldResolved = false;

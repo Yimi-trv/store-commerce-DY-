@@ -135,6 +135,13 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      * Resultados por término de búsqueda, compartidos entre aperturas del modal — que crea una
      * instancia nueva cada vez. Vive en memoria y se pierde al recargar el POS.
      */
+    // Paleta del tema Trujillo Market (Theme/ThemeAssets.ts). Duplicarla aquí es deliberado:
+    // ThemeAssets exporta hojas de estilo completas, no colores sueltos, y el chrome del
+    // diálogo se pinta nodo por nodo desde JavaScript. Si el tema cambia, estos dos valores y
+    // los del <style> de la plantilla se cambian a mano.
+    private static _colorSurface: string = "#1B1A19";
+    private static _colorText: string = "#E8E6E3";
+
     private static _searchCache: { [key: string]: any[] } = {};
 
     /** Campo de documento del canal, resuelto una sola vez por sesión. */
@@ -311,12 +318,81 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         const attempts: number[] = [0, 60, 150, 300, 550, 900];
 
         this._applyDialogWidth(element);
+        this._applyDialogTheme(element);
         for (let i: number = 0; i < attempts.length; i++) {
-            setTimeout((): void => { this._applyDialogWidth(element); }, attempts[i]);
+            setTimeout((): void => {
+                this._applyDialogWidth(element);
+                // El tema va en la misma tanda que el ancho y por el mismo motivo: el POS
+                // termina de montar el diálogo después de onReady y repinta su chrome.
+                this._applyDialogTheme(element);
+            }, attempts[i]);
         }
 
         // Se reporta al final, cuando el POS ya midió: antes todo daba 0px y no servía de nada.
         setTimeout((): void => { this._reportDialogWidth(element); }, 950);
+    }
+
+    /**
+     * Oscurece el chrome del diálogo del POS: la cabecera "Cliente", la X de cerrar y la barra
+     * del botón Cerrar.
+     *
+     * POR QUÉ ES CÓDIGO Y NO CSS
+     * Esas tres piezas NO están dentro de la plantilla —el POS las monta alrededor— así que el
+     * `<style>` del template no las alcanza. Y sus clases no aparecen en los typings ni en el
+     * SDK, o sea que no hay un selector estable al que apuntar aunque se escribiera una regla
+     * global. Se recorre el DOM y se pinta lo que hay: no hace falta saber cómo se llama nada.
+     *
+     * REGLAS DEL RECORRIDO
+     * - Lo que está DENTRO de la plantilla se salta: ya lo estiliza el CSS del template, y
+     *   pisarlo desde aquí borraría el fondo de los campos y de la alerta.
+     * - A los `<button>` solo se les cambia el color del texto. El botón Cerrar es rojo por el
+     *   tema Trujillo Market; volverlo transparente lo dejaría en un rectángulo invisible.
+     * - Se usa `setProperty(..., "important")` porque los estilos del POS vienen con
+     *   `!important` y un estilo en línea normal no les gana.
+     */
+    private _applyDialogTheme(element: HTMLElement): void {
+        const host: HTMLElement = this._findHostDialog(element);
+
+        if (!host) {
+            return;
+        }
+
+        host.style.setProperty("background-color", CustomerInlineDialog._colorSurface, "important");
+        host.style.setProperty("color", CustomerInlineDialog._colorText, "important");
+
+        const nodes: NodeListOf<Element> = host.querySelectorAll("*");
+
+        for (let i: number = 0; i < nodes.length; i++) {
+            const node: HTMLElement = nodes[i] as HTMLElement;
+
+            // `contains` incluye al propio elemento, así que esto salta la plantilla entera.
+            if (element === node || element.contains(node)) {
+                continue;
+            }
+
+            node.style.setProperty("color", CustomerInlineDialog._colorText, "important");
+
+            if (node.tagName !== "BUTTON") {
+                node.style.setProperty("background-color", "transparent", "important");
+            }
+        }
+    }
+
+    /** Contenedor que el POS monta alrededor de la plantilla. Null si no aparece. */
+    private _findHostDialog(element: HTMLElement): HTMLElement {
+        let node: HTMLElement = element.parentElement;
+
+        for (let depth: number = 0; node && depth < 10; depth++) {
+            const cls: string = typeof node.className === "string" ? node.className : "";
+
+            if (cls.indexOf("extensionTemplatedDialog") >= 0) {
+                return node;
+            }
+
+            node = node.parentElement;
+        }
+
+        return null;
     }
 
     private _applyDialogWidth(element: HTMLElement): void {
