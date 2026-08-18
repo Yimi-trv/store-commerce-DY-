@@ -282,26 +282,51 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         }
                     }
                 };
+                ThemeEngine.nodoVivo = function (raiz, selector) {
+                    var lista = raiz.querySelectorAll(selector);
+                    for (var i = 0; i < lista.length; i++) {
+                        var elemento = lista[i];
+                        if (elemento.getBoundingClientRect().height > 0 && (elemento.textContent || "").trim().length > 0) {
+                            return elemento;
+                        }
+                    }
+                    return null;
+                };
+                ThemeEngine.rotuloSinCliente = function (zona) {
+                    var hojas = zona.querySelectorAll("div,span,label,h1,h2,h3,h4");
+                    for (var i = 0; i < hojas.length; i++) {
+                        var hoja = hojas[i];
+                        if (hoja.children.length === 0
+                            && (hoja.textContent || "").trim() === "Agregue un cliente a esta transacción"
+                            && hoja.getBoundingClientRect().width > 0) {
+                            return hoja;
+                        }
+                    }
+                    return null;
+                };
+                ThemeEngine.soltarClase = function (clase, salvo) {
+                    var marcados = ThemeEngine.todos("." + clase);
+                    for (var i = 0; i < marcados.length; i++) {
+                        if (marcados[i] !== salvo)
+                            marcados[i].classList.remove(clase);
+                    }
+                };
                 ThemeEngine.aplicarCliente = function () {
                     var zonaCliente = ThemeEngine.q("#CustomerPanel");
                     if (!zonaCliente)
                         zonaCliente = ThemeEngine.zona(/Agregue un cliente|CLIENTE DESCRIPTIVO/i);
                     if (!zonaCliente)
                         return;
-                    var detalle = zonaCliente.querySelector(".customerDetailsCardStyle");
-                    var conCliente = !!detalle && detalle.getBoundingClientRect().height > 0;
-                    var tarjetaVieja = ThemeEngine.q(".sct-cli-card");
-                    var domVieja = ThemeEngine.q(".sct-dom-card");
+                    var rotuloVacio = ThemeEngine.rotuloSinCliente(zonaCliente);
+                    var detalle = ThemeEngine.nodoVivo(zonaCliente, ".customerDetailsCardStyle");
+                    var conCliente = !!detalle && !rotuloVacio;
                     if (conCliente && detalle) {
-                        var vaciaVieja = ThemeEngine.q(".sct-cli-empty");
-                        if (vaciaVieja)
-                            vaciaVieja.classList.remove("sct-cli-empty");
+                        ThemeEngine.soltarClase("sct-cli-empty", null);
                         ThemeEngine.soltarAlturaVacio();
-                        var tarjeta = detalle.querySelector(".primaryPanelBackgroundColor.highContrastBorderThin");
+                        var tarjeta = ThemeEngine.nodoVivo(detalle, ".primaryPanelBackgroundColor.highContrastBorderThin");
                         if (!tarjeta)
                             tarjeta = detalle;
-                        if (tarjetaVieja && tarjetaVieja !== tarjeta)
-                            tarjetaVieja.classList.remove("sct-cli-card");
+                        ThemeEngine.soltarClase("sct-cli-card", tarjeta);
                         if (!tarjeta.classList.contains("sct-cli-card"))
                             tarjeta.classList.add("sct-cli-card");
                         var nombre = null;
@@ -315,9 +340,8 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             }
                         }
                         ThemeEngine.estilo(nombre, { "white-space": "normal", "font-size": "13px", "line-height": "1.25" });
-                        var direccion = zonaCliente.querySelector(".customerPanelPrimaryAddress");
-                        if (domVieja && domVieja !== direccion)
-                            domVieja.classList.remove("sct-dom-card");
+                        var direccion = ThemeEngine.nodoVivo(zonaCliente, ".customerPanelPrimaryAddress");
+                        ThemeEngine.soltarClase("sct-dom-card", direccion);
                         if (direccion) {
                             if (!direccion.classList.contains("sct-dom-card"))
                                 direccion.classList.add("sct-dom-card");
@@ -332,24 +356,13 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         }
                         return;
                     }
-                    var listaCandidatos = zonaCliente.querySelectorAll("div,span,label,h1,h2,h3,h4");
-                    var vacio = null;
-                    for (var v = 0; v < listaCandidatos.length; v++) {
-                        var candidatoVacio = listaCandidatos[v];
-                        if (candidatoVacio.children.length === 0 && (candidatoVacio.textContent || "").trim() === "Agregue un cliente a esta transacción" && candidatoVacio.getBoundingClientRect().width > 0) {
-                            vacio = candidatoVacio;
-                            break;
-                        }
-                    }
-                    if (!vacio)
+                    if (!rotuloVacio)
                         return;
-                    var tarjetaVacia = ThemeEngine.ancestroTarjeta(vacio);
+                    var tarjetaVacia = ThemeEngine.ancestroTarjeta(rotuloVacio);
                     if (!tarjetaVacia)
                         return;
-                    if (tarjetaVieja)
-                        tarjetaVieja.classList.remove("sct-cli-card");
-                    if (domVieja)
-                        domVieja.classList.remove("sct-dom-card");
+                    ThemeEngine.soltarClase("sct-cli-card", null);
+                    ThemeEngine.soltarClase("sct-dom-card", null);
                     if (!tarjetaVacia.classList.contains("sct-cli-empty"))
                         tarjetaVacia.classList.add("sct-cli-empty");
                     var raiz = ThemeEngine.raiz();

@@ -9,7 +9,7 @@
     <PackageDescription>API de consulta de transacciones y descarga de TXT de facturacion electronica</PackageDescription>
     <PackageName>Trujillo.PeruEInvoicing.ScaleUnit</PackageName>
     <PackagePublisher>DP</PackagePublisher>
-    <PackageVersion>2.9.8.0</PackageVersion>
+    <PackageVersion>2.9.9.0</PackageVersion>
   </PropertyGroup>
 
   <ItemGroup>

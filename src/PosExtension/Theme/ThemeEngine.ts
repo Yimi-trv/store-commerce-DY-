@@ -384,6 +384,55 @@ export class ThemeEngine {
         }
     }
 
+    // Primer nodo que coincide y esta VIVO: con altura Y con contenido.
+    //
+    // NO USAR querySelector() PARA ESTO, y NO usar solo la altura como criterio. El POS deja los
+    // nodos ANTERIORES en el DOM despues de cargar, editar o anular. Medido en vivo tras anular una
+    // transaccion:
+    //
+    //     .customerDetailsCardStyle  ->  altura 9px, textContent ""   <- cadaver
+    //
+    // Con querySelector() se cogia ese nodo, y con el criterio "altura > 0" tambien, porque 9 > 0.
+    // En los dos casos el motor concluia que HABIA cliente, tomaba la rama de la ficha y no
+    // aplicaba nunca el estado vacio: el panel se quedaba sin estilo. Lo que distingue al cadaver
+    // es que esta VACIO de contenido, asi que hay que exigir texto.
+    private static nodoVivo(raiz: HTMLElement, selector: string): HTMLElement | null {
+        var lista: NodeListOf<Element> = raiz.querySelectorAll(selector);
+        for (var i: number = 0; i < lista.length; i++) {
+            var elemento: HTMLElement = lista[i] as HTMLElement;
+            if (elemento.getBoundingClientRect().height > 0 && (elemento.textContent || "").trim().length > 0) {
+                return elemento;
+            }
+        }
+        return null;
+    }
+
+    // Rotulo "Agregue un cliente a esta transaccion" cuando esta VISIBLE. Es la senal mas fiable de
+    // que no hay cliente: el POS muestra SIEMPRE uno de los dos estados, nunca los dos a la vez.
+    private static rotuloSinCliente(zona: HTMLElement): HTMLElement | null {
+        var hojas: NodeListOf<Element> = zona.querySelectorAll("div,span,label,h1,h2,h3,h4");
+        for (var i: number = 0; i < hojas.length; i++) {
+            var hoja: HTMLElement = hojas[i] as HTMLElement;
+            if (hoja.children.length === 0
+                && (hoja.textContent || "").trim() === "Agregue un cliente a esta transacción"
+                && hoja.getBoundingClientRect().width > 0) {
+                return hoja;
+            }
+        }
+        return null;
+    }
+
+    // Quita una clase del tema de TODOS los nodos que la lleven, menos del que toca conservar.
+    // Por el mismo motivo: puede haber varios nodos marcados a la vez (el vivo y los muertos), y
+    // limpiar solo el primero deja estilos peleandose. Solo escribe si hay algo que quitar, asi
+    // que en reposo no genera mutaciones.
+    private static soltarClase(clase: string, salvo: HTMLElement | null): void {
+        var marcados: HTMLElement[] = ThemeEngine.todos("." + clase);
+        for (var i: number = 0; i < marcados.length; i++) {
+            if (marcados[i] !== salvo) marcados[i].classList.remove(clase);
+        }
+    }
+
     private static aplicarCliente(): void {
         // ¡¡NO VOLVER A DETECTAR POR TEXTO NI POR FORMATO DE DATOS EN ESTA FUNCION!!
         // Es el error que ya se cometio TRES veces aqui y el que produjo el bug de abajo. Si algo
@@ -415,22 +464,22 @@ export class ThemeEngine {
         if (!zonaCliente) zonaCliente = ThemeEngine.zona(/Agregue un cliente|CLIENTE DESCRIPTIVO/i);
         if (!zonaCliente) return;
 
-        var detalle: HTMLElement | null = zonaCliente.querySelector(".customerDetailsCardStyle") as HTMLElement | null;
-        var conCliente: boolean = !!detalle && detalle.getBoundingClientRect().height > 0;
-        var tarjetaVieja: HTMLElement | null = ThemeEngine.q(".sct-cli-card");
-        var domVieja: HTMLElement | null = ThemeEngine.q(".sct-dom-card");
+        // DOS senales, y la del rotulo MANDA. Si el POS esta diciendo "Agregue un cliente", no hay
+        // cliente por muchos restos que queden en el DOM. Ver nodoVivo() para el porque.
+        var rotuloVacio: HTMLElement | null = ThemeEngine.rotuloSinCliente(zonaCliente);
+        var detalle: HTMLElement | null = ThemeEngine.nodoVivo(zonaCliente, ".customerDetailsCardStyle");
+        var conCliente: boolean = !!detalle && !rotuloVacio;
 
         if (conCliente && detalle) {
             // Los dos estados son EXCLUYENTES. Antes las clases solo se anadian, nunca se
             // quitaban, asi que .sct-cli-card y .sct-cli-empty acababan conviviendo y sus estilos
             // se peleaban. Se comprobo en vivo: las tres clases presentes a la vez.
-            var vaciaVieja: HTMLElement | null = ThemeEngine.q(".sct-cli-empty");
-            if (vaciaVieja) vaciaVieja.classList.remove("sct-cli-empty");
+            ThemeEngine.soltarClase("sct-cli-empty", null);
             ThemeEngine.soltarAlturaVacio();
 
-            var tarjeta: HTMLElement | null = detalle.querySelector(".primaryPanelBackgroundColor.highContrastBorderThin") as HTMLElement | null;
+            var tarjeta: HTMLElement | null = ThemeEngine.nodoVivo(detalle, ".primaryPanelBackgroundColor.highContrastBorderThin");
             if (!tarjeta) tarjeta = detalle;
-            if (tarjetaVieja && tarjetaVieja !== tarjeta) tarjetaVieja.classList.remove("sct-cli-card");
+            ThemeEngine.soltarClase("sct-cli-card", tarjeta);
             if (!tarjeta.classList.contains("sct-cli-card")) tarjeta.classList.add("sct-cli-card");
 
             var nombre: HTMLElement | null = null;
@@ -444,8 +493,8 @@ export class ThemeEngine {
             }
             ThemeEngine.estilo(nombre, { "white-space": "normal", "font-size": "13px", "line-height": "1.25" });
 
-            var direccion: HTMLElement | null = zonaCliente.querySelector(".customerPanelPrimaryAddress") as HTMLElement | null;
-            if (domVieja && domVieja !== direccion) domVieja.classList.remove("sct-dom-card");
+            var direccion: HTMLElement | null = ThemeEngine.nodoVivo(zonaCliente, ".customerPanelPrimaryAddress");
+            ThemeEngine.soltarClase("sct-dom-card", direccion);
             if (direccion) {
                 if (!direccion.classList.contains("sct-dom-card")) direccion.classList.add("sct-dom-card");
                 var internos: NodeListOf<Element> = direccion.querySelectorAll("*");
@@ -463,19 +512,11 @@ export class ThemeEngine {
         // Es lo que amortigua el parpadeo: mientras el POS reconstruye el panel hay instantes en
         // que ni la tarjeta ni el vacio miden nada. Si no se ve ninguno de los dos, se sale sin
         // tocar NADA en vez de repintar el estado contrario y volver.
-        var listaCandidatos: NodeListOf<Element> = zonaCliente.querySelectorAll("div,span,label,h1,h2,h3,h4");
-        var vacio: HTMLElement | null = null;
-        for (var v: number = 0; v < listaCandidatos.length; v++) {
-            var candidatoVacio: HTMLElement = listaCandidatos[v] as HTMLElement;
-            if (candidatoVacio.children.length === 0 && (candidatoVacio.textContent || "").trim() === "Agregue un cliente a esta transacción" && candidatoVacio.getBoundingClientRect().width > 0) {
-                vacio = candidatoVacio; break;
-            }
-        }
-        if (!vacio) return;
-        var tarjetaVacia: HTMLElement | null = ThemeEngine.ancestroTarjeta(vacio);
+        if (!rotuloVacio) return;
+        var tarjetaVacia: HTMLElement | null = ThemeEngine.ancestroTarjeta(rotuloVacio);
         if (!tarjetaVacia) return;
-        if (tarjetaVieja) tarjetaVieja.classList.remove("sct-cli-card");
-        if (domVieja) domVieja.classList.remove("sct-dom-card");
+        ThemeEngine.soltarClase("sct-cli-card", null);
+        ThemeEngine.soltarClase("sct-dom-card", null);
         if (!tarjetaVacia.classList.contains("sct-cli-empty")) tarjetaVacia.classList.add("sct-cli-empty");
         var raiz: HTMLElement | null = ThemeEngine.raiz();
         var subir: HTMLElement | null = tarjetaVacia;
