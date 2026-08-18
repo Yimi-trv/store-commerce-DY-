@@ -98,6 +98,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             },
                             onCloseX: _this._closeClickHandler.bind(_this)
                         };
+                        CustomerInlineDialog._ensureHostStyle();
+                        CustomerInlineDialog._markBody(true);
                         _this.openDialog(dialogOptions);
                     });
                 };
@@ -166,6 +168,45 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         streetInput.onblur = function () {
                             _this._splitStreetOnBlur(element);
                         };
+                    }
+                };
+                CustomerInlineDialog._ensureHostStyle = function () {
+                    if (typeof document === "undefined" || document.getElementById(CustomerInlineDialog._hostStyleId)) {
+                        return;
+                    }
+                    var rules = [
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog,",
+                        ".customerInlineHostDialog {",
+                        "    width: clamp(520px, 82vw, 800px) !important;",
+                        "    max-width: 96vw !important;",
+                        "    background-color: " + CustomerInlineDialog._colorSurface + " !important;",
+                        "    color: " + CustomerInlineDialog._colorText + " !important;",
+                        "}",
+                        "body.customerInlineDialogOpen .dialogContainer,",
+                        "body.customerInlineDialogOpen .ExtensionTemplateDialogContentPlaceholder,",
+                        ".customerInlineHostContainer {",
+                        "    width: 100% !important;",
+                        "    max-width: 100% !important;",
+                        "    box-sizing: border-box !important;",
+                        "}"
+                    ].join("\n");
+                    var style = document.createElement("style");
+                    style.id = CustomerInlineDialog._hostStyleId;
+                    style.appendChild(document.createTextNode(rules));
+                    (document.head || document.getElementsByTagName("head")[0]).appendChild(style);
+                };
+                CustomerInlineDialog._markBody = function (open) {
+                    if (typeof document === "undefined" || !document.body) {
+                        return;
+                    }
+                    var marker = "customerInlineDialogOpen";
+                    var current = typeof document.body.className === "string" ? document.body.className : "";
+                    var has = (" " + current + " ").indexOf(" " + marker + " ") >= 0;
+                    if (open && !has) {
+                        document.body.className = current ? current + " " + marker : marker;
+                    }
+                    else if (!open && has) {
+                        document.body.className = (" " + current + " ").split(" " + marker + " ").join(" ").replace(/\s+/g, " ").replace(/^ | $/g, "");
                     }
                 };
                 CustomerInlineDialog.prototype._widenHostDialog = function (element) {
@@ -1682,6 +1723,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._complete = function (result) {
                     window[GUARD_KEY] = false;
+                    CustomerInlineDialog._markBody(false);
                     if (this._resolve) {
                         this._resolve(result);
                         this._resolve = null;
@@ -1690,6 +1732,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._closeClickHandler = function () {
                     window[GUARD_KEY] = false;
+                    CustomerInlineDialog._markBody(false);
                     if (this._resolve) {
                         this._resolve(null);
                         this._resolve = null;
@@ -1750,6 +1793,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (this.context && this.context.logger)
                         this.context.logger.logError(message);
                 };
+                CustomerInlineDialog._hostStyleId = "customerInlineHostStyle";
                 CustomerInlineDialog._colorSurface = "#1B1A19";
                 CustomerInlineDialog._colorText = "#E8E6E3";
                 CustomerInlineDialog._searchCache = {};

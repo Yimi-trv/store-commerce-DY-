@@ -139,6 +139,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     // ThemeAssets exporta hojas de estilo completas, no colores sueltos, y el chrome del
     // diálogo se pinta nodo por nodo desde JavaScript. Si el tema cambia, estos dos valores y
     // los del <style> de la plantilla se cambian a mano.
+    private static _hostStyleId: string = "customerInlineHostStyle";
     private static _colorSurface: string = "#1B1A19";
     private static _colorText: string = "#E8E6E3";
 
@@ -184,6 +185,14 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 },
                 onCloseX: this._closeClickHandler.bind(this)
             };
+
+            // ANTES de abrir, no en onReady: en la PRIMERA apertura el POS todavia no ha
+            // cargado la plantilla, asi que dibuja el dialogo con su ancho por defecto y el
+            // <style> de la plantilla —que es donde vivian estas reglas— aun no existe. De ahi
+            // que el parpadeo se viera solo la primera vez y no en las siguientes, con la
+            // plantilla ya en cache.
+            CustomerInlineDialog._ensureHostStyle();
+            CustomerInlineDialog._markBody(true);
 
             this.openDialog(dialogOptions);
         });
@@ -307,6 +316,79 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      * Se reaplica tras el render porque el POS ajusta medidas después de `onReady`.
      * No se toca `position` ni `left`: el diálogo ya viene centrado y moverlo lo rompería.
      */
+    /**
+     * Inyecta UNA VEZ las reglas del contenedor que el POS monta alrededor del modal.
+     *
+     * POR QUE NO ESTAN EN EL <style> DE LA PLANTILLA
+     * Ahi estaban, y el parpadeo se seguia viendo en la PRIMERA apertura y no en las
+     * siguientes. El motivo: la primera vez el POS aun no ha cargado la plantilla, dibuja el
+     * dialogo con su ancho por defecto, y el <style> —que viaja dentro de esa misma
+     * plantilla— todavia no existe. Al reabrirlo, con la plantilla en cache, la regla ya
+     * estaba y por eso no parpadeaba.
+     *
+     * Inyectadas en el <head> desde `open()`, las reglas existen antes de que el POS cree
+     * nada, tambien la primera vez.
+     *
+     * POR QUE SE MARCA EL <body>
+     * En `open()` todavia no hay contenedor al que ponerle una clase —el POS lo crea
+     * despues—, asi que el selector no puede depender de el. La marca va en el <body>, que
+     * si existe, y acota la regla a mientras nuestro modal esta abierto: `extensionTemplatedDialog`
+     * es la clase de CUALQUIER dialogo de extension y no queremos tocar los ajenos.
+     *
+     * La clase que _applyDialogWidth pone sobre el contenedor se mantiene por si la marca del
+     * body se limpiara antes de tiempo; las dos reglas dicen lo mismo.
+     */
+    private static _ensureHostStyle(): void {
+        if (typeof document === "undefined" || document.getElementById(CustomerInlineDialog._hostStyleId)) {
+            return;
+        }
+
+        const rules: string = [
+            // El ancho con clamp() se adapta solo al viewport de la caja —que puede ser 1024px,
+            // no 1920— sin calcularlo en JavaScript ni recalcularlo si la ventana cambia:
+            //   minimo 520px  para que la tabla de resultados entre
+            //   ideal  82vw
+            //   maximo 800px  con 960 el modal tapaba casi toda la venta y el cajero perdia de
+            //                 vista las lineas y los totales; a 800 quedan ~220px visibles.
+            "body.customerInlineDialogOpen .extensionTemplatedDialog,",
+            ".customerInlineHostDialog {",
+            "    width: clamp(520px, 82vw, 800px) !important;",
+            "    max-width: 96vw !important;",
+            "    background-color: " + CustomerInlineDialog._colorSurface + " !important;",
+            "    color: " + CustomerInlineDialog._colorText + " !important;",
+            "}",
+            "body.customerInlineDialogOpen .dialogContainer,",
+            "body.customerInlineDialogOpen .ExtensionTemplateDialogContentPlaceholder,",
+            ".customerInlineHostContainer {",
+            "    width: 100% !important;",
+            "    max-width: 100% !important;",
+            "    box-sizing: border-box !important;",
+            "}"
+        ].join("\n");
+
+        const style: HTMLStyleElement = document.createElement("style");
+        style.id = CustomerInlineDialog._hostStyleId;
+        style.appendChild(document.createTextNode(rules));
+        (document.head || document.getElementsByTagName("head")[0]).appendChild(style);
+    }
+
+    /** Marca el <body> mientras el modal esta abierto, para acotar las reglas de arriba. */
+    private static _markBody(open: boolean): void {
+        if (typeof document === "undefined" || !document.body) {
+            return;
+        }
+
+        const marker: string = "customerInlineDialogOpen";
+        const current: string = typeof document.body.className === "string" ? document.body.className : "";
+        const has: boolean = (" " + current + " ").indexOf(" " + marker + " ") >= 0;
+
+        if (open && !has) {
+            document.body.className = current ? current + " " + marker : marker;
+        } else if (!open && has) {
+            document.body.className = (" " + current + " ").split(" " + marker + " ").join(" ").replace(/\s+/g, " ").replace(/^ | $/g, "");
+        }
+    }
+
     private _widenHostDialog(element: HTMLElement): void {
         // El ancho YA NO se reaplica: sale de una regla !important de la plantilla y el POS no
         // puede pisarla. Lo unico que hace falta es poner la clase en cuanto el contenedor
@@ -2533,6 +2615,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
     private _complete(result: ICustomerInlineDialogResult): void {
         (window as any)[GUARD_KEY] = false;
+        CustomerInlineDialog._markBody(false);
         if (this._resolve) {
             this._resolve(result);
             this._resolve = null;
@@ -2542,6 +2625,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
     private _closeClickHandler(): boolean {
         (window as any)[GUARD_KEY] = false;
+        CustomerInlineDialog._markBody(false);
         if (this._resolve) {
             this._resolve(null);
             this._resolve = null;
