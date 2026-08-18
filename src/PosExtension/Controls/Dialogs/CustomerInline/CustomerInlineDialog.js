@@ -188,6 +188,22 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         "    width: 100% !important;",
                         "    max-width: 100% !important;",
                         "    box-sizing: border-box !important;",
+                        "}",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog div,",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog section,",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog header,",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog footer,",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog span {",
+                        "    background-color: transparent !important;",
+                        "}",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog,",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog div,",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog span,",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog h1,",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog h2,",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog h3,",
+                        "body.customerInlineDialogOpen .extensionTemplatedDialog h4 {",
+                        "    color: " + CustomerInlineDialog._colorText + " !important;",
                         "}"
                     ].join("\n");
                     var style = document.createElement("style");

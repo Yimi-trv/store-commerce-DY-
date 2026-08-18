@@ -363,6 +363,36 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             "    width: 100% !important;",
             "    max-width: 100% !important;",
             "    box-sizing: border-box !important;",
+            "}",
+            // Sin esto el modal salia BLANCO un instante y despues oscuro: pintar solo el
+            // contenedor exterior no basta, porque los contenedores que el POS mete dentro
+            // traen su propio fondo claro y tapan el de atras. Se vuelven transparentes para
+            // que se vea el fondo oscuro del contenedor, en el primer pintado y sin JavaScript.
+            //
+            // _applyDialogTheme sigue existiendo y hace lo mismo recorriendo el DOM, pero solo
+            // puede correr en onReady —con la plantilla ya cargada—, que es justo despues del
+            // instante en que se veia el blanco.
+            //
+            // Los <button> quedan fuera a proposito: el boton Cerrar es rojo por el tema y
+            // volverlo transparente lo dejaria invisible.
+            "body.customerInlineDialogOpen .extensionTemplatedDialog div,",
+            "body.customerInlineDialogOpen .extensionTemplatedDialog section,",
+            "body.customerInlineDialogOpen .extensionTemplatedDialog header,",
+            "body.customerInlineDialogOpen .extensionTemplatedDialog footer,",
+            "body.customerInlineDialogOpen .extensionTemplatedDialog span {",
+            "    background-color: transparent !important;",
+            "}",
+            // Texto claro sobre el fondo ya oscuro. Las reglas propias del modal usan tres
+            // clases y le ganan a estas dos, asi que las etiquetas, el recuadro de resultado y
+            // la alerta conservan sus colores.
+            "body.customerInlineDialogOpen .extensionTemplatedDialog,",
+            "body.customerInlineDialogOpen .extensionTemplatedDialog div,",
+            "body.customerInlineDialogOpen .extensionTemplatedDialog span,",
+            "body.customerInlineDialogOpen .extensionTemplatedDialog h1,",
+            "body.customerInlineDialogOpen .extensionTemplatedDialog h2,",
+            "body.customerInlineDialogOpen .extensionTemplatedDialog h3,",
+            "body.customerInlineDialogOpen .extensionTemplatedDialog h4 {",
+            "    color: " + CustomerInlineDialog._colorText + " !important;",
             "}"
         ].join("\n");
 

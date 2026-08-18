@@ -207,6 +207,22 @@
             background: rgba(200, 16, 46, 0.20);
         }
 
+        /* ACCIÓN PRINCIPAL DEL MODAL.
+           "Crear en Sistema y Asignar" es el botón que dispara todo el proceso —alta del
+           cliente, dirección, propiedades SUNAT y asignación a la venta— y tenía el mismo
+           tamaño que un botón secundario. Ocupa el ancho completo y crece en alto y en
+           tipografía para que sea lo que el cajero encuentra sin buscar.
+           Se aplica igual a "Guardar Cambios": es la acción principal del modo editar y
+           dejarlas distintas se leería como un descuido. */
+        .customer-inline-dialog__action--cta {
+            flex: 1 1 100%;
+            min-height: 56px;
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+            box-shadow: 0 2px 10px rgba(200, 16, 46, 0.35);
+        }
+
         .customer-inline-dialog__action:disabled {
             border-color: rgba(255, 255, 255, 0.18);
             background: #2A2827;
@@ -350,6 +366,12 @@
             background-color: #C8102E !important;
             border: 1px solid #C8102E !important;
             color: #FFFFFF !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__action--cta {
+            min-height: 56px !important;
+            font-size: 18px !important;
+            font-weight: 600 !important;
         }
 
         .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__action--secondary {
@@ -607,12 +629,12 @@
          cajero podía darle antes de completar la dirección. _setMode muestra el juego que
          corresponde al modo. -->
     <div id="customerInlineCreateActions" class="customer-inline-dialog__actions" style="display: none;">
-        <button id="customerInlineCreateButton" class="customer-inline-dialog__action" type="button">2. Crear en Sistema y Asignar</button>
+        <button id="customerInlineCreateButton" class="customer-inline-dialog__action customer-inline-dialog__action--cta" type="button">2. Crear en Sistema y Asignar</button>
     </div>
 
     <div id="customerInlineEditActions" class="customer-inline-dialog__actions" style="display: none;">
         <button id="customerInlineEditSunatButton" class="customer-inline-dialog__action customer-inline-dialog__action--secondary" type="button">Validar con SUNAT</button>
-        <button id="customerInlineEditButton" class="customer-inline-dialog__action" type="button">Guardar Cambios</button>
+        <button id="customerInlineEditButton" class="customer-inline-dialog__action customer-inline-dialog__action--cta" type="button">Guardar Cambios</button>
     </div>
 
     <div id="customerInlineCreateResult" class="customer-inline-dialog__result" style="display: none;"></div>
