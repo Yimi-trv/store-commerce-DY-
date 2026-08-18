@@ -170,7 +170,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._widenHostDialog = function (element) {
                     var _this = this;
-                    var attempts = [0, 60, 150, 300, 550, 900];
+                    var attempts = [0, 60, 150, 350];
                     this._applyDialogWidth(element);
                     this._applyDialogTheme(element);
                     for (var i = 0; i < attempts.length; i++) {
@@ -212,23 +212,24 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     return null;
                 };
                 CustomerInlineDialog.prototype._applyDialogWidth = function (element) {
-                    var viewport = (typeof window !== "undefined" && window.innerWidth) ? window.innerWidth : 1024;
-                    var targetWidth = Math.max(520, Math.min(800, Math.floor(viewport * 0.82)));
                     var node = element.parentElement;
                     for (var depth = 0; node && depth < 10; depth++) {
                         var cls = typeof node.className === "string" ? node.className : "";
                         if (cls.indexOf("extensionTemplatedDialog") >= 0) {
-                            node.style.width = targetWidth + "px";
-                            node.style.maxWidth = "96vw";
+                            this._addClass(node, "customerInlineHostDialog");
                             break;
                         }
                         if (cls.indexOf("dialogContainer") >= 0
                             || cls.indexOf("ExtensionTemplateDialogContentPlaceholder") >= 0) {
-                            node.style.width = "100%";
-                            node.style.maxWidth = "100%";
-                            node.style.boxSizing = "border-box";
+                            this._addClass(node, "customerInlineHostContainer");
                         }
                         node = node.parentElement;
+                    }
+                };
+                CustomerInlineDialog.prototype._addClass = function (node, className) {
+                    var current = typeof node.className === "string" ? node.className : "";
+                    if ((" " + current + " ").indexOf(" " + className + " ") === -1) {
+                        node.className = current ? current + " " + className : className;
                     }
                 };
                 CustomerInlineDialog.prototype._reportDialogWidth = function (element) {

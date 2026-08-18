@@ -398,6 +398,36 @@
         .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__alert-body {
             color: #E8E6E3 !important;
         }
+
+        /* ─── ANCHO Y FONDO DEL CONTENEDOR DEL POS ─────────────────────────────────────
+           Estas dos clases NO están en la plantilla: se las pone _applyDialogWidth a los
+           contenedores que el POS monta alrededor.
+
+           Van aquí y no como estilo en línea desde JavaScript por el parpadeo: el POS fija
+           su propio ancho en línea y lo hace DESPUÉS de onReady, así que la última escritura
+           ganaba y el modal se veía estrecho medio segundo antes de ensancharse de golpe.
+           Un estilo en línea no le gana a un !important de hoja de estilos, así que con esto
+           el POS puede escribir su ancho las veces que quiera. Y la regla está activa desde
+           que se parsea la plantilla, antes de que el POS mida.
+
+           El ancho con clamp() se adapta solo al viewport de la caja —que puede ser 1024px,
+           no 1920— sin calcularlo en JavaScript:
+             mínimo 520px   para que la tabla de resultados entre
+             ideal  82vw
+             máximo 800px   con 960 el modal tapaba casi toda la venta y el cajero perdía de
+                            vista las líneas y los totales; a 800 quedan ~220px visibles. */
+        .customerInlineHostDialog {
+            width: clamp(520px, 82vw, 800px) !important;
+            max-width: 96vw !important;
+            background-color: #1B1A19 !important;
+            color: #E8E6E3 !important;
+        }
+
+        .customerInlineHostContainer {
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+        }
     </style>
 
     <div class="customer-inline-dialog__tabs">

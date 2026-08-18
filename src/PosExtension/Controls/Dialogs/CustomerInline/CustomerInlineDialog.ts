@@ -308,14 +308,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      * No se toca `position` ni `left`: el diálogo ya viene centrado y moverlo lo rompería.
      */
     private _widenHostDialog(element: HTMLElement): void {
-        // El POS fija el ancho del diálogo cuando lo muestra, y lo hace DESPUÉS de onReady.
-        // Aplicarlo una sola vez no alcanza: verificado en UAT, la primera apertura salía ancha
-        // y la segunda volvía al tamaño por defecto, porque con el contenido ya en caché el POS
-        // termina antes y su valor pisa el nuestro.
+        // El ancho YA NO se reaplica: sale de una regla !important de la plantilla y el POS no
+        // puede pisarla. Lo unico que hace falta es poner la clase en cuanto el contenedor
+        // exista. Antes esto era una carrera contra el POS que se ganaba tarde, y el modal se
+        // veia estrecho medio segundo antes de ensancharse a la vista del cajero.
         //
-        // Por eso se reaplica a lo largo de ~1 segundo. Cada pasada es idempotente y barata:
-        // solo escribe estilos en línea sobre tres contenedores.
-        const attempts: number[] = [0, 60, 150, 300, 550, 900];
+        // Quedan unos pocos reintentos, ya cortos, por dos motivos: el contenedor puede no
+        // estar montado en el primer onReady, y el POS repinta su chrome despues, que es lo
+        // que _applyDialogTheme tiene que volver a oscurecer. Cada pasada es idempotente:
+        // _addClass no duplica la clase y el recorrido solo reescribe colores.
+        const attempts: number[] = [0, 60, 150, 350];
 
         this._applyDialogWidth(element);
         this._applyDialogTheme(element);
@@ -395,35 +397,49 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         return null;
     }
 
+    /**
+     * Marca los contenedores del POS para que el CSS de la plantilla les de el ancho.
+     *
+     * POR QUE UNA CLASE Y NO UN ESTILO EN LINEA
+     * Antes esto escribia `node.style.width` directamente. El POS fija SU ancho tambien en
+     * linea y lo hace DESPUES de onReady, asi que la ultima escritura ganaba: el modal se veia
+     * estrecho medio segundo y se ensanchaba de golpe cuando uno de los reintentos volvia a
+     * pisarlo. Era una carrera que se ganaba tarde y a la vista del cajero.
+     *
+     * Con una clase, el ancho sale de una regla `!important` del `<style>` de la plantilla, y
+     * un estilo en linea NO le gana a un !important de hoja de estilos. El POS puede escribir
+     * su ancho las veces que quiera: ya no cambia nada. Ademas la regla esta activa desde que
+     * se parsea la plantilla, o sea antes de que el POS mida.
+     *
+     * El ancho concreto tambien vive en el CSS, con clamp(): se adapta solo al viewport de la
+     * caja sin tener que calcularlo en JavaScript ni recalcularlo si la ventana cambia.
+     */
     private _applyDialogWidth(element: HTMLElement): void {
-        // El viewport de caja puede ser 1024px, no 1920: el ancho se calcula contra la pantalla
-        // real en vez de fijar un número que desborde.
-        //
-        // 800px es el techo. Con 960 el modal tapaba casi toda la venta —el cajero pierde de
-        // vista las líneas y los totales—, y con 1024 de viewport eso son 94% de la pantalla.
-        // A 800 quedan ~220px de la transacción visibles, que es el punto donde la tabla de
-        // resultados sigue entrando cómoda sin ocultar el contexto de la venta.
-        const viewport: number = (typeof window !== "undefined" && window.innerWidth) ? window.innerWidth : 1024;
-        const targetWidth: number = Math.max(520, Math.min(800, Math.floor(viewport * 0.82)));
-
         let node: HTMLElement = element.parentElement;
+
         for (let depth: number = 0; node && depth < 10; depth++) {
             const cls: string = typeof node.className === "string" ? node.className : "";
 
             if (cls.indexOf("extensionTemplatedDialog") >= 0) {
-                node.style.width = targetWidth + "px";
-                node.style.maxWidth = "96vw";
+                this._addClass(node, "customerInlineHostDialog");
                 break;
             }
 
             if (cls.indexOf("dialogContainer") >= 0
                 || cls.indexOf("ExtensionTemplateDialogContentPlaceholder") >= 0) {
-                node.style.width = "100%";
-                node.style.maxWidth = "100%";
-                node.style.boxSizing = "border-box";
+                this._addClass(node, "customerInlineHostContainer");
             }
 
             node = node.parentElement;
+        }
+    }
+
+    /** `classList` no existe en el target ES5 del proyecto, y repetir la clase rompe el CSS. */
+    private _addClass(node: HTMLElement, className: string): void {
+        const current: string = typeof node.className === "string" ? node.className : "";
+
+        if ((" " + current + " ").indexOf(" " + className + " ") === -1) {
+            node.className = current ? current + " " + className : className;
         }
     }
 
