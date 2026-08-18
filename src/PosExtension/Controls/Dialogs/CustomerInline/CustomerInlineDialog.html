@@ -299,6 +299,105 @@
             justify-content: flex-end;
             gap: 8px;
         }
+
+        /* ─── REFUERZO CONTRA EL CSS DEL POS ───────────────────────────────────────────
+           Store Commerce declara sus estilos de formulario con !important, así que las
+           reglas de arriba no bastaban: los input seguían saliendo blancos sobre el modal
+           oscuro aunque los select sí tomaban el tema.
+
+           Aquí se repiten SOLO las propiedades de color, con !important y con la clase raíz
+           duplicada —`.customer-inline-dialog.customer-inline-dialog`— que sube la
+           especificidad por encima de las reglas del host sin tocar el marcado ni añadir
+           clases nuevas.
+
+           Va en un bloque aparte a propósito: arriba está el diseño, aquí la defensa contra
+           el CSS del host. Si el POS deja de pisar estos estilos, este bloque se puede
+           borrar entero sin tocar lo demás. */
+
+        /* Los checkbox quedan fuera: con color-scheme dark el navegador ya los dibuja
+           oscuros, y darles fondo y borde propios los deforma. */
+        .customer-inline-dialog.customer-inline-dialog input:not([type="checkbox"]),
+        .customer-inline-dialog.customer-inline-dialog select,
+        .customer-inline-dialog.customer-inline-dialog textarea {
+            background-color: #201F1E !important;
+            color: #E8E6E3 !important;
+            border: 1px solid rgba(255, 255, 255, 0.24) !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog input:not([type="checkbox"]):focus,
+        .customer-inline-dialog.customer-inline-dialog select:focus {
+            border-color: #C8102E !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog input[readonly] {
+            background-color: #161514 !important;
+            color: #A19F9D !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__tab {
+            background-color: transparent !important;
+            border: 0 !important;
+            border-bottom: 3px solid transparent !important;
+            color: #A19F9D !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__tab.is-active {
+            border-bottom: 3px solid #C8102E !important;
+            color: #FFFFFF !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__action {
+            background-color: #C8102E !important;
+            border: 1px solid #C8102E !important;
+            color: #FFFFFF !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__action--secondary {
+            background-color: transparent !important;
+            color: #E8E6E3 !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__action:disabled {
+            background-color: #2A2827 !important;
+            border-color: rgba(255, 255, 255, 0.18) !important;
+            color: #7A7876 !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog label,
+        .customer-inline-dialog.customer-inline-dialog h3 {
+            color: #E8E6E3 !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__result {
+            background-color: #201F1E !important;
+            color: #E8E6E3 !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__message {
+            color: #A19F9D !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__results th {
+            background-color: #161514 !important;
+            color: #E8E6E3 !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__results td {
+            background-color: transparent !important;
+            color: #E8E6E3 !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__alert {
+            background-color: #201F1E !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__alert-title {
+            color: #FF6B6B !important;
+        }
+
+        .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__alert-body {
+            color: #E8E6E3 !important;
+        }
     </style>
 
     <div class="customer-inline-dialog__tabs">
