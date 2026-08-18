@@ -1083,18 +1083,29 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      * Qué campos admite el canal lo dice `GetCustomerSearchFields()`; no se pueden cablear
      * porque son una enumeración extensible que cada implantación define.
      */
-    private _runSearch(searchText: string): Promise<any> {
+    /**
+     * Ejecuta la busqueda y ADEMAS informa por que via fue.
+     *
+     * `byDocument` distingue una busqueda dirigida al campo de documento del canal de una por
+     * palabra clave. La comprobacion de duplicados lo necesita: si el propio servidor filtro
+     * por documento, los resultados ya coinciden y no hay nada que verificar. Sin ese dato
+     * habia que releer cada candidato entero solo para comparar su documento.
+     */
+    private _runSearchDetailed(searchText: string): Promise<{ response: any; byDocument: boolean }> {
         const asDocument: string = this._sunatService.normalizeDocument(searchText);
         const looksLikeDocument: boolean = asDocument === searchText.trim()
             && (asDocument.length === 8 || asDocument.length === 11);
 
         if (!looksLikeDocument) {
             return this.context.runtime.executeAsync(
-                new CustomerSearchRequest<CustomerSearchResponse>(searchText, this._searchTop, this._searchSkip));
+                new CustomerSearchRequest<CustomerSearchResponse>(searchText, this._searchTop, this._searchSkip))
+                .then((response: any): { response: any; byDocument: boolean } => {
+                    return { response: response, byDocument: false };
+                });
         }
 
         return this._getDocumentSearchField()
-            .then((field: any): Promise<any> => {
+            .then((field: any): Promise<{ response: any; byDocument: boolean }> => {
                 if (!field) {
                     // El canal no expone un campo de documento: se busca por palabra clave, que
                     // puede no encontrarlo. Queda registrado para saber si hay que resolverlo
@@ -1102,7 +1113,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                     this._logChunked("=== Busqueda por documento ===",
                         "el canal no expone un campo de documento; se usa palabra clave");
                     return this.context.runtime.executeAsync(
-                        new CustomerSearchRequest<CustomerSearchResponse>(searchText, this._searchTop, this._searchSkip));
+                        new CustomerSearchRequest<CustomerSearchResponse>(searchText, this._searchTop, this._searchSkip))
+                        .then((response: any): { response: any; byDocument: boolean } => {
+                            return { response: response, byDocument: false };
+                        });
                 }
 
                 this._logChunked("=== Busqueda por documento ===",
@@ -1110,8 +1124,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
                 return this.context.runtime.executeAsync(
                     new CustomerSearchByFieldsRequest<CustomerSearchByFieldsResponse>(
-                        searchText, field, this._searchTop, this._searchSkip));
+                        searchText, field, this._searchTop, this._searchSkip))
+                    .then((response: any): { response: any; byDocument: boolean } => {
+                        return { response: response, byDocument: true };
+                    });
             });
+    }
+
+    private _runSearch(searchText: string): Promise<any> {
+        return this._runSearchDetailed(searchText)
+            .then((outcome: { response: any; byDocument: boolean }): any => outcome.response);
     }
 
     /**
@@ -1390,10 +1412,23 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
         // Usa la misma vía que la búsqueda del modal: por palabra clave el documento no se
         // encuentra, así que la comprobación de duplicados tampoco lo detectaba.
-        return this._runSearch(documentNumber)
-            .then((response: any): Promise<ProxyEntities.Customer | null> => {
-                const candidates: any[] = (response && response.data && response.data.result) || [];
+        return this._runSearchDetailed(documentNumber)
+            .then((outcome: { response: any; byDocument: boolean }): Promise<ProxyEntities.Customer | null> => {
+                const candidates: any[] = (outcome.response && outcome.response.data && outcome.response.data.result) || [];
                 if (candidates.length === 0) {
+                    return Promise.resolve(null);
+                }
+
+                // ATAJO: si la búsqueda fue DIRIGIDA al campo de documento del canal, el
+                // servidor ya filtró por ese campo y el primer resultado ES el cliente que
+                // tiene el documento. Releerlo entero solo para volver a comparar el número
+                // costaba una petición de ida y vuelta que no aportaba nada.
+                if (outcome.byDocument) {
+                    for (let i: number = 0; i < candidates.length; i++) {
+                        if (candidates[i].AccountNumber) {
+                            return Promise.resolve(candidates[i] as ProxyEntities.Customer);
+                        }
+                    }
                     return Promise.resolve(null);
                 }
 
@@ -1404,22 +1439,26 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                     }
                 }
 
-                // Se revisan en cadena y se corta al primer acierto, para no gastar peticiones.
-                const checkNext: (index: number) => Promise<ProxyEntities.Customer | null> =
-                    (index: number): Promise<ProxyEntities.Customer | null> => {
-                        if (index >= accounts.length) {
-                            return Promise.resolve(null);
-                        }
-                        return this._getCustomerByAccount(accounts[index])
-                            .then((customer: ProxyEntities.Customer | null): Promise<ProxyEntities.Customer | null> => {
-                                if (customer && this._sunatService.getDocumentNumber(customer) === documentNumber) {
-                                    return Promise.resolve(customer);
-                                }
-                                return checkNext(index + 1);
-                            });
-                    };
+                // Búsqueda por palabra clave: aquí SÍ hay que releer cada candidato, porque el
+                // documento no viene en el resultado. Van EN PARALELO —antes se encadenaban y
+                // el cajero pagaba las tres esperas seguidas—; con tres como máximo, lanzarlas
+                // juntas cuesta una sola ida y vuelta en vez de tres.
+                const lookups: Promise<ProxyEntities.Customer | null>[] = [];
+                for (let i: number = 0; i < accounts.length; i++) {
+                    lookups.push(this._getCustomerByAccount(accounts[i])
+                        .catch((): ProxyEntities.Customer | null => null));
+                }
 
-                return checkNext(0);
+                return Promise.all(lookups)
+                    .then((customers: (ProxyEntities.Customer | null)[]): ProxyEntities.Customer | null => {
+                        for (let i: number = 0; i < customers.length; i++) {
+                            const customer: ProxyEntities.Customer = customers[i];
+                            if (customer && this._sunatService.getDocumentNumber(customer) === documentNumber) {
+                                return customer;
+                            }
+                        }
+                        return null;
+                    });
             })
             .catch((reason: any): ProxyEntities.Customer | null => {
                 // Ante un fallo de la comprobación NO se bloquea el alta: es peor impedir una
@@ -1520,14 +1559,29 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 documentNumber);
         }
 
-        return this._getCustomerByAccount(duplicateAccount)
-            .catch((): ProxyEntities.Customer | null => null)
-            .then((existing: ProxyEntities.Customer | null): Promise<void> => {
-                // Aunque no se pueda releer el cliente, la alerta debe salir igual.
-                const stub: ProxyEntities.Customer = existing
-                    || ({ AccountNumber: duplicateAccount, Name: "" } as ProxyEntities.Customer);
-                return this._blockDuplicate(element, stub, documentNumber);
+        // La alerta sale YA, con la cuenta que vino en el mensaje del servidor. Antes se
+        // esperaba a releer el cliente solo para poder mostrar su nombre, y esa ida y vuelta
+        // se sumaba entera al tiempo que el cajero pasa mirando una pantalla quieta.
+        // El nombre no hace falta para decidir —la cuenta y el documento ya identifican al
+        // cliente— asi que se busca EN PARALELO y se inyecta en el texto si llega a tiempo.
+        const alert: Promise<void> = this._blockDuplicate(
+            element,
+            { AccountNumber: duplicateAccount, Name: "" } as ProxyEntities.Customer,
+            documentNumber);
+
+        this._getCustomerByAccount(duplicateAccount)
+            .then((existing: ProxyEntities.Customer | null): void => {
+                if (existing && existing.Name) {
+                    this._setAlertBody(element, this._duplicateAlertBody(
+                        duplicateAccount, existing.Name, documentNumber));
+                }
+            })
+            .catch((): void => {
+                // Que no se pueda releer el cliente no cambia nada: la alerta ya esta en
+                // pantalla y el nombre era un adorno.
             });
+
+        return alert;
     }
 
     /**
@@ -1548,14 +1602,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         this._logChunked("=== Duplicado evitado ===",
             "documento=" + documentNumber + " ya pertenece a la cuenta " + account);
 
-        const body: string = account
-            ? "El documento " + documentNumber + " ya pertenece a la cuenta " + account
-                + (name ? " (" + name + ")" : "") + ".\n\n"
-                + "No se creó un cliente nuevo para no duplicarlo.\n\n"
-                + "Al aceptar, ese cliente se asigna a esta venta."
-            : "El documento " + documentNumber + " ya está registrado en otro cliente.\n\n"
-                + "No se creó un cliente nuevo para no duplicarlo. "
-                + "Búsquelo en la pestaña Buscar Cliente.";
+        const body: string = this._duplicateAlertBody(account, name, documentNumber);
 
         return this._showAlert(
             element,
@@ -1589,6 +1636,30 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                         this._showMessage(element, "No se pudo asignar: " + this._getErrorMessage(reason));
                     });
             });
+    }
+
+    /** Texto de la alerta de duplicado. Vive aparte porque se recalcula si el nombre llega tarde. */
+    private _duplicateAlertBody(account: string, name: string, documentNumber: string): string {
+        if (!account) {
+            return "El documento " + documentNumber + " ya está registrado en otro cliente.\n\n"
+                + "No se creó un cliente nuevo para no duplicarlo. "
+                + "Búsquelo en la pestaña Buscar Cliente.";
+        }
+
+        return "El documento " + documentNumber + " ya pertenece a la cuenta " + account
+            + (name ? " (" + name + ")" : "") + ".\n\n"
+            + "No se creó un cliente nuevo para no duplicarlo.\n\n"
+            + "Al aceptar, ese cliente se asigna a esta venta.";
+    }
+
+    /** Reescribe el texto de la alerta que ya está en pantalla. No hace nada si se cerró. */
+    private _setAlertBody(element: HTMLElement, body: string): void {
+        const overlay: HTMLElement = element.querySelector("#customerInlineAlertOverlay") as HTMLElement;
+        const bodyNode: HTMLElement = element.querySelector("#customerInlineAlertBody") as HTMLElement;
+
+        if (overlay && bodyNode && overlay.style.display !== "none") {
+            bodyNode.textContent = body;
+        }
     }
 
     /**

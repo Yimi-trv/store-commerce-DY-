@@ -694,23 +694,36 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._setSearchBusy(element, false);
                     });
                 };
-                CustomerInlineDialog.prototype._runSearch = function (searchText) {
+                CustomerInlineDialog.prototype._runSearchDetailed = function (searchText) {
                     var _this = this;
                     var asDocument = this._sunatService.normalizeDocument(searchText);
                     var looksLikeDocument = asDocument === searchText.trim()
                         && (asDocument.length === 8 || asDocument.length === 11);
                     if (!looksLikeDocument) {
-                        return this.context.runtime.executeAsync(new CustomerSearchRequest_1.CustomerSearchRequest(searchText, this._searchTop, this._searchSkip));
+                        return this.context.runtime.executeAsync(new CustomerSearchRequest_1.CustomerSearchRequest(searchText, this._searchTop, this._searchSkip))
+                            .then(function (response) {
+                            return { response: response, byDocument: false };
+                        });
                     }
                     return this._getDocumentSearchField()
                         .then(function (field) {
                         if (!field) {
                             _this._logChunked("=== Busqueda por documento ===", "el canal no expone un campo de documento; se usa palabra clave");
-                            return _this.context.runtime.executeAsync(new CustomerSearchRequest_1.CustomerSearchRequest(searchText, _this._searchTop, _this._searchSkip));
+                            return _this.context.runtime.executeAsync(new CustomerSearchRequest_1.CustomerSearchRequest(searchText, _this._searchTop, _this._searchSkip))
+                                .then(function (response) {
+                                return { response: response, byDocument: false };
+                            });
                         }
                         _this._logChunked("=== Busqueda por documento ===", "campo elegido: " + (field.Name || "?") + " (valor " + (field.Value || "?") + ")");
-                        return _this.context.runtime.executeAsync(new CustomerSearchByFieldsRequest_1.CustomerSearchByFieldsRequest(searchText, field, _this._searchTop, _this._searchSkip));
+                        return _this.context.runtime.executeAsync(new CustomerSearchByFieldsRequest_1.CustomerSearchByFieldsRequest(searchText, field, _this._searchTop, _this._searchSkip))
+                            .then(function (response) {
+                            return { response: response, byDocument: true };
+                        });
                     });
+                };
+                CustomerInlineDialog.prototype._runSearch = function (searchText) {
+                    return this._runSearchDetailed(searchText)
+                        .then(function (outcome) { return outcome.response; });
                 };
                 CustomerInlineDialog.prototype._getDocumentSearchField = function () {
                     var _this = this;
@@ -912,10 +925,18 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (!documentNumber) {
                         return Promise.resolve(null);
                     }
-                    return this._runSearch(documentNumber)
-                        .then(function (response) {
-                        var candidates = (response && response.data && response.data.result) || [];
+                    return this._runSearchDetailed(documentNumber)
+                        .then(function (outcome) {
+                        var candidates = (outcome.response && outcome.response.data && outcome.response.data.result) || [];
                         if (candidates.length === 0) {
+                            return Promise.resolve(null);
+                        }
+                        if (outcome.byDocument) {
+                            for (var i = 0; i < candidates.length; i++) {
+                                if (candidates[i].AccountNumber) {
+                                    return Promise.resolve(candidates[i]);
+                                }
+                            }
                             return Promise.resolve(null);
                         }
                         var accounts = [];
@@ -924,19 +945,21 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 accounts.push(candidates[i].AccountNumber);
                             }
                         }
-                        var checkNext = function (index) {
-                            if (index >= accounts.length) {
-                                return Promise.resolve(null);
-                            }
-                            return _this._getCustomerByAccount(accounts[index])
-                                .then(function (customer) {
+                        var lookups = [];
+                        for (var i = 0; i < accounts.length; i++) {
+                            lookups.push(_this._getCustomerByAccount(accounts[i])
+                                .catch(function () { return null; }));
+                        }
+                        return Promise.all(lookups)
+                            .then(function (customers) {
+                            for (var i = 0; i < customers.length; i++) {
+                                var customer = customers[i];
                                 if (customer && _this._sunatService.getDocumentNumber(customer) === documentNumber) {
-                                    return Promise.resolve(customer);
+                                    return customer;
                                 }
-                                return checkNext(index + 1);
-                            });
-                        };
-                        return checkNext(0);
+                            }
+                            return null;
+                        });
                     })
                         .catch(function (reason) {
                         _this._logError("Comprobacion de duplicado fallo: " + _this._stringify(reason));
@@ -991,27 +1014,23 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (!duplicateAccount) {
                         return this._blockDuplicate(element, { AccountNumber: "", Name: "" }, documentNumber);
                     }
-                    return this._getCustomerByAccount(duplicateAccount)
-                        .catch(function () { return null; })
+                    var alert = this._blockDuplicate(element, { AccountNumber: duplicateAccount, Name: "" }, documentNumber);
+                    this._getCustomerByAccount(duplicateAccount)
                         .then(function (existing) {
-                        var stub = existing
-                            || { AccountNumber: duplicateAccount, Name: "" };
-                        return _this._blockDuplicate(element, stub, documentNumber);
+                        if (existing && existing.Name) {
+                            _this._setAlertBody(element, _this._duplicateAlertBody(duplicateAccount, existing.Name, documentNumber));
+                        }
+                    })
+                        .catch(function () {
                     });
+                    return alert;
                 };
                 CustomerInlineDialog.prototype._blockDuplicate = function (element, existing, documentNumber) {
                     var _this = this;
                     var account = existing.AccountNumber || "";
                     var name = existing.Name || this._formatCustomerSummary(existing);
                     this._logChunked("=== Duplicado evitado ===", "documento=" + documentNumber + " ya pertenece a la cuenta " + account);
-                    var body = account
-                        ? "El documento " + documentNumber + " ya pertenece a la cuenta " + account
-                            + (name ? " (" + name + ")" : "") + ".\n\n"
-                            + "No se creó un cliente nuevo para no duplicarlo.\n\n"
-                            + "Al aceptar, ese cliente se asigna a esta venta."
-                        : "El documento " + documentNumber + " ya está registrado en otro cliente.\n\n"
-                            + "No se creó un cliente nuevo para no duplicarlo. "
-                            + "Búsquelo en la pestaña Buscar Cliente.";
+                    var body = this._duplicateAlertBody(account, name, documentNumber);
                     return this._showAlert(element, "El cliente ya existe", body, account ? "Aceptar y usar este cliente" : "Aceptar", account ? "Cancelar" : "")
                         .then(function (accepted) {
                         if (!accepted || !account) {
@@ -1033,6 +1052,24 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             _this._showMessage(element, "No se pudo asignar: " + _this._getErrorMessage(reason));
                         });
                     });
+                };
+                CustomerInlineDialog.prototype._duplicateAlertBody = function (account, name, documentNumber) {
+                    if (!account) {
+                        return "El documento " + documentNumber + " ya está registrado en otro cliente.\n\n"
+                            + "No se creó un cliente nuevo para no duplicarlo. "
+                            + "Búsquelo en la pestaña Buscar Cliente.";
+                    }
+                    return "El documento " + documentNumber + " ya pertenece a la cuenta " + account
+                        + (name ? " (" + name + ")" : "") + ".\n\n"
+                        + "No se creó un cliente nuevo para no duplicarlo.\n\n"
+                        + "Al aceptar, ese cliente se asigna a esta venta.";
+                };
+                CustomerInlineDialog.prototype._setAlertBody = function (element, body) {
+                    var overlay = element.querySelector("#customerInlineAlertOverlay");
+                    var bodyNode = element.querySelector("#customerInlineAlertBody");
+                    if (overlay && bodyNode && overlay.style.display !== "none") {
+                        bodyNode.textContent = body;
+                    }
                 };
                 CustomerInlineDialog.prototype._showAlert = function (element, title, body, acceptLabel, cancelLabel) {
                     var overlay = element.querySelector("#customerInlineAlertOverlay");
