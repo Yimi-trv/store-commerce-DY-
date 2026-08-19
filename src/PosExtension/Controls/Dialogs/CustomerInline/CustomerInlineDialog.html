@@ -38,7 +38,9 @@
 
         .customer-inline-dialog__results {
             margin-top: 12px;
-            max-height: 320px;
+            /* ~5 filas de 56px más la cabecera: con filas más altas el tope anterior (320px)
+               dejaba ver solo tres y obligaba a desplazar casi siempre. */
+            max-height: 360px;
             overflow-y: auto;
             border: 1px solid rgba(255, 255, 255, 0.16);
         }
@@ -63,9 +65,18 @@
             font-weight: 600;
         }
 
+        /* FILAS ALTAS PARA TOCAR CON EL DEDO.
+           Con 8px de padding cada fila medía ~32px y en una pantalla táctil era fácil tocar la
+           de arriba o la de abajo y asignar a la venta un cliente equivocado. 56px es el mínimo
+           cómodo para un dedo; el separador más marcado y la fuente un punto mayor ayudan a
+           leer cuál es cuál antes de tocar. */
         .customer-inline-dialog__results td {
-            padding: 8px 10px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+            /* El alto total sale del padding: en una celda `height` se suma al padding y daba
+               77px. 18px arriba y abajo con una linea de ~20px son ~56px por fila. */
+            padding: 18px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+            font-size: 15px;
+            vertical-align: middle;
             /* Una sola línea por celda: recortar es preferible a que el texto se encime. */
             white-space: nowrap;
             overflow: hidden;
@@ -87,6 +98,13 @@
            un error y además no pertenece a esta paleta. */
         .customer-inline-dialog__results tbody tr:hover {
             background: rgba(200, 16, 46, 0.18);
+        }
+
+        /* En táctil no hay hover: el estado :active es lo único que confirma qué fila se está
+           presionando. Más intenso que el hover y con la franja roja a la izquierda. */
+        .customer-inline-dialog__results tbody tr:active {
+            background: rgba(200, 16, 46, 0.32);
+            box-shadow: inset 4px 0 0 #C8102E;
         }
 
         .customer-inline-dialog__tabs {
@@ -407,6 +425,7 @@
         .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__results td {
             background-color: transparent !important;
             color: #E8E6E3 !important;
+            padding: 18px 12px !important;
         }
 
         .customer-inline-dialog.customer-inline-dialog .customer-inline-dialog__alert {
