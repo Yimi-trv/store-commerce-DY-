@@ -1645,8 +1645,27 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return Promise.resolve();
         }
 
-        this._showMessage(element, "Verificando que el documento no esté ya registrado...");
+        this._showMessage(element, "Verificando la situación del documento en SUNAT...");
 
+        // El veto a observados corre SIEMPRE al crear, no solo al consultar: sin esto bastaba
+        // llenar los campos a mano para saltarse la regla. La consulta sale de la caché si ya
+        // se hizo. Si el proveedor está caído NO se bloquea: sin dato no se detiene una venta.
+        return this._sunatService.lookup(documentNumber)
+            .then((sunatData: ISunatCustomerData): boolean | Promise<boolean> =>
+                this._warnInvoiceEligibility(element, sunatData))
+            .catch((): boolean => true)
+            .then((eligible: boolean): Promise<void> => {
+                if (!eligible) {
+                    return Promise.resolve();
+                }
+
+                this._showMessage(element, "Verificando que el documento no esté ya registrado...");
+
+                return this._runCreateAfterEligibility(element, documentNumber, name);
+            });
+    }
+
+    private _runCreateAfterEligibility(element: HTMLElement, documentNumber: string, name: string): Promise<void> {
         return this._findExistingByDocument(documentNumber)
             .then((existing: ProxyEntities.Customer | null): Promise<void> => {
                 if (existing) {
@@ -1774,15 +1793,20 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      * Advierte si al contribuyente NO se le puede emitir factura (estado distinto de ACTIVO o
      * condición distinta de HABIDO). Resuelve al cerrar la alerta; sin motivos, de inmediato.
      *
-     * ADVIERTE, NO BLOQUEA: la boleta a ese cliente sigue siendo válida; lo observado es la
-     * factura. Impedir el alta bloquearía ventas legítimas. El aviso queda también en la línea
-     * de estado, porque la alerta se cierra y el dato se necesita al elegir el comprobante.
+     * DECISIÓN DEL NEGOCIO (2026-08-20): a estos clientes NO SE LES VENDE y NO SE LES CREA
+     * ficha. La primera versión solo advertía y permitía la boleta; se endureció a pedido
+     * expreso para no depender de que el cajero recuerde la regla al elegir el comprobante.
+     * Devuelve true si es apto; con motivos, muestra la alerta y devuelve false.
+     *
+     * El veto real está en _executeCreate, que reconsulta antes de crear: esta alerta en la
+     * consulta es el aviso temprano, pero el cajero podría llenar los campos a mano sin
+     * consultar y el botón de crear tiene que negarse igual.
      */
-    private _warnInvoiceEligibility(element: HTMLElement, sunatData: ISunatCustomerData): Promise<void> {
+    private _warnInvoiceEligibility(element: HTMLElement, sunatData: ISunatCustomerData): Promise<boolean> {
         const reasons: string[] = this._sunatService.getInvoiceBlockReasons(sunatData);
 
         if (reasons.length === 0) {
-            return Promise.resolve();
+            return Promise.resolve(true);
         }
 
         this._logChunked("=== Contribuyente observado en SUNAT ===",
@@ -1790,14 +1814,14 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
         const body: string = "SUNAT reporta lo siguiente para el RUC " + sunatData.documentNumber + ":\n\n"
             + reasons.join("\n") + "\n\n"
-            + "A este contribuyente NO se le debe emitir FACTURA: saldría observada y sin "
-            + "crédito fiscal.\n\n"
-            + "Puede registrarlo y venderle con BOLETA.";
+            + "A este cliente NO se le puede vender ni registrar en el sistema.\n\n"
+            + "Debe regularizar su situación en SUNAT antes de poder comprarnos.";
 
-        return this._showAlert(element, "Contribuyente observado en SUNAT", body, "Entendido", "")
-            .then((): void => {
+        return this._showAlert(element, "Cliente observado en SUNAT — venta no permitida", body, "Entendido", "")
+            .then((): boolean => {
                 this._showMessage(element,
-                    "⚠ RUC observado en SUNAT (" + reasons.join("; ") + "). Solo boleta, no factura.");
+                    "⛔ RUC observado en SUNAT (" + reasons.join("; ") + "). No se le puede vender ni crear.");
+                return false;
             });
     }
 
@@ -2282,7 +2306,8 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 // La advertencia va ANTES del ofrecimiento de dirección: si el RUC está
                 // observado, eso pesa más que cualquier dato que se vaya a copiar.
                 return this._warnInvoiceEligibility(element, sunatData)
-                    .then((): Promise<void> => this._offerSunatAddress(element, sunatData));
+                    .then((eligible: boolean): Promise<void> =>
+                        eligible ? this._offerSunatAddress(element, sunatData) : Promise.resolve());
             });
     }
 

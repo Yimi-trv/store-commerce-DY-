@@ -1051,7 +1051,22 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this._showMessage(element, "El nombre/razón social es obligatorio.");
                         return Promise.resolve();
                     }
-                    this._showMessage(element, "Verificando que el documento no esté ya registrado...");
+                    this._showMessage(element, "Verificando la situación del documento en SUNAT...");
+                    return this._sunatService.lookup(documentNumber)
+                        .then(function (sunatData) {
+                        return _this._warnInvoiceEligibility(element, sunatData);
+                    })
+                        .catch(function () { return true; })
+                        .then(function (eligible) {
+                        if (!eligible) {
+                            return Promise.resolve();
+                        }
+                        _this._showMessage(element, "Verificando que el documento no esté ya registrado...");
+                        return _this._runCreateAfterEligibility(element, documentNumber, name);
+                    });
+                };
+                CustomerInlineDialog.prototype._runCreateAfterEligibility = function (element, documentNumber, name) {
+                    var _this = this;
                     return this._findExistingByDocument(documentNumber)
                         .then(function (existing) {
                         if (existing) {
@@ -1118,17 +1133,17 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     var _this = this;
                     var reasons = this._sunatService.getInvoiceBlockReasons(sunatData);
                     if (reasons.length === 0) {
-                        return Promise.resolve();
+                        return Promise.resolve(true);
                     }
                     this._logChunked("=== Contribuyente observado en SUNAT ===", "documento=" + sunatData.documentNumber + " | " + reasons.join(" | "));
                     var body = "SUNAT reporta lo siguiente para el RUC " + sunatData.documentNumber + ":\n\n"
                         + reasons.join("\n") + "\n\n"
-                        + "A este contribuyente NO se le debe emitir FACTURA: saldría observada y sin "
-                        + "crédito fiscal.\n\n"
-                        + "Puede registrarlo y venderle con BOLETA.";
-                    return this._showAlert(element, "Contribuyente observado en SUNAT", body, "Entendido", "")
+                        + "A este cliente NO se le puede vender ni registrar en el sistema.\n\n"
+                        + "Debe regularizar su situación en SUNAT antes de poder comprarnos.";
+                    return this._showAlert(element, "Cliente observado en SUNAT — venta no permitida", body, "Entendido", "")
                         .then(function () {
-                        _this._showMessage(element, "⚠ RUC observado en SUNAT (" + reasons.join("; ") + "). Solo boleta, no factura.");
+                        _this._showMessage(element, "⛔ RUC observado en SUNAT (" + reasons.join("; ") + "). No se le puede vender ni crear.");
+                        return false;
                     });
                 };
                 CustomerInlineDialog.prototype._duplicateAlertBody = function (account, name, documentNumber) {
@@ -1454,7 +1469,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._showTextResult(element, "customerInlineEditResult", _this._formatSunatSummary(sunatData) + "\n" + differences.join("\n"));
                         _this._showMessage(element, "SUNAT consultado. Revise diferencias y confirme Guardar.");
                         return _this._warnInvoiceEligibility(element, sunatData)
-                            .then(function () { return _this._offerSunatAddress(element, sunatData); });
+                            .then(function (eligible) {
+                            return eligible ? _this._offerSunatAddress(element, sunatData) : Promise.resolve();
+                        });
                     });
                 };
                 CustomerInlineDialog.prototype._offerSunatAddress = function (element, sunatData) {
