@@ -2337,6 +2337,63 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             });
     }
 
+    /**
+     * La dirección FISCAL de un contribuyente con RUC no la decide el cajero: es la que SUNAT
+     * tiene registrada. Si la del formulario es otra, se rellena con la de SUNAT (calle,
+     * número, complemento y cascada de ubigeo) y NO se guarda: el cajero revisa lo rellenado
+     * y vuelve a presionar Guardar, que ya con los datos coincidiendo continúa.
+     *
+     * Devuelve true si se puede continuar el guardado.
+     *
+     * Aplica a cualquier documento cuya consulta traiga dirección (RUC 10, 15, 17 y 20). El
+     * DNI no trae dirección en SUNAT, así que ahí la dirección sigue siendo libre —no hay
+     * contra qué validarla. Y si la consulta no devolvió dirección, tampoco se bloquea: sin
+     * dato no se detiene una venta (mismo criterio que el resto de la consulta).
+     */
+    private _enforceSunatAddressOnSave(element: HTMLElement, sunatData: ISunatCustomerData): Promise<boolean> {
+        const fromSunat: string = ((sunatData && sunatData.address) || "").replace(/\s+/g, " ").trim();
+
+        if (!fromSunat) {
+            return Promise.resolve(true);
+        }
+
+        // Se comparan solo letras y números: el reparto en tres campos recorta puntuación de
+        // borde ("LOTE." queda "LOTE"), y comparando texto exacto el segundo Guardar volvía a
+        // diferir por un punto —el cajero quedaba en bucle sin poder guardar nunca.
+        const normalize = (value: string): string =>
+            (value || "").toUpperCase().replace(/[^A-Z0-9Ñ]/g, "");
+
+        const current: string = normalize([
+            this._getValue(element, "customerInlineCreateAddress"),
+            this._getValue(element, "customerInlineCreateStreetNumber"),
+            this._getValue(element, "customerInlineCreateBuildingCompliment")
+        ].join(" "));
+
+        if (current === normalize(fromSunat)) {
+            return Promise.resolve(true);
+        }
+
+        this._logChunked("=== Direccion distinta a SUNAT al guardar ===",
+            "formulario=" + (current || "(vacio)") + "\nsunat=" + fromSunat);
+
+        // Se rellena ANTES de mostrar la alerta: al cerrarla, el cajero ya ve los campos con
+        // la dirección fiscal puesta y la cascada de ubigeo posicionándose.
+        this._applyAddressParts(element, fromSunat);
+        this._preselectGeographyFromSunat(element, sunatData);
+
+        const body: string = "La dirección fiscal de este contribuyente es la registrada en SUNAT:\n\n"
+            + fromSunat + "\n\n"
+            + "Los campos de dirección se rellenaron con esos datos. "
+            + "Revise el ubigeo y presione Guardar Cambios otra vez.";
+
+        return this._showAlert(element, "Dirección según SUNAT", body, "Entendido", "")
+            .then((): boolean => {
+                this._showMessage(element,
+                    "Dirección reemplazada por la de SUNAT. Revise y presione Guardar Cambios.");
+                return false;
+            });
+    }
+
     private _updateCustomer(element: HTMLElement): Promise<void> {
         return this._loadCustomerForEdit(element)
             .then((customer: ProxyEntities.Customer): Promise<void> => {
@@ -2419,8 +2476,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
                 return this._sunatService.lookup(documentNumber)
                     .then((sunatData: ISunatCustomerData): Promise<void> => {
-                        this._sunatService.applySunatMetadata(customer, sunatData);
-                        return updateWithCustomer(customer);
+                        // La dirección fiscal manda sobre lo tecleado: si difiere de SUNAT se
+                        // rellena y se corta el guardado para que el cajero revise.
+                        return this._enforceSunatAddressOnSave(element, sunatData)
+                            .then((proceed: boolean): Promise<void> => {
+                                if (!proceed) {
+                                    return Promise.resolve();
+                                }
+                                this._sunatService.applySunatMetadata(customer, sunatData);
+                                return updateWithCustomer(customer);
+                            });
                     });
             });
     }
