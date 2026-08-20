@@ -1493,7 +1493,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 // la guarda en tres campos. Si se vuelca entera en la calle, el número y el
                 // piso/interior se pierden.
                 this._applyAddressParts(element, sunatData.address || "");
-                this._setValue(element, "customerInlineCreateCondition", (sunatData.raw && sunatData.raw.condicion) || "");
+                this._setValue(element, "customerInlineCreateCondition",
+                    ((sunatData.raw && sunatData.raw.condicion) || "")
+                    + (sunatData.taxpayerStatus && sunatData.taxpayerStatus.toUpperCase() !== "ACTIVO"
+                        ? " — " + sunatData.taxpayerStatus : ""));
+                this._warnInvoiceEligibility(element, sunatData);
                 this._setChecked(element, "customerInlineCreateRetention", sunatData.isRetentionAgent);
                 this._setChecked(element, "customerInlineCreatePerception", sunatData.isPerceptionAgent);
                 this._setChecked(element, "customerInlineCreatePublicSector", sunatData.isPublicSector);
@@ -1763,6 +1767,37 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                         this._logError("Asignar cliente existente fallo: " + this._stringify(reason));
                         this._showMessage(element, "No se pudo asignar: " + this._getErrorMessage(reason));
                     });
+            });
+    }
+
+    /**
+     * Advierte si al contribuyente NO se le puede emitir factura (estado distinto de ACTIVO o
+     * condición distinta de HABIDO). Resuelve al cerrar la alerta; sin motivos, de inmediato.
+     *
+     * ADVIERTE, NO BLOQUEA: la boleta a ese cliente sigue siendo válida; lo observado es la
+     * factura. Impedir el alta bloquearía ventas legítimas. El aviso queda también en la línea
+     * de estado, porque la alerta se cierra y el dato se necesita al elegir el comprobante.
+     */
+    private _warnInvoiceEligibility(element: HTMLElement, sunatData: ISunatCustomerData): Promise<void> {
+        const reasons: string[] = this._sunatService.getInvoiceBlockReasons(sunatData);
+
+        if (reasons.length === 0) {
+            return Promise.resolve();
+        }
+
+        this._logChunked("=== Contribuyente observado en SUNAT ===",
+            "documento=" + sunatData.documentNumber + " | " + reasons.join(" | "));
+
+        const body: string = "SUNAT reporta lo siguiente para el RUC " + sunatData.documentNumber + ":\n\n"
+            + reasons.join("\n") + "\n\n"
+            + "A este contribuyente NO se le debe emitir FACTURA: saldría observada y sin "
+            + "crédito fiscal.\n\n"
+            + "Puede registrarlo y venderle con BOLETA.";
+
+        return this._showAlert(element, "Contribuyente observado en SUNAT", body, "Entendido", "")
+            .then((): void => {
+                this._showMessage(element,
+                    "⚠ RUC observado en SUNAT (" + reasons.join("; ") + "). Solo boleta, no factura.");
             });
     }
 
@@ -2244,7 +2279,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 this._showTextResult(element, "customerInlineEditResult", this._formatSunatSummary(sunatData) + "\n" + differences.join("\n"));
                 this._showMessage(element, "SUNAT consultado. Revise diferencias y confirme Guardar.");
 
-                return this._offerSunatAddress(element, sunatData);
+                // La advertencia va ANTES del ofrecimiento de dirección: si el RUC está
+                // observado, eso pesa más que cualquier dato que se vaya a copiar.
+                return this._warnInvoiceEligibility(element, sunatData)
+                    .then((): Promise<void> => this._offerSunatAddress(element, sunatData));
             });
     }
 

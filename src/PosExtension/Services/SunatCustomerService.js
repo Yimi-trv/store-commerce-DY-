@@ -256,6 +256,8 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                             firstName: split.firstName,
                             lastName: split.lastName,
                             padronesText: padronesText,
+                            taxpayerStatus: ((result && result.estado) || "").toString(),
+                            taxpayerCondition: ((result && result.condicion) || "").toString(),
                             isRetentionAgent: lowerPadrones.indexOf("retencion") >= 0 || lowerPadrones.indexOf("retenci\u00f3n") >= 0,
                             isPerceptionAgent: lowerPadrones.indexOf("percepcion") >= 0 || lowerPadrones.indexOf("percepci\u00f3n") >= 0,
                             isPublicSector: lowerTipo.indexOf("publica") >= 0 || lowerTipo.indexOf("p\u00fablica") >= 0,
@@ -291,6 +293,21 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                         isNotDomiciled: false,
                         raw: result
                     };
+                };
+                SunatCustomerService.prototype.getInvoiceBlockReasons = function (sunatData) {
+                    var reasons = [];
+                    if (!sunatData || sunatData.documentType !== "RUC") {
+                        return reasons;
+                    }
+                    var status = (sunatData.taxpayerStatus || "").toUpperCase().replace(/\s+/g, " ").trim();
+                    var condition = (sunatData.taxpayerCondition || "").toUpperCase().replace(/\s+/g, " ").trim();
+                    if (status && status !== "ACTIVO") {
+                        reasons.push("Estado del RUC: " + status + " (debe ser ACTIVO)");
+                    }
+                    if (condition && condition !== "HABIDO") {
+                        reasons.push("Condición del domicilio: " + condition + " (debe ser HABIDO)");
+                    }
+                    return reasons;
                 };
                 SunatCustomerService.prototype._padronesToText = function (padrones) {
                     if (!padrones) {

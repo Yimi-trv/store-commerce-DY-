@@ -42,6 +42,10 @@ export interface ISunatCustomerData {
     middleName?: string;
     lastName?: string;
     padronesText?: string;
+    /** Estado del contribuyente en SUNAT: ACTIVO, BAJA DEFINITIVA, SUSPENSION TEMPORAL... Solo RUC. */
+    taxpayerStatus?: string;
+    /** Condición del domicilio en SUNAT: HABIDO, NO HABIDO, NO HALLADO... Solo RUC. */
+    taxpayerCondition?: string;
     isRetentionAgent?: boolean;
     isPerceptionAgent?: boolean;
     isPublicSector?: boolean;
@@ -466,6 +470,8 @@ export default class SunatCustomerService {
                 firstName: split.firstName,
                 lastName: split.lastName,
                 padronesText: padronesText,
+                taxpayerStatus: ((result && result.estado) || "").toString(),
+                taxpayerCondition: ((result && result.condicion) || "").toString(),
                 isRetentionAgent: lowerPadrones.indexOf("retencion") >= 0 || lowerPadrones.indexOf("retenci\u00f3n") >= 0,
                 isPerceptionAgent: lowerPadrones.indexOf("percepcion") >= 0 || lowerPadrones.indexOf("percepci\u00f3n") >= 0,
                 isPublicSector: lowerTipo.indexOf("publica") >= 0 || lowerTipo.indexOf("p\u00fablica") >= 0,
@@ -510,6 +516,38 @@ export default class SunatCustomerService {
             isNotDomiciled: false,
             raw: result
         };
+    }
+
+    /**
+     * Motivos por los que a este contribuyente NO se le puede emitir factura. Vacío = apto.
+     *
+     * SUNAT solo reconoce crédito fiscal en facturas a contribuyentes con estado ACTIVO y
+     * condición HABIDO. Con BAJA, SUSPENSIÓN TEMPORAL, NO HABIDO o NO HALLADO la factura le
+     * sale observada al emisor, así que hay que avisarle al cajero ANTES de crear el cliente.
+     *
+     * Se compara por IGUALDAD, no por indexOf: "NO HABIDO" contiene "HABIDO" y un contains
+     * daría al no habido por bueno. Si el campo viene vacío no se acusa nada: sin dato no se
+     * bloquea una venta (mismo criterio que el resto de fallos de la consulta).
+     */
+    public getInvoiceBlockReasons(sunatData: ISunatCustomerData): string[] {
+        const reasons: string[] = [];
+
+        if (!sunatData || sunatData.documentType !== "RUC") {
+            return reasons;
+        }
+
+        const status: string = (sunatData.taxpayerStatus || "").toUpperCase().replace(/\s+/g, " ").trim();
+        const condition: string = (sunatData.taxpayerCondition || "").toUpperCase().replace(/\s+/g, " ").trim();
+
+        if (status && status !== "ACTIVO") {
+            reasons.push("Estado del RUC: " + status + " (debe ser ACTIVO)");
+        }
+
+        if (condition && condition !== "HABIDO") {
+            reasons.push("Condición del domicilio: " + condition + " (debe ser HABIDO)");
+        }
+
+        return reasons;
     }
 
     private _padronesToText(padrones: any): string {

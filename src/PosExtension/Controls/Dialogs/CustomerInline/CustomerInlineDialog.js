@@ -957,7 +957,10 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._lastSunatData = sunatData;
                         _this._setValue(element, "customerInlineCreateName", sunatData.name || "");
                         _this._applyAddressParts(element, sunatData.address || "");
-                        _this._setValue(element, "customerInlineCreateCondition", (sunatData.raw && sunatData.raw.condicion) || "");
+                        _this._setValue(element, "customerInlineCreateCondition", ((sunatData.raw && sunatData.raw.condicion) || "")
+                            + (sunatData.taxpayerStatus && sunatData.taxpayerStatus.toUpperCase() !== "ACTIVO"
+                                ? " — " + sunatData.taxpayerStatus : ""));
+                        _this._warnInvoiceEligibility(element, sunatData);
                         _this._setChecked(element, "customerInlineCreateRetention", sunatData.isRetentionAgent);
                         _this._setChecked(element, "customerInlineCreatePerception", sunatData.isPerceptionAgent);
                         _this._setChecked(element, "customerInlineCreatePublicSector", sunatData.isPublicSector);
@@ -1109,6 +1112,23 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             _this._logError("Asignar cliente existente fallo: " + _this._stringify(reason));
                             _this._showMessage(element, "No se pudo asignar: " + _this._getErrorMessage(reason));
                         });
+                    });
+                };
+                CustomerInlineDialog.prototype._warnInvoiceEligibility = function (element, sunatData) {
+                    var _this = this;
+                    var reasons = this._sunatService.getInvoiceBlockReasons(sunatData);
+                    if (reasons.length === 0) {
+                        return Promise.resolve();
+                    }
+                    this._logChunked("=== Contribuyente observado en SUNAT ===", "documento=" + sunatData.documentNumber + " | " + reasons.join(" | "));
+                    var body = "SUNAT reporta lo siguiente para el RUC " + sunatData.documentNumber + ":\n\n"
+                        + reasons.join("\n") + "\n\n"
+                        + "A este contribuyente NO se le debe emitir FACTURA: saldría observada y sin "
+                        + "crédito fiscal.\n\n"
+                        + "Puede registrarlo y venderle con BOLETA.";
+                    return this._showAlert(element, "Contribuyente observado en SUNAT", body, "Entendido", "")
+                        .then(function () {
+                        _this._showMessage(element, "⚠ RUC observado en SUNAT (" + reasons.join("; ") + "). Solo boleta, no factura.");
                     });
                 };
                 CustomerInlineDialog.prototype._duplicateAlertBody = function (account, name, documentNumber) {
@@ -1433,7 +1453,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         var differences = _this._currentCustomer ? _this._sunatService.compareWithCustomer(_this._currentCustomer, sunatData) : [];
                         _this._showTextResult(element, "customerInlineEditResult", _this._formatSunatSummary(sunatData) + "\n" + differences.join("\n"));
                         _this._showMessage(element, "SUNAT consultado. Revise diferencias y confirme Guardar.");
-                        return _this._offerSunatAddress(element, sunatData);
+                        return _this._warnInvoiceEligibility(element, sunatData)
+                            .then(function () { return _this._offerSunatAddress(element, sunatData); });
                     });
                 };
                 CustomerInlineDialog.prototype._offerSunatAddress = function (element, sunatData) {
