@@ -2311,62 +2311,28 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 this._showTextResult(element, "customerInlineEditResult", this._formatSunatSummary(sunatData) + "\n" + differences.join("\n"));
                 this._showMessage(element, "SUNAT consultado. Revise diferencias y confirme Guardar.");
 
-                // La advertencia va ANTES del ofrecimiento de dirección: si el RUC está
-                // observado, eso pesa más que cualquier dato que se vaya a copiar.
+                // La advertencia va ANTES de tocar la dirección: si el RUC está observado,
+                // eso pesa más que cualquier dato que se vaya a copiar.
+                //
+                // Después corre LA MISMA imposición que el botón Guardar: antes aquí se
+                // PREGUNTABA si copiar la dirección y al guardar se IMPONÍA —dos criterios
+                // para la misma regla. Validar deja ahora el formulario exactamente como
+                // Guardar lo exige, así el cajero corrige todo antes y el guardado pasa a la
+                // primera.
                 return this._warnInvoiceEligibility(element, sunatData)
-                    .then((eligible: boolean): Promise<void> =>
-                        eligible ? this._offerSunatAddress(element, sunatData) : Promise.resolve());
-            });
-    }
+                    .then((eligible: boolean): Promise<void> => {
+                        if (!eligible) {
+                            return Promise.resolve();
+                        }
 
-    /**
-     * Ofrece traer la dirección de SUNAT al formulario de edición, ya repartida en los tres
-     * campos.
-     *
-     * SE PREGUNTA, NO SE PISA: un cliente puede haberse mudado a una dirección que SUNAT todavía
-     * no tiene, o el cajero puede estar corrigiendo la que ya estaba. Reemplazarla sin avisar
-     * borraría ese trabajo sin que se note.
-     */
-    private _offerSunatAddress(element: HTMLElement, sunatData: ISunatCustomerData): Promise<void> {
-        const fromSunat: string = (sunatData.address || "").replace(/\s+/g, " ").trim();
-
-        if (!fromSunat) {
-            return Promise.resolve();
-        }
-
-        const parts: { street: string; streetNumber: string; compliment: string } =
-            this._sunatService.parseAddressParts(fromSunat);
-
-        // Si ya es la misma no hay nada que preguntar.
-        const current: string = [
-            this._getValue(element, "customerInlineCreateAddress"),
-            this._getValue(element, "customerInlineCreateStreetNumber"),
-            this._getValue(element, "customerInlineCreateBuildingCompliment")
-        ].join(" ").replace(/\s+/g, " ").trim().toUpperCase();
-
-        const proposed: string = [parts.street, parts.streetNumber, parts.compliment]
-            .join(" ").replace(/\s+/g, " ").trim().toUpperCase();
-
-        if (current === proposed) {
-            return Promise.resolve();
-        }
-
-        const body: string = "SUNAT tiene registrada esta dirección:\n\n"
-            + "Calle: " + (parts.street || "(vacío)") + "\n"
-            + "Número: " + (parts.streetNumber || "(vacío)") + "\n"
-            + "Complemento: " + (parts.compliment || "(vacío)") + "\n\n"
-            + "En el formulario hay: " + (current || "(vacío)") + "\n\n"
-            + "¿Reemplazar la del formulario por la de SUNAT?";
-
-        return this._showAlert(element, "Dirección según SUNAT", body, "Sí, usar la de SUNAT", "No, dejar la actual")
-            .then((accepted: boolean): void => {
-                if (!accepted) {
-                    this._showMessage(element, "Se conserva la dirección del formulario.");
-                    return;
-                }
-
-                this._applyAddressParts(element, fromSunat);
-                this._showMessage(element, "Dirección de SUNAT cargada. Revise el ubigeo y confirme Guardar.");
+                        return this._enforceSunatAddressOnSave(element, sunatData)
+                            .then((matched: boolean): void => {
+                                if (matched) {
+                                    this._showMessage(element,
+                                        "SUNAT validado: datos y dirección coinciden. Puede Guardar Cambios.");
+                                }
+                            });
+                    });
             });
     }
 
@@ -2462,7 +2428,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             + fromSunat
             + (sunatUbigeo.replace(/[ \/]/g, "") ? "\nUbigeo: " + sunatUbigeo : "") + "\n\n"
             + "Los campos de dirección y el ubigeo se rellenaron con esos datos. "
-            + "Revíselos y presione Guardar Cambios otra vez.";
+            + "Revíselos y presione Guardar Cambios.";
 
         return this._showAlert(element, "Dirección según SUNAT", body, "Entendido", "")
             .then((): boolean => {
