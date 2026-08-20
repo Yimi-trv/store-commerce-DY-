@@ -120,6 +120,14 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _initialSearchText: string;
     private readonly _sunatService: SunatCustomerService;
     private _lastSunatData: ISunatCustomerData | null;
+
+    /**
+     * Documento al que ya se le impuso la dirección de SUNAT en este diálogo. Evita el bucle
+     * cuando el maestro de ubigeo escribe el nombre distinto que SUNAT ("PROV. CONST. DEL
+     * CALLAO" vs "CALLAO"): tras rellenar una vez, el segundo Guardar acepta la cascada tal
+     * como quedó posicionada aunque las etiquetas no calcen letra por letra.
+     */
+    private _sunatAddressEnforcedFor: string = "";
     // 25 en vez de 50: el cajero no revisa 50 filas, y menos payload es menos render.
     private readonly _searchTop: number = 25;
     private _searchSkip: number = 0;
@@ -2382,11 +2390,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return Promise.resolve(true);
         }
 
-        // Se comparan solo letras y números: el reparto en tres campos recorta puntuación de
-        // borde ("LOTE." queda "LOTE"), y comparando texto exacto el segundo Guardar volvía a
-        // diferir por un punto —el cajero quedaba en bucle sin poder guardar nunca.
+        // Se comparan solo letras y números, SIN acentos: el reparto en tres campos recorta
+        // puntuación de borde ("LOTE." queda "LOTE") y el maestro de ubigeo acentúa distinto
+        // que SUNAT ("JOSÉ" vs "JOSE"). Comparando texto exacto, el segundo Guardar volvía a
+        // diferir por un punto o una tilde y el cajero quedaba en bucle sin poder guardar.
         const normalize = (value: string): string =>
-            (value || "").toUpperCase().replace(/[^A-Z0-9Ñ]/g, "");
+            (value || "").toUpperCase()
+                .replace(/[ÁÀÄÂ]/g, "A").replace(/[ÉÈËÊ]/g, "E")
+                .replace(/[ÍÌÏÎ]/g, "I").replace(/[ÓÒÖÔ]/g, "O")
+                .replace(/[ÚÙÜÛ]/g, "U")
+                .replace(/[^A-Z0-9Ñ]/g, "");
 
         const current: string = normalize([
             this._getValue(element, "customerInlineCreateAddress"),
@@ -2394,22 +2407,62 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             this._getValue(element, "customerInlineCreateBuildingCompliment")
         ].join(" "));
 
-        if (current === normalize(fromSunat)) {
+        const streetMatches: boolean = current === normalize(fromSunat);
+
+        // El ubigeo TAMBIÉN es parte de la dirección fiscal: sin esto el cajero podía dejar la
+        // calle de SUNAT pero mover el departamento o el distrito y guardar igual. Se comparan
+        // las etiquetas de la cascada contra los nombres de SUNAT por CONTENencia y no por
+        // igualdad, porque el maestro agrega prefijos ("PROV. CONST. DEL CALLAO" vs "CALLAO").
+        // Un nivel que SUNAT no informa no se exige.
+        const levelMatches = (sunatName: string, selectId: string): boolean => {
+            const expected: string = normalize(sunatName);
+            if (!expected) {
+                return true;
+            }
+            const selected: string = normalize(this._getSelectedLabel(element, selectId));
+            return !!selected
+                && (selected.indexOf(expected) >= 0 || expected.indexOf(selected) >= 0);
+        };
+
+        const ubigeoMatches: boolean =
+            levelMatches(sunatData.department || "", "customerInlineCreateDepartment")
+            && levelMatches(sunatData.province || "", "customerInlineCreateProvince")
+            && levelMatches(sunatData.district || "", "customerInlineCreateDistrict");
+
+        // Tras haber impuesto la dirección una vez para este documento, la cascada se acepta
+        // como quedó: ResolveUbigeo ya la posicionó con lo mejor que el maestro tiene, y si la
+        // etiqueta del maestro no contiene el nombre de SUNAT, exigir la igualdad dejaría al
+        // cajero en bucle sin poder guardar nunca.
+        const alreadyEnforced: boolean = this._sunatAddressEnforcedFor === sunatData.documentNumber;
+
+        if (streetMatches && (ubigeoMatches || alreadyEnforced)) {
             return Promise.resolve(true);
         }
 
         this._logChunked("=== Direccion distinta a SUNAT al guardar ===",
-            "formulario=" + (current || "(vacio)") + "\nsunat=" + fromSunat);
+            "calle coincide=" + streetMatches + " | ubigeo coincide=" + ubigeoMatches
+            + " | formulario=" + (current || "(vacio)") + "\nsunat=" + fromSunat
+            + "\nubigeo formulario=" + this._getSelectedLabel(element, "customerInlineCreateDepartment")
+            + " / " + this._getSelectedLabel(element, "customerInlineCreateProvince")
+            + " / " + this._getSelectedLabel(element, "customerInlineCreateDistrict")
+            + "\nubigeo sunat=" + (sunatData.department || "") + " / " + (sunatData.province || "")
+            + " / " + (sunatData.district || ""));
+
+        this._sunatAddressEnforcedFor = sunatData.documentNumber;
 
         // Se rellena ANTES de mostrar la alerta: al cerrarla, el cajero ya ve los campos con
         // la dirección fiscal puesta y la cascada de ubigeo posicionándose.
         this._applyAddressParts(element, fromSunat);
         this._preselectGeographyFromSunat(element, sunatData);
 
+        const sunatUbigeo: string = [sunatData.department || "", sunatData.province || "", sunatData.district || ""]
+            .join(" / ").replace(/^ \/ | \/ $/g, "");
+
         const body: string = "La dirección fiscal de este contribuyente es la registrada en SUNAT:\n\n"
-            + fromSunat + "\n\n"
-            + "Los campos de dirección se rellenaron con esos datos. "
-            + "Revise el ubigeo y presione Guardar Cambios otra vez.";
+            + fromSunat
+            + (sunatUbigeo.replace(/[ \/]/g, "") ? "\nUbigeo: " + sunatUbigeo : "") + "\n\n"
+            + "Los campos de dirección y el ubigeo se rellenaron con esos datos. "
+            + "Revíselos y presione Guardar Cambios otra vez.";
 
         return this._showAlert(element, "Dirección según SUNAT", body, "Entendido", "")
             .then((): boolean => {

@@ -66,6 +66,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 __extends(CustomerInlineDialog, _super);
                 function CustomerInlineDialog() {
                     var _this = _super.call(this) || this;
+                    _this._sunatAddressEnforcedFor = "";
                     _this._searchTop = 25;
                     _this._searchSkip = 0;
                     _this._searchInFlight = false;
@@ -1514,23 +1515,51 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         return Promise.resolve(true);
                     }
                     var normalize = function (value) {
-                        return (value || "").toUpperCase().replace(/[^A-Z0-9Ñ]/g, "");
+                        return (value || "").toUpperCase()
+                            .replace(/[ÁÀÄÂ]/g, "A").replace(/[ÉÈËÊ]/g, "E")
+                            .replace(/[ÍÌÏÎ]/g, "I").replace(/[ÓÒÖÔ]/g, "O")
+                            .replace(/[ÚÙÜÛ]/g, "U")
+                            .replace(/[^A-Z0-9Ñ]/g, "");
                     };
                     var current = normalize([
                         this._getValue(element, "customerInlineCreateAddress"),
                         this._getValue(element, "customerInlineCreateStreetNumber"),
                         this._getValue(element, "customerInlineCreateBuildingCompliment")
                     ].join(" "));
-                    if (current === normalize(fromSunat)) {
+                    var streetMatches = current === normalize(fromSunat);
+                    var levelMatches = function (sunatName, selectId) {
+                        var expected = normalize(sunatName);
+                        if (!expected) {
+                            return true;
+                        }
+                        var selected = normalize(_this._getSelectedLabel(element, selectId));
+                        return !!selected
+                            && (selected.indexOf(expected) >= 0 || expected.indexOf(selected) >= 0);
+                    };
+                    var ubigeoMatches = levelMatches(sunatData.department || "", "customerInlineCreateDepartment")
+                        && levelMatches(sunatData.province || "", "customerInlineCreateProvince")
+                        && levelMatches(sunatData.district || "", "customerInlineCreateDistrict");
+                    var alreadyEnforced = this._sunatAddressEnforcedFor === sunatData.documentNumber;
+                    if (streetMatches && (ubigeoMatches || alreadyEnforced)) {
                         return Promise.resolve(true);
                     }
-                    this._logChunked("=== Direccion distinta a SUNAT al guardar ===", "formulario=" + (current || "(vacio)") + "\nsunat=" + fromSunat);
+                    this._logChunked("=== Direccion distinta a SUNAT al guardar ===", "calle coincide=" + streetMatches + " | ubigeo coincide=" + ubigeoMatches
+                        + " | formulario=" + (current || "(vacio)") + "\nsunat=" + fromSunat
+                        + "\nubigeo formulario=" + this._getSelectedLabel(element, "customerInlineCreateDepartment")
+                        + " / " + this._getSelectedLabel(element, "customerInlineCreateProvince")
+                        + " / " + this._getSelectedLabel(element, "customerInlineCreateDistrict")
+                        + "\nubigeo sunat=" + (sunatData.department || "") + " / " + (sunatData.province || "")
+                        + " / " + (sunatData.district || ""));
+                    this._sunatAddressEnforcedFor = sunatData.documentNumber;
                     this._applyAddressParts(element, fromSunat);
                     this._preselectGeographyFromSunat(element, sunatData);
+                    var sunatUbigeo = [sunatData.department || "", sunatData.province || "", sunatData.district || ""]
+                        .join(" / ").replace(/^ \/ | \/ $/g, "");
                     var body = "La dirección fiscal de este contribuyente es la registrada en SUNAT:\n\n"
-                        + fromSunat + "\n\n"
-                        + "Los campos de dirección se rellenaron con esos datos. "
-                        + "Revise el ubigeo y presione Guardar Cambios otra vez.";
+                        + fromSunat
+                        + (sunatUbigeo.replace(/[ \/]/g, "") ? "\nUbigeo: " + sunatUbigeo : "") + "\n\n"
+                        + "Los campos de dirección y el ubigeo se rellenaron con esos datos. "
+                        + "Revíselos y presione Guardar Cambios otra vez.";
                     return this._showAlert(element, "Dirección según SUNAT", body, "Entendido", "")
                         .then(function () {
                         _this._showMessage(element, "Dirección reemplazada por la de SUNAT. Revise y presione Guardar Cambios.");
