@@ -57,6 +57,12 @@
      "modulePath": "Triggers/PreCustomerEditModalTrigger",
      "name": "PreCustomerEditModalTrigger",
      "description": "Abre el modal de cliente en ventas antes de navegar a editar cliente."
+    },
+    {
+     "triggerType": "PostProductSale",
+     "modulePath": "Triggers/DefaultCustomerTrigger",
+     "name": "DefaultCustomerTrigger",
+     "description": "Asigna el cliente descriptivo (TRV-000001) al agregar un producto si la venta no tiene cliente, para que el panel muestre la tarjeta y la boleta salga con cliente desde el primer articulo."
     }
    ]
   },
