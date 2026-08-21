@@ -121,13 +121,6 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private readonly _sunatService: SunatCustomerService;
     private _lastSunatData: ISunatCustomerData | null;
 
-    /**
-     * Documento al que ya se le impuso la dirección de SUNAT en este diálogo. Evita el bucle
-     * cuando el maestro de ubigeo escribe el nombre distinto que SUNAT ("PROV. CONST. DEL
-     * CALLAO" vs "CALLAO"): tras rellenar una vez, el segundo Guardar acepta la cascada tal
-     * como quedó posicionada aunque las etiquetas no calcen letra por letra.
-     */
-    private _sunatAddressEnforcedFor: string = "";
     // 25 en vez de 50: el cajero no revisa 50 filas, y menos payload es menos render.
     private readonly _searchTop: number = 25;
     private _searchSkip: number = 0;
@@ -2314,52 +2307,36 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 // La advertencia va ANTES de tocar la dirección: si el RUC está observado,
                 // eso pesa más que cualquier dato que se vaya a copiar.
                 //
-                // Después corre LA MISMA imposición que el botón Guardar: antes aquí se
-                // PREGUNTABA si copiar la dirección y al guardar se IMPONÍA —dos criterios
-                // para la misma regla. Validar deja ahora el formulario exactamente como
-                // Guardar lo exige, así el cajero corrige todo antes y el guardado pasa a la
-                // primera.
+                // Despues, la direccion de SUNAT se OFRECE, no se impone: por requerimiento
+                // del negocio (2026-08-20) el cajero puede ponerle cualquier direccion al
+                // editar. La alerta pregunta y solo rellena si acepta.
                 return this._warnInvoiceEligibility(element, sunatData)
                     .then((eligible: boolean): Promise<void> => {
                         if (!eligible) {
                             return Promise.resolve();
                         }
 
-                        return this._enforceSunatAddressOnSave(element, sunatData)
-                            .then((matched: boolean): void => {
-                                if (matched) {
-                                    this._showMessage(element,
-                                        "SUNAT validado: datos y dirección coinciden. Puede Guardar Cambios.");
-                                }
-                            });
+                        return this._offerSunatAddress(element, sunatData);
                     });
             });
     }
 
     /**
-     * La dirección FISCAL de un contribuyente con RUC no la decide el cajero: es la que SUNAT
-     * tiene registrada. Si la del formulario es otra, se rellena con la de SUNAT (calle,
-     * número, complemento y cascada de ubigeo) y NO se guarda: el cajero revisa lo rellenado
-     * y vuelve a presionar Guardar, que ya con los datos coincidiendo continúa.
+     * Ofrece rellenar el formulario con la direccion registrada en SUNAT. PREGUNTA, NO PISA:
+     * por requerimiento del negocio (2026-08-20) la direccion al editar es libre — el cliente
+     * puede usar una direccion distinta a su ficha RUC. Si el cajero acepta, se rellenan los
+     * tres campos y la cascada de ubigeo; si no, el formulario queda tal cual.
      *
-     * Devuelve true si se puede continuar el guardado.
-     *
-     * Aplica a cualquier documento cuya consulta traiga dirección (RUC 10, 15, 17 y 20). El
-     * DNI no trae dirección en SUNAT, así que ahí la dirección sigue siendo libre —no hay
-     * contra qué validarla. Y si la consulta no devolvió dirección, tampoco se bloquea: sin
-     * dato no se detiene una venta (mismo criterio que el resto de la consulta).
+     * Si SUNAT no trae direccion, o la del formulario ya es la misma (comparadas solo por
+     * letras y numeros, sin acentos ni puntuacion), no se pregunta nada.
      */
-    private _enforceSunatAddressOnSave(element: HTMLElement, sunatData: ISunatCustomerData): Promise<boolean> {
+    private _offerSunatAddress(element: HTMLElement, sunatData: ISunatCustomerData): Promise<void> {
         const fromSunat: string = ((sunatData && sunatData.address) || "").replace(/\s+/g, " ").trim();
 
         if (!fromSunat) {
-            return Promise.resolve(true);
+            return Promise.resolve();
         }
 
-        // Se comparan solo letras y números, SIN acentos: el reparto en tres campos recorta
-        // puntuación de borde ("LOTE." queda "LOTE") y el maestro de ubigeo acentúa distinto
-        // que SUNAT ("JOSÉ" vs "JOSE"). Comparando texto exacto, el segundo Guardar volvía a
-        // diferir por un punto o una tilde y el cajero quedaba en bucle sin poder guardar.
         const normalize = (value: string): string =>
             (value || "").toUpperCase()
                 .replace(/[ÁÀÄÂ]/g, "A").replace(/[ÉÈËÊ]/g, "E")
@@ -2373,68 +2350,30 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             this._getValue(element, "customerInlineCreateBuildingCompliment")
         ].join(" "));
 
-        const streetMatches: boolean = current === normalize(fromSunat);
-
-        // El ubigeo TAMBIÉN es parte de la dirección fiscal: sin esto el cajero podía dejar la
-        // calle de SUNAT pero mover el departamento o el distrito y guardar igual. Se comparan
-        // las etiquetas de la cascada contra los nombres de SUNAT por CONTENencia y no por
-        // igualdad, porque el maestro agrega prefijos ("PROV. CONST. DEL CALLAO" vs "CALLAO").
-        // Un nivel que SUNAT no informa no se exige.
-        const levelMatches = (sunatName: string, selectId: string): boolean => {
-            const expected: string = normalize(sunatName);
-            if (!expected) {
-                return true;
-            }
-            const selected: string = normalize(this._getSelectedLabel(element, selectId));
-            return !!selected
-                && (selected.indexOf(expected) >= 0 || expected.indexOf(selected) >= 0);
-        };
-
-        const ubigeoMatches: boolean =
-            levelMatches(sunatData.department || "", "customerInlineCreateDepartment")
-            && levelMatches(sunatData.province || "", "customerInlineCreateProvince")
-            && levelMatches(sunatData.district || "", "customerInlineCreateDistrict");
-
-        // Tras haber impuesto la dirección una vez para este documento, la cascada se acepta
-        // como quedó: ResolveUbigeo ya la posicionó con lo mejor que el maestro tiene, y si la
-        // etiqueta del maestro no contiene el nombre de SUNAT, exigir la igualdad dejaría al
-        // cajero en bucle sin poder guardar nunca.
-        const alreadyEnforced: boolean = this._sunatAddressEnforcedFor === sunatData.documentNumber;
-
-        if (streetMatches && (ubigeoMatches || alreadyEnforced)) {
-            return Promise.resolve(true);
+        if (current === normalize(fromSunat)) {
+            this._showMessage(element, "SUNAT validado: la direccion coincide con la ficha RUC.");
+            return Promise.resolve();
         }
 
-        this._logChunked("=== Direccion distinta a SUNAT al guardar ===",
-            "calle coincide=" + streetMatches + " | ubigeo coincide=" + ubigeoMatches
-            + " | formulario=" + (current || "(vacio)") + "\nsunat=" + fromSunat
-            + "\nubigeo formulario=" + this._getSelectedLabel(element, "customerInlineCreateDepartment")
-            + " / " + this._getSelectedLabel(element, "customerInlineCreateProvince")
-            + " / " + this._getSelectedLabel(element, "customerInlineCreateDistrict")
-            + "\nubigeo sunat=" + (sunatData.department || "") + " / " + (sunatData.province || "")
-            + " / " + (sunatData.district || ""));
-
-        this._sunatAddressEnforcedFor = sunatData.documentNumber;
-
-        // Se rellena ANTES de mostrar la alerta: al cerrarla, el cajero ya ve los campos con
-        // la dirección fiscal puesta y la cascada de ubigeo posicionándose.
-        this._applyAddressParts(element, fromSunat);
-        this._preselectGeographyFromSunat(element, sunatData);
-
         const sunatUbigeo: string = [sunatData.department || "", sunatData.province || "", sunatData.district || ""]
-            .join(" / ").replace(/^ \/ | \/ $/g, "");
+            .filter((part: string): boolean => !!part).join(" / ");
 
-        const body: string = "La dirección fiscal de este contribuyente es la registrada en SUNAT:\n\n"
+        const body: string = "SUNAT tiene registrada esta direccion fiscal:\n\n"
             + fromSunat
-            + (sunatUbigeo.replace(/[ \/]/g, "") ? "\nUbigeo: " + sunatUbigeo : "") + "\n\n"
-            + "Los campos de dirección y el ubigeo se rellenaron con esos datos. "
-            + "Revíselos y presione Guardar Cambios.";
+            + (sunatUbigeo ? "\nUbigeo: " + sunatUbigeo : "") + "\n\n"
+            + "La del formulario es distinta. Puede conservarla: la direccion al editar es libre.\n\n"
+            + "¿Reemplazarla por la de SUNAT?";
 
-        return this._showAlert(element, "Dirección según SUNAT", body, "Entendido", "")
-            .then((): boolean => {
-                this._showMessage(element,
-                    "Dirección reemplazada por la de SUNAT. Revise y presione Guardar Cambios.");
-                return false;
+        return this._showAlert(element, "Direccion segun SUNAT", body, "Si, usar la de SUNAT", "No, dejar la actual")
+            .then((accepted: boolean): void => {
+                if (!accepted) {
+                    this._showMessage(element, "Se conserva la direccion del formulario.");
+                    return;
+                }
+
+                this._applyAddressParts(element, fromSunat);
+                this._preselectGeographyFromSunat(element, sunatData);
+                this._showMessage(element, "Direccion de SUNAT cargada. Revise el ubigeo y confirme Guardar.");
             });
     }
 
@@ -2520,16 +2459,12 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
                 return this._sunatService.lookup(documentNumber)
                     .then((sunatData: ISunatCustomerData): Promise<void> => {
-                        // La dirección fiscal manda sobre lo tecleado: si difiere de SUNAT se
-                        // rellena y se corta el guardado para que el cajero revise.
-                        return this._enforceSunatAddressOnSave(element, sunatData)
-                            .then((proceed: boolean): Promise<void> => {
-                                if (!proceed) {
-                                    return Promise.resolve();
-                                }
-                                this._sunatService.applySunatMetadata(customer, sunatData);
-                                return updateWithCustomer(customer);
-                            });
+                        // REQUERIMIENTO (2026-08-20, mismo dia que se habia impuesto lo
+                        // contrario): al editar, la direccion es LIBRE. La imposicion de la
+                        // direccion de SUNAT se retiro a pedido del negocio; queda solo como
+                        // ayuda opcional en Validar con SUNAT, que PREGUNTA antes de rellenar.
+                        this._sunatService.applySunatMetadata(customer, sunatData);
+                        return updateWithCustomer(customer);
                     });
             });
     }

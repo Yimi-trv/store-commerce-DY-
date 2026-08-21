@@ -66,7 +66,6 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 __extends(CustomerInlineDialog, _super);
                 function CustomerInlineDialog() {
                     var _this = _super.call(this) || this;
-                    _this._sunatAddressEnforcedFor = "";
                     _this._searchTop = 25;
                     _this._searchSkip = 0;
                     _this._searchInFlight = false;
@@ -1474,20 +1473,15 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             if (!eligible) {
                                 return Promise.resolve();
                             }
-                            return _this._enforceSunatAddressOnSave(element, sunatData)
-                                .then(function (matched) {
-                                if (matched) {
-                                    _this._showMessage(element, "SUNAT validado: datos y dirección coinciden. Puede Guardar Cambios.");
-                                }
-                            });
+                            return _this._offerSunatAddress(element, sunatData);
                         });
                     });
                 };
-                CustomerInlineDialog.prototype._enforceSunatAddressOnSave = function (element, sunatData) {
+                CustomerInlineDialog.prototype._offerSunatAddress = function (element, sunatData) {
                     var _this = this;
                     var fromSunat = ((sunatData && sunatData.address) || "").replace(/\s+/g, " ").trim();
                     if (!fromSunat) {
-                        return Promise.resolve(true);
+                        return Promise.resolve();
                     }
                     var normalize = function (value) {
                         return (value || "").toUpperCase()
@@ -1501,44 +1495,26 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this._getValue(element, "customerInlineCreateStreetNumber"),
                         this._getValue(element, "customerInlineCreateBuildingCompliment")
                     ].join(" "));
-                    var streetMatches = current === normalize(fromSunat);
-                    var levelMatches = function (sunatName, selectId) {
-                        var expected = normalize(sunatName);
-                        if (!expected) {
-                            return true;
-                        }
-                        var selected = normalize(_this._getSelectedLabel(element, selectId));
-                        return !!selected
-                            && (selected.indexOf(expected) >= 0 || expected.indexOf(selected) >= 0);
-                    };
-                    var ubigeoMatches = levelMatches(sunatData.department || "", "customerInlineCreateDepartment")
-                        && levelMatches(sunatData.province || "", "customerInlineCreateProvince")
-                        && levelMatches(sunatData.district || "", "customerInlineCreateDistrict");
-                    var alreadyEnforced = this._sunatAddressEnforcedFor === sunatData.documentNumber;
-                    if (streetMatches && (ubigeoMatches || alreadyEnforced)) {
-                        return Promise.resolve(true);
+                    if (current === normalize(fromSunat)) {
+                        this._showMessage(element, "SUNAT validado: la direccion coincide con la ficha RUC.");
+                        return Promise.resolve();
                     }
-                    this._logChunked("=== Direccion distinta a SUNAT al guardar ===", "calle coincide=" + streetMatches + " | ubigeo coincide=" + ubigeoMatches
-                        + " | formulario=" + (current || "(vacio)") + "\nsunat=" + fromSunat
-                        + "\nubigeo formulario=" + this._getSelectedLabel(element, "customerInlineCreateDepartment")
-                        + " / " + this._getSelectedLabel(element, "customerInlineCreateProvince")
-                        + " / " + this._getSelectedLabel(element, "customerInlineCreateDistrict")
-                        + "\nubigeo sunat=" + (sunatData.department || "") + " / " + (sunatData.province || "")
-                        + " / " + (sunatData.district || ""));
-                    this._sunatAddressEnforcedFor = sunatData.documentNumber;
-                    this._applyAddressParts(element, fromSunat);
-                    this._preselectGeographyFromSunat(element, sunatData);
                     var sunatUbigeo = [sunatData.department || "", sunatData.province || "", sunatData.district || ""]
-                        .join(" / ").replace(/^ \/ | \/ $/g, "");
-                    var body = "La dirección fiscal de este contribuyente es la registrada en SUNAT:\n\n"
+                        .filter(function (part) { return !!part; }).join(" / ");
+                    var body = "SUNAT tiene registrada esta direccion fiscal:\n\n"
                         + fromSunat
-                        + (sunatUbigeo.replace(/[ \/]/g, "") ? "\nUbigeo: " + sunatUbigeo : "") + "\n\n"
-                        + "Los campos de dirección y el ubigeo se rellenaron con esos datos. "
-                        + "Revíselos y presione Guardar Cambios.";
-                    return this._showAlert(element, "Dirección según SUNAT", body, "Entendido", "")
-                        .then(function () {
-                        _this._showMessage(element, "Dirección reemplazada por la de SUNAT. Revise y presione Guardar Cambios.");
-                        return false;
+                        + (sunatUbigeo ? "\nUbigeo: " + sunatUbigeo : "") + "\n\n"
+                        + "La del formulario es distinta. Puede conservarla: la direccion al editar es libre.\n\n"
+                        + "¿Reemplazarla por la de SUNAT?";
+                    return this._showAlert(element, "Direccion segun SUNAT", body, "Si, usar la de SUNAT", "No, dejar la actual")
+                        .then(function (accepted) {
+                        if (!accepted) {
+                            _this._showMessage(element, "Se conserva la direccion del formulario.");
+                            return;
+                        }
+                        _this._applyAddressParts(element, fromSunat);
+                        _this._preselectGeographyFromSunat(element, sunatData);
+                        _this._showMessage(element, "Direccion de SUNAT cargada. Revise el ubigeo y confirme Guardar.");
                     });
                 };
                 CustomerInlineDialog.prototype._updateCustomer = function (element) {
@@ -1600,14 +1576,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._showMessage(element, "Validando SUNAT antes de guardar cambios...");
                         return _this._sunatService.lookup(documentNumber)
                             .then(function (sunatData) {
-                            return _this._enforceSunatAddressOnSave(element, sunatData)
-                                .then(function (proceed) {
-                                if (!proceed) {
-                                    return Promise.resolve();
-                                }
-                                _this._sunatService.applySunatMetadata(customer, sunatData);
-                                return updateWithCustomer(customer);
-                            });
+                            _this._sunatService.applySunatMetadata(customer, sunatData);
+                            return updateWithCustomer(customer);
                         });
                     });
                 };
