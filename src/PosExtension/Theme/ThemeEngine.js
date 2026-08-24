@@ -311,6 +311,60 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             marcados[i].classList.remove(clase);
                     }
                 };
+                ThemeEngine.ajustarNumpad = function () {
+                    var zona = ThemeEngine.q("#TabControl");
+                    var tabs = ThemeEngine.q("#TabControl .tabsContainer");
+                    var tarjeta = ThemeEngine.q("#TabControl .tabContent");
+                    var carrito = ThemeEngine.q("#TransactionGrid");
+                    if (!zona || !tarjeta || !carrito)
+                        return;
+                    var teclas = ThemeEngine.todos("#TabControl .numpad-control-buttons button");
+                    if (teclas.length === 0)
+                        return;
+                    if (!ThemeEngine.teclaNativa) {
+                        ThemeEngine.teclaNativa = Math.round(teclas[0].getBoundingClientRect().height) || 54;
+                    }
+                    var filasY = [];
+                    for (var i = 0; i < teclas.length; i++) {
+                        var y = Math.round(teclas[i].getBoundingClientRect().top);
+                        if (filasY.indexOf(y) < 0)
+                            filasY.push(y);
+                    }
+                    var filas = filasY.length;
+                    if (filas === 0)
+                        return;
+                    var SEP = 4;
+                    var HUECO = 8;
+                    var ALTO_INPUT = 34;
+                    var altoZona = Math.round(carrito.getBoundingClientRect().bottom - zona.getBoundingClientRect().top);
+                    if (altoZona < 160)
+                        return;
+                    var altoTabs = tabs ? Math.round(tabs.getBoundingClientRect().height) : 0;
+                    var margenTabs = tabs ? (parseFloat(getComputedStyle(tabs).marginBottom) || 0) : 0;
+                    var estilosTarjeta = getComputedStyle(tarjeta);
+                    var relleno = (parseFloat(estilosTarjeta.paddingTop) || 0) + (parseFloat(estilosTarjeta.paddingBottom) || 0);
+                    var disponible = altoZona - altoTabs - margenTabs - relleno;
+                    var altoTecla = Math.floor((disponible - ALTO_INPUT - HUECO - (filas - 1) * SEP) / filas);
+                    if (altoTecla > ThemeEngine.teclaNativa)
+                        altoTecla = ThemeEngine.teclaNativa;
+                    if (altoTecla < 30)
+                        altoTecla = 30;
+                    var altoTeclado = filas * altoTecla + (filas - 1) * SEP;
+                    var raiz = "body." + ThemeAssets_1.CLASE_AMBITO + " ";
+                    var css = raiz + "#TabControl{height:" + altoZona + "px !important;max-height:" + altoZona + "px !important;overflow:visible !important;}\n"
+                        + raiz + "#TabControl .numpad-control-input-wrapper{height:" + ALTO_INPUT + "px !important;min-height:" + ALTO_INPUT + "px !important;max-height:" + ALTO_INPUT + "px !important;}\n"
+                        + raiz + "#TabControl .numpad-control-input{height:" + ALTO_INPUT + "px !important;min-height:" + ALTO_INPUT + "px !important;max-height:" + ALTO_INPUT + "px !important;line-height:" + ALTO_INPUT + "px !important;font-size:22px !important;}\n"
+                        + raiz + "#TabControl .numpad-control-buttons{height:" + altoTeclado + "px !important;max-height:" + altoTeclado + "px !important;min-height:0 !important;margin:" + HUECO + "px auto 0 auto !important;}\n"
+                        + raiz + "#TabControl .numpad-control-buttons button," + raiz + "#TabControl .numpad-control-buttons .enter{height:" + altoTecla + "px !important;min-height:" + altoTecla + "px !important;max-height:" + altoTecla + "px !important;}\n";
+                    if (!ThemeEngine.estiloNumpad) {
+                        ThemeEngine.estiloNumpad = document.createElement("style");
+                        ThemeEngine.estiloNumpad.setAttribute("id", "sct-numpad");
+                        document.head.appendChild(ThemeEngine.estiloNumpad);
+                    }
+                    if (ThemeEngine.estiloNumpad.textContent !== css) {
+                        ThemeEngine.estiloNumpad.textContent = css;
+                    }
+                };
                 ThemeEngine.aplicarCliente = function () {
                     var zonaCliente = ThemeEngine.q("#CustomerPanel");
                     if (!zonaCliente)
@@ -411,21 +465,59 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         window.dispatchEvent(new Event("resize"));
                     });
                 };
+                ThemeEngine.rotuloPago = function (boton) {
+                    var titulo = (boton.getAttribute("title") || "").trim();
+                    if (titulo.length > 0 && titulo.length <= 40)
+                        return titulo;
+                    for (var i = 0; i < boton.children.length; i++) {
+                        var texto = (boton.children[i].textContent || "").trim();
+                        if (texto.length > 0 && !/\d+\s+of\s+\d+/.test(texto))
+                            return texto;
+                    }
+                    return titulo;
+                };
                 ThemeEngine.prepararBotones = function () {
-                    var nombresClaves = ["button0", "button1", "button3", "button4", "button2"];
-                    var keysIds = ["p0", "p1", "p3", "p4", "p2"];
-                    for (var i = 0; i < nombresClaves.length; i++) {
-                        var pb = ThemeEngine.q("#ButtonGrid4Control .buttonGridButton." + nombresClaves[i]);
-                        if (pb) {
-                            if (!pb.classList.contains("sct-" + keysIds[i])) {
-                                pb.classList.add("sct-pbtn", "sct-" + keysIds[i]);
-                                ThemeEngine.icono(pb, "sct-ic-" + keysIds[i]);
+                    var botones = ThemeEngine.todos("#ButtonGrid4Control .buttonGridButton");
+                    if (botones.length === 0)
+                        return;
+                    var definiciones = [
+                        { clase: "sct-p0", re: /^efectivo$/i },
+                        { clase: "sct-p1", re: /vales/i },
+                        { clase: "sct-p3", re: /planilla/i },
+                        { clase: "sct-p4", re: /terceros/i },
+                        { clase: "sct-p2", re: /niubiz/i }
+                    ];
+                    var usadas = {};
+                    for (var i = 0; i < botones.length; i++) {
+                        var boton = botones[i];
+                        var rotulo = ThemeEngine.rotuloPago(boton);
+                        var def = null;
+                        for (var j = 0; j < definiciones.length; j++) {
+                            if (!usadas[definiciones[j].clase] && definiciones[j].re.test(rotulo)) {
+                                def = definiciones[j];
+                                usadas[def.clase] = true;
+                                break;
                             }
-                            ThemeEngine.estilo(pb, { "background-image": "none", "background-color": "rgba(22,21,20,0.6)", "border": "1px solid rgba(255,255,255,0.16)", "border-radius": "12px", "color": "#FFFFFF", "transform": "none" });
-                            for (var j = 0; j < pb.children.length; j++) {
-                                var ch = pb.children[j];
-                                if (ch.tagName === "DIV")
-                                    ch.style.setProperty("display", "none", "important");
+                        }
+                        if (!boton.classList.contains("sct-pbtn"))
+                            boton.classList.add("sct-pbtn");
+                        ThemeEngine.estilo(boton, {
+                            "background-color": "rgba(22,21,20,0.6)",
+                            "border": "1px solid rgba(255,255,255,0.16)",
+                            "border-radius": "12px",
+                            "color": "#FFFFFF"
+                        });
+                        if (!def)
+                            continue;
+                        ThemeEngine.estilo(boton, { "background-image": "none" });
+                        if (!boton.classList.contains(def.clase)) {
+                            boton.classList.add(def.clase);
+                            ThemeEngine.icono(boton, "sct-ic-" + def.clase.substring(4));
+                        }
+                        for (var k = 0; k < boton.children.length; k++) {
+                            var hijo = boton.children[k];
+                            if (hijo.tagName === "DIV" && hijo.style.getPropertyValue("display") !== "none") {
+                                hijo.style.setProperty("display", "none", "important");
                             }
                         }
                     }
@@ -478,6 +570,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                                 hojas[0].classList.add("sct-live-direccion");
                         }
                     }
+                    ThemeEngine.ajustarNumpad();
                     ThemeEngine.solicitarRecalculoPestanas();
                 };
                 ThemeEngine.aplicarLayoutAmplio = function () {
@@ -529,11 +622,8 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             ThemeEngine.icono(btn2[i], "sct-ic-t" + (i + 1));
                         }
                     }
-                    var b3 = ThemeEngine.q("#ButtonGrid3Control");
-                    if (b3) {
-                        ThemeEngine.estilo(b3, { "width": "428px", "height": "316px" });
-                        ThemeEngine.decorarBoleto(ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton"));
-                    }
+                    ThemeEngine.decorarBoleto(ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton"));
+                    ThemeEngine.ajustarNumpad();
                 };
                 ThemeEngine.aplicarTodo = function () {
                     if (!ThemeAssets_1.TEMA_ACTIVO)
@@ -689,6 +779,8 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                 ThemeEngine.temporizador = 0;
                 ThemeEngine.temporizadorSalidaAmbito = 0;
                 ThemeEngine.eventosRegistrados = false;
+                ThemeEngine.estiloNumpad = null;
+                ThemeEngine.teclaNativa = 0;
                 ThemeEngine.sondaEstilos = null;
                 ThemeEngine.estilosNormalizados = {};
                 ThemeEngine.recalculoPestanasSolicitado = false;

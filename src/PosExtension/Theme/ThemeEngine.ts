@@ -72,6 +72,9 @@ export class ThemeEngine {
     private static temporizador: number = 0;
     private static temporizadorSalidaAmbito: number = 0;
     private static eventosRegistrados: boolean = false;
+    private static estiloNumpad: HTMLStyleElement | null = null;
+    private static estiloAlineacion: HTMLStyleElement | null = null;
+    private static teclaNativa: number = 0;
     private static sondaEstilos: HTMLElement | null = null;
     private static estilosNormalizados: { [clave: string]: string } = {};
     private static recalculoPestanasSolicitado: boolean = false;
@@ -439,6 +442,137 @@ export class ThemeEngine {
         }
     }
 
+    // ---------------------------------------------------------------- alineacion de la columna
+
+    // Desplazamiento vertical actual de un elemento, leido de su matriz de transformacion.
+    private static desplazamientoY(elemento: HTMLElement): number {
+        var matriz: string = getComputedStyle(elemento).transform;
+        if (!matriz || matriz === "none") return 0;
+        var partes: RegExpMatchArray | null = matriz.match(/matrix\(([^)]+)\)/);
+        if (!partes) return 0;
+        return parseFloat(partes[1].split(",")[5]) || 0;
+    }
+
+    // Alinea la columna derecha (tarjeta de Boleta y metodos de pago) con la caja de importes.
+    //
+    // Antes esto eran dos numeros fijos en el CSS: translateY(108px) para Boleta y translateY(114px)
+    // para pagos, medidos contra el layout de UAT. En master las zonas caen en otro sitio y los dos
+    // bloques quedaban descolgados: Boleta empezaba 28px por debajo de los importes y NIUBIZ se
+    // pasaba del borde inferior.
+    //
+    // Ahora se calcula: Boleta arranca donde arranca #TotalsPanel, y la fila de pagos ACABA donde
+    // acaba #TotalsPanel. Las dos referencias son de la propia pantalla, asi que se adapta a
+    // cualquier layout sin recalibrar.
+    //
+    // Es estable: se suma el desplazamiento YA aplicado, asi que cuando esta alineado el calculo da
+    // cero, sale el mismo CSS y no se escribe nada (ver la regla del vigilante en la cabecera).
+    private static alinearColumnaDerecha(): void {
+        var montos: HTMLElement | null = ThemeEngine.q("#TotalsPanel");
+        var boleta: HTMLElement | null = ThemeEngine.q("#CustomControl1");
+        var pagos: HTMLElement | null = ThemeEngine.q("#ButtonGrid4");
+        if (!montos || !boleta || !pagos) return;
+
+        var rMontos: ClientRect = montos.getBoundingClientRect();
+        var rBoleta: ClientRect = boleta.getBoundingClientRect();
+        var rPagos: ClientRect = pagos.getBoundingClientRect();
+        if (rMontos.height < 40 || rBoleta.height < 20 || rPagos.height < 20) return;
+
+        var nuevoBoleta: number = Math.round(ThemeEngine.desplazamientoY(boleta) + (rMontos.top - rBoleta.top));
+        var nuevoPagos: number = Math.round(ThemeEngine.desplazamientoY(pagos) + ((rMontos.bottom - rPagos.height) - rPagos.top));
+
+        var raiz: string = "body." + CLASE_AMBITO + "." + CLASE_AMPLIO + " ";
+        var css: string = raiz + "#CustomControl1{transform:translateY(" + nuevoBoleta + "px) !important;}\n"
+            + raiz + "#ButtonGrid4{transform:translateY(" + nuevoPagos + "px) !important;}\n";
+
+        if (!ThemeEngine.estiloAlineacion) {
+            ThemeEngine.estiloAlineacion = document.createElement("style");
+            ThemeEngine.estiloAlineacion.setAttribute("id", "sct-alineacion");
+            document.head.appendChild(ThemeEngine.estiloAlineacion);
+        }
+        if (ThemeEngine.estiloAlineacion.textContent !== css) {
+            ThemeEngine.estiloAlineacion.textContent = css;
+        }
+    }
+
+    // ---------------------------------------------------------------- numpad adaptativo
+
+    // Dimensiona la ZONA del numpad midiendo la pantalla real, en vez de fijar pixeles.
+    //
+    // POR QUE EXISTE ESTO. El CSS clavaba el alto del control de pestañas en 468px, medido contra
+    // la zona de UAT (490). En master HQ da una zona de 360, y como la zona trae overflow:hidden,
+    // se recortaban 108px: desaparecia la mitad inferior del numpad, incluido el boton Intro. El
+    // usuario no podia trabajar. Cualquier valor fijo aqui vuelve a romperse en el siguiente
+    // entorno, porque la geometria de las zonas la decide el layout de HQ y cambia por entorno.
+    //
+    // COMO LO RESUELVE:
+    //   1. La zona crece hasta donde acaba la caja de lineas (#TransactionGrid). Asi el numpad
+    //      queda alineado con los productos, que es el criterio visual que se aprobo.
+    //   2. Con el espacio resultante calcula el alto de tecla que cabe, sin pasar NUNCA del tamano
+    //      nativo: si sobra sitio no las agranda, solo evita que se corten.
+    //   3. El input baja a 34px (fuente 22), que es de donde sale la mayor parte del espacio que
+    //      falta: el POS lo pinta a 52px con fuente de 34.
+    //
+    // Escribe en una hoja propia y SOLO cuando el resultado cambia, asi que en reposo no genera
+    // mutaciones (ver la regla del vigilante en la cabecera del fichero).
+    private static ajustarNumpad(): void {
+        var zona: HTMLElement | null = ThemeEngine.q("#TabControl");
+        var tabs: HTMLElement | null = ThemeEngine.q("#TabControl .tabsContainer");
+        var tarjeta: HTMLElement | null = ThemeEngine.q("#TabControl .tabContent");
+        var carrito: HTMLElement | null = ThemeEngine.q("#TransactionGrid");
+        if (!zona || !tarjeta || !carrito) return;
+
+        var teclas: HTMLElement[] = ThemeEngine.todos("#TabControl .numpad-control-buttons button");
+        if (teclas.length === 0) return;
+
+        // El alto nativo se toma UNA vez, antes de que esta funcion escriba nada. Si se volviera a
+        // medir despues, se encogeria en cascada en cada pasada.
+        if (!ThemeEngine.teclaNativa) {
+            ThemeEngine.teclaNativa = Math.round(teclas[0].getBoundingClientRect().height) || 54;
+        }
+
+        var filasY: number[] = [];
+        for (var i: number = 0; i < teclas.length; i++) {
+            var y: number = Math.round(teclas[i].getBoundingClientRect().top);
+            if (filasY.indexOf(y) < 0) filasY.push(y);
+        }
+        var filas: number = filasY.length;
+        if (filas === 0) return;
+
+        var SEP: number = 4;
+        var HUECO: number = 8;
+        var ALTO_INPUT: number = 34;
+
+        var altoZona: number = Math.round(carrito.getBoundingClientRect().bottom - zona.getBoundingClientRect().top);
+        if (altoZona < 160) return;
+
+        var altoTabs: number = tabs ? Math.round(tabs.getBoundingClientRect().height) : 0;
+        var margenTabs: number = tabs ? (parseFloat(getComputedStyle(tabs).marginBottom) || 0) : 0;
+        var estilosTarjeta: CSSStyleDeclaration = getComputedStyle(tarjeta);
+        var relleno: number = (parseFloat(estilosTarjeta.paddingTop) || 0) + (parseFloat(estilosTarjeta.paddingBottom) || 0);
+        var disponible: number = altoZona - altoTabs - margenTabs - relleno;
+
+        var altoTecla: number = Math.floor((disponible - ALTO_INPUT - HUECO - (filas - 1) * SEP) / filas);
+        if (altoTecla > ThemeEngine.teclaNativa) altoTecla = ThemeEngine.teclaNativa;
+        if (altoTecla < 30) altoTecla = 30;
+        var altoTeclado: number = filas * altoTecla + (filas - 1) * SEP;
+
+        var raiz: string = "body." + CLASE_AMBITO + " ";
+        var css: string = raiz + "#TabControl{height:" + altoZona + "px !important;max-height:" + altoZona + "px !important;overflow:visible !important;}\n"
+            + raiz + "#TabControl .numpad-control-input-wrapper{height:" + ALTO_INPUT + "px !important;min-height:" + ALTO_INPUT + "px !important;max-height:" + ALTO_INPUT + "px !important;}\n"
+            + raiz + "#TabControl .numpad-control-input{height:" + ALTO_INPUT + "px !important;min-height:" + ALTO_INPUT + "px !important;max-height:" + ALTO_INPUT + "px !important;line-height:" + ALTO_INPUT + "px !important;font-size:22px !important;}\n"
+            + raiz + "#TabControl .numpad-control-buttons{height:" + altoTeclado + "px !important;max-height:" + altoTeclado + "px !important;min-height:0 !important;margin:" + HUECO + "px auto 0 auto !important;}\n"
+            + raiz + "#TabControl .numpad-control-buttons button," + raiz + "#TabControl .numpad-control-buttons .enter{height:" + altoTecla + "px !important;min-height:" + altoTecla + "px !important;max-height:" + altoTecla + "px !important;}\n";
+
+        if (!ThemeEngine.estiloNumpad) {
+            ThemeEngine.estiloNumpad = document.createElement("style");
+            ThemeEngine.estiloNumpad.setAttribute("id", "sct-numpad");
+            document.head.appendChild(ThemeEngine.estiloNumpad);
+        }
+        if (ThemeEngine.estiloNumpad.textContent !== css) {
+            ThemeEngine.estiloNumpad.textContent = css;
+        }
+    }
+
     private static aplicarCliente(): void {
         // ¡¡NO VOLVER A DETECTAR POR TEXTO NI POR FORMATO DE DATOS EN ESTA FUNCION!!
         // Es el error que ya se cometio TRES veces aqui y el que produjo el bug de abajo. Si algo
@@ -583,20 +717,83 @@ export class ThemeEngine {
 
     // ---------------------------------------------------------------- layouts 1024 / 1920
 
+    // Rotulo real del boton de pago. El atributo `title` suele traer el nombre del metodo; cuando
+    // HQ mete ahi una instruccion larga (pasa en dos de ellos) se cae al texto del propio boton,
+    // descartando el sufijo de accesibilidad ("... 3 of 6 selected").
+    private static rotuloPago(boton: HTMLElement): string {
+        var titulo: string = (boton.getAttribute("title") || "").trim();
+        if (titulo.length > 0 && titulo.length <= 40) return titulo;
+        for (var i: number = 0; i < boton.children.length; i++) {
+            var texto: string = ((boton.children[i] as HTMLElement).textContent || "").trim();
+            if (texto.length > 0 && !/\d+\s+of\s+\d+/.test(texto)) return texto;
+        }
+        return titulo;
+    }
+
+    // Estilo de los botones de metodo de pago.
+    //
+    // ¡¡SE EMPAREJA POR NOMBRE, NUNCA POR POSICION!!
+    //
+    // Antes se hacia con la clase posicional del POS: "button0" -> p0, "button2" -> p2, etc. Esa
+    // posicion la decide como este montada la cuadricula en HQ, y CAMBIA por entorno: en UAT el
+    // tercer boton es NIUBIZ y en master es "Empleado en planilla". Resultado medido en master: un
+    // metodo de pago aparecia con el logo y el rotulo de OTRO. En una caja eso es cobrar con el
+    // medio de pago equivocado, asi que no es un fallo estetico.
+    //
+    // Tres reglas, y conviene respetarlas:
+    //   1. La POSICION y el TAMAÑO no se tocan. Los pone la rejilla del POS (Row/Column/ColumnSpan
+    //      de la cuadricula), que ya los coloca bien en cualquier entorno y con cualquier numero de
+    //      botones. El tema solo cambia el ASPECTO.
+    //   2. Si el boton se reconoce por su nombre, recibe icono y rotulo. El rotulo sale de su
+    //      PROPIO nombre, asi que por construccion no puede ser el de otro metodo.
+    //   3. Si NO se reconoce, se queda con su texto y su imagen nativos y solo recibe el fondo del
+    //      tema. Mejor un boton sin icono que un boton con el icono de otro.
     private static prepararBotones(): void {
-        var nombresClaves = ["button0", "button1", "button3", "button4", "button2"];
-        var keysIds = ["p0", "p1", "p3", "p4", "p2"];
-        for (var i = 0; i < nombresClaves.length; i++) {
-            var pb = ThemeEngine.q("#ButtonGrid4Control .buttonGridButton." + nombresClaves[i]);
-            if (pb) {
-                if (!pb.classList.contains("sct-" + keysIds[i])) {
-                    pb.classList.add("sct-pbtn", "sct-" + keysIds[i]);
-                    ThemeEngine.icono(pb, "sct-ic-" + keysIds[i]);
+        var botones: HTMLElement[] = ThemeEngine.todos("#ButtonGrid4Control .buttonGridButton");
+        if (botones.length === 0) return;
+
+        var definiciones: any[] = [
+            { clase: "sct-p0", re: /^efectivo$/i },
+            { clase: "sct-p1", re: /vales/i },
+            { clase: "sct-p3", re: /planilla/i },
+            { clase: "sct-p4", re: /terceros/i },
+            { clase: "sct-p2", re: /niubiz/i }
+        ];
+        var usadas: any = {};
+
+        for (var i: number = 0; i < botones.length; i++) {
+            var boton: HTMLElement = botones[i];
+            var rotulo: string = ThemeEngine.rotuloPago(boton);
+
+            var def: any = null;
+            for (var j: number = 0; j < definiciones.length; j++) {
+                if (!usadas[definiciones[j].clase] && definiciones[j].re.test(rotulo)) {
+                    def = definiciones[j];
+                    usadas[def.clase] = true;
+                    break;
                 }
-                ThemeEngine.estilo(pb, { "background-image": "none", "background-color": "rgba(22,21,20,0.6)", "border": "1px solid rgba(255,255,255,0.16)", "border-radius": "12px", "color": "#FFFFFF", "transform": "none" });
-                for (var j = 0; j < pb.children.length; j++) {
-                    var ch = pb.children[j] as HTMLElement;
-                    if (ch.tagName === "DIV") ch.style.setProperty("display", "none", "important");
+            }
+
+            if (!boton.classList.contains("sct-pbtn")) boton.classList.add("sct-pbtn");
+            ThemeEngine.estilo(boton, {
+                "background-color": "rgba(22,21,20,0.6)",
+                "border": "1px solid rgba(255,255,255,0.16)",
+                "border-radius": "12px",
+                "color": "#FFFFFF"
+            });
+
+            // No reconocido: se respeta tal cual, con su imagen nativa incluida.
+            if (!def) continue;
+
+            ThemeEngine.estilo(boton, { "background-image": "none" });
+            if (!boton.classList.contains(def.clase)) {
+                boton.classList.add(def.clase);
+                ThemeEngine.icono(boton, "sct-ic-" + def.clase.substring(4));
+            }
+            for (var k: number = 0; k < boton.children.length; k++) {
+                var hijo: HTMLElement = boton.children[k] as HTMLElement;
+                if (hijo.tagName === "DIV" && hijo.style.getPropertyValue("display") !== "none") {
+                    hijo.style.setProperty("display", "none", "important");
                 }
             }
         }
@@ -693,6 +890,7 @@ export class ThemeEngine {
             }
         }
         
+        ThemeEngine.ajustarNumpad();
         ThemeEngine.solicitarRecalculoPestanas();
     }
 
@@ -745,14 +943,14 @@ export class ThemeEngine {
                 ThemeEngine.icono(btn2[i], "sct-ic-t" + (i + 1));
             }
         }
-        var b3 = ThemeEngine.q("#ButtonGrid3Control");
-        if (b3) {
-            ThemeEngine.estilo(b3, { "width": "428px", "height": "316px" });
-            ThemeEngine.decorarBoleto(ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton"));
-        }
+        // Sin forzar el tamano del contenedor: lo dimensiona el POS a partir de su zona.
+        ThemeEngine.decorarBoleto(ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton"));
 
         
         // Estilos para los botones de pago (las clases sct-p0..sct-p4 ya fueron asignadas en prepararBotones, posiciones manejadas por CSS)
+
+        ThemeEngine.ajustarNumpad();
+        ThemeEngine.alinearColumnaDerecha();
     }
 
     // ---------------------------------------------------------------- ciclo

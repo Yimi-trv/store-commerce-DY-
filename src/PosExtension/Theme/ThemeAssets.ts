@@ -142,14 +142,16 @@ export function construirCss(): string {
         + ".sct-bbtn .sct-ic{left:26px;top:50%;transform:translateY(-50%);width:66px;height:66px;}\n"
         + "#ButtonGrid4Control .sct-pbtn .sct-ic{left:50%;top:7px;transform:translateX(-50%);width:32px;height:32px;}\n"
         + reglasIconos
-        + ".sct-cbtn{position:absolute !important;border-radius:12px !important;overflow:hidden !important;background-image:none !important;}\n"
+        // Sin `position`: el POS ya coloca los botones de cuadricula en absoluto con sus propias
+        // coordenadas, asi que el icono interior sigue teniendo su ancestro posicionado.
+        + ".sct-cbtn{border-radius:12px !important;overflow:hidden !important;background-image:none !important;}\n"
         + ".sct-cbtn::after{content:'';position:absolute;left:96px;top:18%;height:64%;width:1px;background:rgba(255,255,255,0.45);}\n"
         + ".sct-cbtn > div{position:absolute !important;left:120px !important;right:12px !important;top:50% !important;bottom:auto !important;transform:translateY(-50%) !important;text-align:left !important;}\n"
         + ".sct-cbtn > div *{font-size:19px !important;font-weight:400 !important;color:#FFF !important;line-height:1.2 !important;}\n"
         + ".sct-cbtn-primary{background-color:" + ROJO + " !important;border:none !important;}\n"
         + ".sct-cbtn-primary::after{background:rgba(255,255,255,0.55);}\n"
         + ".sct-cbtn-dark{background-color:#1B1A19 !important;border:1px solid rgba(255,255,255,0.14) !important;border-left:4px solid " + ROJO + " !important;}\n"
-        + ".sct-tbtn{position:absolute !important;border-radius:12px !important;overflow:hidden !important;background-image:none !important;}\n"
+        + ".sct-tbtn{border-radius:12px !important;overflow:hidden !important;background-image:none !important;}\n"
         + ".sct-tbtn-dark{background-color:#1B1A19 !important;border:1px solid rgba(255,255,255,0.16) !important;}\n"
         + ".sct-tbtn-outline{background-color:#1B1A19 !important;border:1.5px solid " + ROJO + " !important;}\n"
         + ".sct-tbtn-fill{background-color:" + ROJO + " !important;border:1.5px solid " + ROJO + " !important;}\n"
@@ -160,7 +162,7 @@ export function construirCss(): string {
         + ".sct-t4::after{content:'Cancelar\\A Transacción';}\n"
         + ".sct-t5::after{content:'Volver a\\A Transacción';}\n"
         + ".sct-t6::after{content:'Suspender\\A Transacción';}\n"
-        + ".sct-bbtn{position:absolute !important;border-radius:12px !important;background-color:#1B1A19 !important;border:1px solid rgba(255,255,255,0.14) !important;border-left:4px solid " + ROJO + " !important;overflow:hidden !important;background-image:none !important;}\n"
+        + ".sct-bbtn{border-radius:12px !important;background-color:#1B1A19 !important;border:1px solid rgba(255,255,255,0.14) !important;border-left:4px solid " + ROJO + " !important;overflow:hidden !important;background-image:none !important;}\n"
         + ".sct-bbtn::after{content:'';position:absolute;left:114px;top:20%;height:60%;width:1px;background:rgba(255,255,255,0.4);}\n"
         + ".sct-bbtn > div:first-of-type{position:absolute !important;left:138px !important;right:14px !important;top:50% !important;bottom:auto !important;transform:translateY(-50%) !important;text-align:left !important;}\n"
         + ".sct-bbtn .sct-b-t{display:block !important;font-size:22px !important;font-weight:600 !important;color:#FFF !important;line-height:1.2 !important;}\n"
@@ -175,7 +177,12 @@ export function construirCss(): string {
 
     // CSS AMPLIO (1920x855)
     var cssAmplio: string = ""
-        + ".dark .commerceTabControl.righttabs{flex-direction:column !important;height:468px !important;}\n"
+        // El alto NO se fija aqui. Estaba clavado en 468px, medido contra la zona de UAT (490 de
+        // alto). En otros entornos HQ da otra zona — en master da 360 — y como la zona tiene
+        // overflow:hidden, se recortaban 108px: la mitad inferior del numpad desaparecia y con ella
+        // el boton Intro. Ahora el control toma el alto de SU zona, y de dimensionar la zona se
+        // encarga ThemeEngine.ajustarNumpad(), que lo calcula midiendo la pantalla real.
+        + ".dark .commerceTabControl.righttabs{flex-direction:column !important;height:100% !important;}\n"
         + ".dark .commerceTabControl.righttabs .tabsContainer{order:-1;display:flex !important;flex-direction:row !important;gap:8px;height:74px !important;width:100% !important;margin:0 0 10px 0 !important;}\n"
         + ".dark .commerceTabControl.righttabs .tabsContainer .tab{width:107px !important;height:70px !important;border:1px solid rgba(255,255,255,0.25) !important;border-radius:10px !important;background:#161514 !important;margin:0 !important;position:relative !important;}\n"
         + ".dark .commerceTabControl.righttabs .tabsContainer .tab:hover,.dark .commerceTabControl.righttabs .tabsContainer .tab.hover,.dark .commerceTabControl.righttabs .tabsContainer .tab.pressed{border-color:" + ROJO + " !important;background:#1B1A19 !important;}\n"
@@ -212,39 +219,39 @@ export function construirCss(): string {
         + ".panel-footer *{color:#E8E6E3 !important;}\n"
         + ".panel-footer .h1{color:" + ROJO + " !important;font-size:30px !important;font-weight:700 !important;}\n"
         + ".dark .transactionLinesPane{border:" + BORDE_TARJETA + " !important;border-radius:14px !important;padding:2px 8px !important;box-sizing:border-box !important;}\n"
-        + ".sct-live-zona-pagos{transform:translateY(114px) !important;height:146px !important;width:452px !important;}\n"
+        // El ALTO y el ANCHO de la zona de pagos no se tocan: los daba la medida de UAT (452x146)
+        // y en master el POS necesita 152 de alto para sus dos filas, asi que recortaba 6px del
+        // bloque de NIUBIZ.
+        // El DESPLAZAMIENTO tampoco: lo calcula ThemeEngine.alinearColumnaDerecha() midiendo la
+        // caja de importes. Estaba fijo en 114px, otra medida de UAT.
         + ".sct-live-zona-montos{transform:translateY(-20px) !important;height:276px !important;}\n"
         + ".sct-live-zona-cliente{transform:translateY(-16px) !important;height:276px !important;}\n"
-        + ".sct-live-zona-boleta{transform:translateY(108px) !important;height:116px !important;max-height:116px !important;min-height:0 !important;width:452px !important;padding:10px 14px 12px 14px !important;border:1px solid rgba(255,255,255,0.12) !important;border-radius:14px !important;background:rgba(22,21,20,0.6) !important;box-sizing:border-box !important;overflow:hidden !important;}\n"
+        // Sin transform ni width fijos: el desplazamiento lo calcula alinearColumnaDerecha() y el
+        // ancho lo da la zona. Estaban en translateY(108px) y 452px, medidos en UAT.
+        + ".sct-live-zona-boleta{height:116px !important;max-height:116px !important;min-height:0 !important;padding:10px 14px 12px 14px !important;border:1px solid rgba(255,255,255,0.12) !important;border-radius:14px !important;background:rgba(22,21,20,0.6) !important;box-sizing:border-box !important;overflow:hidden !important;}\n"
         + ".sct-live-zona-boleta .sct-titulo{font-size:17px !important;font-weight:600 !important;color:#FFFFFF !important;}\n"
-        + "#ButtonGrid4Control{width:452px !important;height:146px !important;padding:0 !important;background:rgba(22,21,20,0.6) !important;}\n"
-        + "#ButtonGrid4Control .buttonsContainer{width:452px !important;height:146px !important;}\n"
-        + "#ButtonGrid1Control, #ButtonGrid1Control .buttonsContainer{width:428px !important;height:300px !important;}\n"
-        + ".sct-cbtn{position:absolute !important;left:0px !important;width:428px !important;height:92px !important;min-height:0 !important;max-height:92px !important;transform:none !important;color:#FFFFFF !important;background-image:none !important;}\n"
+        + "#ButtonGrid4Control{padding:0 !important;background:rgba(22,21,20,0.6) !important;}\n"
+        // SIN GEOMETRIA. Ni posiciones ni tamanos: los pone la rejilla de la cuadricula de HQ
+        // (Row / Column / ColumnSpan), y lo hace bien. Comprobado leyendo las cuatro cuadriculas:
+        //   Cliente (200)        3 botones, filas 1-2-3, span 4   -> pila vertical
+        //   Transacciones (210)  6 botones, 2 filas x 3 columnas  -> rejilla 3x2
+        //   Boleteos (220)       2 botones, filas 1-2, span 4     -> dos barras
+        //   Metodos de Pago (230) 4 en fila 1 + NIUBIZ span 4
+        // Es exactamente el reparto que el tema estaba repitiendo a mano en pixeles. Al fijarlo
+        // aqui, el resultado quedaba atado al numero y al orden de botones de UAT y se rompia en
+        // cualquier otro entorno. El tema solo pone ASPECTO.
+        + ".sct-cbtn{color:#FFFFFF !important;background-image:none !important;}\n"
         + ".sct-cbtn-primary{background-color:#C8102E !important;}\n"
         + ".sct-cbtn-dark{background-color:#1B1A19 !important;}\n"
-        + ".sct-cbtn:nth-child(1){top:0px !important;}\n"
-        + ".sct-cbtn:nth-child(2){top:104px !important;}\n"
-        + ".sct-cbtn:nth-child(3){top:208px !important;}\n"
-        + "#ButtonGrid2Control, #ButtonGrid2Control .buttonsContainer{width:428px !important;height:350px !important;}\n"
-        + ".sct-tbtn{position:absolute !important;width:136px !important;height:170px !important;min-height:0 !important;max-height:170px !important;transform:none !important;color:#FFFFFF !important;background-image:none !important;background-color:#1B1A19 !important;}\n"
+        + ".sct-tbtn{color:#FFFFFF !important;background-image:none !important;background-color:#1B1A19 !important;}\n"
         + ".sct-tbtn.sct-t5{background-color:#C8102E !important;}\n"
-        + ".sct-tbtn.sct-t1{left:0px !important;top:0px !important;}\n"
-        + ".sct-tbtn.sct-t2{left:146px !important;top:0px !important;}\n"
-        + ".sct-tbtn.sct-t3{left:292px !important;top:0px !important;}\n"
-        + ".sct-tbtn.sct-t4{left:0px !important;top:180px !important;}\n"
-        + ".sct-tbtn.sct-t5{left:146px !important;top:180px !important;}\n"
-        + ".sct-tbtn.sct-t6{left:292px !important;top:180px !important;}\n"
-        + "#ButtonGrid3Control, #ButtonGrid3Control .buttonsContainer{width:428px !important;height:316px !important;}\n"
-        + ".sct-bbtn{position:absolute !important;left:0px !important;width:428px !important;height:150px !important;min-height:0 !important;max-height:150px !important;transform:none !important;background-color:#1B1A19 !important;color:#FFFFFF !important;background-image:none !important;}\n"
-        + ".sct-bbtn.sct-b1{top:0px !important;}\n"
-        + ".sct-bbtn.sct-b2{top:166px !important;}\n"
-        + "#ButtonGrid4Control .sct-pbtn{position:absolute !important;background-image:none !important;background-color:rgba(22,21,20,0.6) !important;border:1px solid rgba(255,255,255,0.16) !important;border-radius:12px !important;color:#FFFFFF !important;transform:none !important;}\n"
-        + "#ButtonGrid4Control .sct-p0{left:0px !important;top:0px !important;width:110px !important;height:78px !important;min-height:0 !important;max-height:78px !important;}\n"
-        + "#ButtonGrid4Control .sct-p1{left:114px !important;top:0px !important;width:110px !important;height:78px !important;min-height:0 !important;max-height:78px !important;}\n"
-        + "#ButtonGrid4Control .sct-p3{left:228px !important;top:0px !important;width:110px !important;height:78px !important;min-height:0 !important;max-height:78px !important;}\n"
-        + "#ButtonGrid4Control .sct-p4{left:342px !important;top:0px !important;width:110px !important;height:78px !important;min-height:0 !important;max-height:78px !important;}\n"
-        + "#ButtonGrid4Control .sct-p2{left:0px !important;top:84px !important;width:452px !important;height:62px !important;min-height:0 !important;max-height:62px !important;}\n";
+        + ".sct-bbtn{background-color:#1B1A19 !important;color:#FFFFFF !important;background-image:none !important;}\n"
+        // Solo aspecto. La POSICION y el TAMAÑO los pone el POS con la rejilla de la cuadricula
+        // (Row / Column / ColumnSpan de HQ), que ya coloca bien los botones en cualquier entorno.
+        // Antes el tema los posicionaba con left/top/width/height fijos por clase, y eso ataba el
+        // resultado al numero y al orden de botones de UAT: en master, que tiene otro orden y un
+        // boton mas, cada tile recibia el sitio y el icono de otro metodo de pago.
+        + "#ButtonGrid4Control .sct-pbtn{background-image:none !important;background-color:rgba(22,21,20,0.6) !important;border:1px solid rgba(255,255,255,0.16) !important;border-radius:12px !important;color:#FFFFFF !important;}\n";
 
 
     // =============================================================================================
@@ -505,38 +512,15 @@ export function construirCss(): string {
         // y redondeados solo a la izquierda. Se libera el recorte de la zona (los botones ya
         // quedan dentro de la tarjeta por posicionamiento propio).
         + "#ButtonGrid1, #ButtonGrid2, #ButtonGrid3{overflow:visible !important;}\n"
-        + "#ButtonGrid1Control, #ButtonGrid1Control .buttonsContainer{width:316px !important;height:238px !important;}\n"
-        // 302 + left 7 deja margen simetrico respecto a la tarjeta (20px izq / 18px der).
-        + ".sct-cbtn{position:absolute !important;left:7px !important;width:302px !important;height:74px !important;min-height:0 !important;max-height:74px !important;transform:none !important;color:#FFFFFF !important;background-image:none !important;}\n"
+        // SIN GEOMETRIA, igual que en el bloque amplio: la rejilla de HQ coloca los botones.
+        + ".sct-cbtn{color:#FFFFFF !important;background-image:none !important;}\n"
         + ".sct-cbtn-primary{background-color:#C8102E !important;}\n"
         + ".sct-cbtn-dark{background-color:#1B1A19 !important;}\n"
-        + ".sct-cbtn:nth-child(1){top:0px !important;}\n"
-        + ".sct-cbtn:nth-child(2){top:82px !important;}\n"
-        + ".sct-cbtn:nth-child(3){top:164px !important;}\n"
-        + "#ButtonGrid2Control, #ButtonGrid2Control .buttonsContainer{width:316px !important;height:254px !important;}\n"
-        // 100px x3 llegaba al borde interno de la tarjeta: 96 + margen de 7 a cada lado.
-        + ".sct-tbtn{position:absolute !important;width:96px !important;height:122px !important;min-height:0 !important;max-height:122px !important;transform:none !important;color:#FFFFFF !important;background-image:none !important;background-color:#1B1A19 !important;}\n"
+        + ".sct-tbtn{color:#FFFFFF !important;background-image:none !important;background-color:#1B1A19 !important;}\n"
         + ".sct-tbtn.sct-t5{background-color:#C8102E !important;}\n"
-        + ".sct-tbtn.sct-t1{left:7px !important;top:0px !important;}\n"
-        + ".sct-tbtn.sct-t2{left:110px !important;top:0px !important;}\n"
-        + ".sct-tbtn.sct-t3{left:213px !important;top:0px !important;}\n"
-        + ".sct-tbtn.sct-t4{left:7px !important;top:132px !important;}\n"
-        + ".sct-tbtn.sct-t5{left:110px !important;top:132px !important;}\n"
-        + ".sct-tbtn.sct-t6{left:213px !important;top:132px !important;}\n"
-        + "#ButtonGrid3Control, #ButtonGrid3Control .buttonsContainer{width:316px !important;height:236px !important;}\n"
-        + ".sct-bbtn{position:absolute !important;left:7px !important;width:302px !important;height:112px !important;min-height:0 !important;max-height:112px !important;transform:none !important;background-color:#1B1A19 !important;color:#FFFFFF !important;background-image:none !important;}\n"
-        + ".sct-bbtn.sct-b1{top:0px !important;}\n"
-        + ".sct-bbtn.sct-b2{top:124px !important;}\n"
-        // OJO AL RETOCAR ESTO: la regla de .sct-p2 (el bloque ancho de NIUBIZ) va DESPUES y le
-        // devuelve sus 340px. Funciona por ORDEN, no por especificidad. Si se le sube la
-        // especificidad a esta regla (por ejemplo acotandola con una clase mas), NIUBIZ se encoge
-        // al ancho del tile pequeno y su logo se sale. Comprobado en vivo.
-        + "#ButtonGrid4Control .sct-pbtn{position:absolute !important;top:0px !important;width:82px !important;height:64px !important;min-height:0 !important;max-height:64px !important;transform:none !important;}\n"
-        + "#ButtonGrid4Control .sct-p0{left:0px !important;}\n"
-        + "#ButtonGrid4Control .sct-p1{left:86px !important;}\n"
-        + "#ButtonGrid4Control .sct-p3{left:172px !important;}\n"
-        + "#ButtonGrid4Control .sct-p4{left:258px !important;}\n"
-        + "#ButtonGrid4Control .sct-p2{left:0px !important;top:75px !important;width:340px !important;height:52px !important;min-height:0 !important;max-height:52px !important;}\n";
+        + ".sct-bbtn{background-color:#1B1A19 !important;color:#FFFFFF !important;background-image:none !important;}\n"
+        // Sin posiciones: la rejilla del POS ya reparte los botones. Ver el comentario equivalente
+        // en el bloque amplio. Aqui solo se ajusta la tipografia del rotulo al tamano compacto.;
 
     return acotar(cssBase, "body." + CLASE_AMBITO)
          + "@media screen and (min-width: 1367px) {\n" + acotar(cssAmplio, "body." + CLASE_AMBITO) + "}\n"
