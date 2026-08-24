@@ -140,6 +140,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     // ThemeAssets exporta hojas de estilo completas, no colores sueltos, y el chrome del
     // diálogo se pinta nodo por nodo desde JavaScript. Si el tema cambia, estos dos valores y
     // los del <style> de la plantilla se cambian a mano.
+    /**
+     * Resolver de la alerta que está en pantalla, si hay alguna.
+     *
+     * Existe porque una promesa que solo resuelve con un click del usuario es un punto de
+     * cuelgue: `_bindAction` deshabilita el botón hasta que la acción resuelve, así que una
+     * alerta que quede huérfana deja el botón muerto y el modal "sin responder" —sin ningún
+     * error a la vista. Al abrir una alerta nueva se cierra la anterior con este resolver.
+     */
+    private _pendingAlertResolve: ((accepted: boolean) => void) | null = null;
+
     private static _hostStyleId: string = "customerInlineHostStyle";
     private static _colorSurface: string = "#1B1A19";
     private static _colorText: string = "#E8E6E3";
@@ -241,6 +251,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 editTab.style.display = "none";
             }
         }
+
+        // Por si una alerta quedó visible al cerrar el modal la vez anterior: el POS conserva
+        // el DOM de la plantilla entre aperturas.
+        this._resetAlert(element);
 
         this._widenHostDialog(element);
         this._prefillInitialValues(element);
@@ -1646,6 +1660,14 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return Promise.resolve();
         }
 
+        const direccionIncompleta: string = this._validateAddressCompleteness(element);
+        if (direccionIncompleta) {
+            return this._showAlert(element, "Dirección incompleta", direccionIncompleta, "Entendido", "")
+                .then((): void => {
+                    this._showMessage(element, "Complete la dirección o déjela vacía para continuar.");
+                });
+        }
+
         this._showMessage(element, "Verificando la situación del documento en SUNAT...");
 
         // El veto a observados corre SIEMPRE al crear, no solo al consultar: sin esto bastaba
@@ -1875,6 +1897,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return Promise.resolve(false);
         }
 
+        // Si quedó una alerta sin responder, se cierra AQUÍ. Sin esto su promesa quedaba
+        // huérfana para siempre y el botón que la esperaba no se volvía a habilitar: el modal
+        // se veía "sin responder" y sin ningún error que lo explicara.
+        this._dismissPendingAlert("se abre una alerta nueva");
+
         if (titleNode) { titleNode.textContent = title; }
         if (bodyNode) { bodyNode.textContent = body; }
         acceptButton.textContent = acceptLabel;
@@ -1888,16 +1915,73 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         return new Promise<boolean>((resolve: (value: boolean) => void): void => {
             const close = (accepted: boolean): void => {
                 overlay.style.display = "none";
-                // Se desenganchan los dos manejadores: el modal se reutiliza entre aperturas y
-                // si no, cada duplicado sumaba un listener sobre el mismo botón.
+                // Se desenganchan los manejadores: el modal se reutiliza entre aperturas y si
+                // no, cada alerta sumaba un listener sobre los mismos botones.
                 acceptButton.onclick = null;
                 cancelButton.onclick = null;
+                overlay.onclick = null;
+                overlay.onkeydown = null;
+                this._pendingAlertResolve = null;
                 resolve(accepted);
             };
 
+            this._pendingAlertResolve = close;
+
             acceptButton.onclick = (): void => { close(true); };
             cancelButton.onclick = (): void => { close(false); };
+
+            // DOS SALIDAS MÁS, a propósito. El overlay tapa el modal entero, así que si por lo
+            // que sea los botones no respondieran, el cajero quedaría encerrado sin poder hacer
+            // nada. Tocar fuera de la tarjeta o pulsar Escape equivale a cancelar.
+            overlay.onclick = (event: Event): void => {
+                if (event && event.target === overlay) {
+                    close(false);
+                }
+            };
+
+            overlay.onkeydown = (event: KeyboardEvent): void => {
+                // `keyCode` y no `key`: el target del proyecto es ES5 y el POS corre en un
+                // WebView donde conviene no depender de lo más nuevo.
+                if (event && (event.keyCode === 27)) {
+                    close(false);
+                }
+            };
         });
+    }
+
+    /**
+     * Cierra la alerta en pantalla resolviéndola como cancelada. No hace nada si no hay
+     * ninguna. Se llama al abrir otra alerta y al abrir el modal.
+     */
+    private _dismissPendingAlert(motivo: string): void {
+        const pending: ((accepted: boolean) => void) | null = this._pendingAlertResolve;
+
+        if (!pending) {
+            return;
+        }
+
+        this._logChunked("=== Alerta pendiente cerrada ===", motivo);
+        this._pendingAlertResolve = null;
+        pending(false);
+    }
+
+    /**
+     * Deja el overlay oculto al abrir el modal.
+     *
+     * El POS conserva el DOM de la plantilla entre aperturas: si una alerta quedó visible al
+     * cerrar el modal, al reabrirlo aparecería tapándolo todo con los manejadores de la
+     * instancia anterior, que ya no responden.
+     */
+    private _resetAlert(element: HTMLElement): void {
+        const overlay: HTMLElement = element.querySelector("#customerInlineAlertOverlay") as HTMLElement;
+
+        this._pendingAlertResolve = null;
+
+        if (overlay) {
+            overlay.style.display = "none";
+            overlay.onclick = null;
+            overlay.onkeydown = null;
+        }
     }
 
     /**
@@ -2378,6 +2462,15 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     private _updateCustomer(element: HTMLElement): Promise<void> {
+        // Misma regla que al crear: o la dirección va entera, o no va.
+        const direccionIncompleta: string = this._validateAddressCompleteness(element);
+        if (direccionIncompleta) {
+            return this._showAlert(element, "Dirección incompleta", direccionIncompleta, "Entendido", "")
+                .then((): void => {
+                    this._showMessage(element, "Complete la dirección o déjela vacía para guardar.");
+                });
+        }
+
         return this._loadCustomerForEdit(element)
             .then((customer: ProxyEntities.Customer): Promise<void> => {
                 const documentNumber: string = this._sunatService.normalizeDocument(this._getValue(element, "customerInlineEditDocument"));
@@ -2569,6 +2662,49 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         }
 
         this._applyAddressParts(element, typed);
+    }
+
+    /**
+     * Comprueba que la dirección esté completa. Devuelve el motivo, o "" si se puede continuar.
+     *
+     * LA DIRECCIÓN ES OPCIONAL, PERO A MEDIAS NO SIRVE. D365 valida el ubigeo contra sus
+     * maestros y descarta en silencio una dirección sin State/County/City: el cliente se creaba
+     * "con dirección" y en la ficha aparecía incompleta o vacía, sin que nadie se enterara
+     * hasta emitir el comprobante.
+     *
+     * Por eso: o no se pone dirección, o se pone entera. Si hay calle pero falta algún nivel
+     * del ubigeo —el caso real es olvidar el último desplegable— se detiene y se dice
+     * exactamente qué falta.
+     */
+    private _validateAddressCompleteness(element: HTMLElement): string {
+        const street: string = this._getValue(element, "customerInlineCreateAddress");
+        const streetNumber: string = this._getValue(element, "customerInlineCreateStreetNumber");
+        const compliment: string = this._getValue(element, "customerInlineCreateBuildingCompliment");
+        const stateId: string = this._getValue(element, "customerInlineCreateDepartment");
+        const countyId: string = this._getValue(element, "customerInlineCreateProvince");
+        const cityCode: string = this._getValue(element, "customerInlineCreateDistrict");
+
+        const tieneAlgo: boolean = !!(street || streetNumber || compliment || stateId || countyId || cityCode);
+
+        // Sin ningún dato, el cliente simplemente no tendrá dirección. Es válido.
+        if (!tieneAlgo) {
+            return "";
+        }
+
+        const faltan: string[] = [];
+        if (!street) { faltan.push("Calle / Dirección fiscal"); }
+        if (!stateId) { faltan.push("Departamento"); }
+        if (!countyId) { faltan.push("Provincia"); }
+        if (!cityCode) { faltan.push("Distrito"); }
+
+        if (faltan.length === 0) {
+            return "";
+        }
+
+        return "Para registrar la dirección falta completar:\n\n"
+            + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
+            + "Complete esos campos, o borre los datos de dirección si este cliente no va a "
+            + "tener una: una dirección a medias no se guarda.";
     }
 
     /**

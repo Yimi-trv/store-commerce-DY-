@@ -70,6 +70,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     _this._searchSkip = 0;
                     _this._searchInFlight = false;
                     _this._editingAddressRecordId = 0;
+                    _this._pendingAlertResolve = null;
                     _this._mode = "search";
                     _this._resolve = null;
                     _this._currentCustomer = null;
@@ -139,6 +140,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             editTab.style.display = "none";
                         }
                     }
+                    this._resetAlert(element);
                     this._widenHostDialog(element);
                     this._prefillInitialValues(element);
                     this._setMode(element, this._mode);
@@ -1051,6 +1053,13 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this._showMessage(element, "El nombre/razón social es obligatorio.");
                         return Promise.resolve();
                     }
+                    var direccionIncompleta = this._validateAddressCompleteness(element);
+                    if (direccionIncompleta) {
+                        return this._showAlert(element, "Dirección incompleta", direccionIncompleta, "Entendido", "")
+                            .then(function () {
+                            _this._showMessage(element, "Complete la dirección o déjela vacía para continuar.");
+                        });
+                    }
                     this._showMessage(element, "Verificando la situación del documento en SUNAT...");
                     return this._sunatService.lookup(documentNumber)
                         .then(function (sunatData) {
@@ -1165,6 +1174,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                 };
                 CustomerInlineDialog.prototype._showAlert = function (element, title, body, acceptLabel, cancelLabel) {
+                    var _this = this;
                     var overlay = element.querySelector("#customerInlineAlertOverlay");
                     var titleNode = element.querySelector("#customerInlineAlertTitle");
                     var bodyNode = element.querySelector("#customerInlineAlertBody");
@@ -1175,6 +1185,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this._showTextResult(element, "customerInlineCreateResult", title + "\n\n" + body);
                         return Promise.resolve(false);
                     }
+                    this._dismissPendingAlert("se abre una alerta nueva");
                     if (titleNode) {
                         titleNode.textContent = title;
                     }
@@ -1190,11 +1201,43 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             overlay.style.display = "none";
                             acceptButton.onclick = null;
                             cancelButton.onclick = null;
+                            overlay.onclick = null;
+                            overlay.onkeydown = null;
+                            _this._pendingAlertResolve = null;
                             resolve(accepted);
                         };
+                        _this._pendingAlertResolve = close;
                         acceptButton.onclick = function () { close(true); };
                         cancelButton.onclick = function () { close(false); };
+                        overlay.onclick = function (event) {
+                            if (event && event.target === overlay) {
+                                close(false);
+                            }
+                        };
+                        overlay.onkeydown = function (event) {
+                            if (event && (event.keyCode === 27)) {
+                                close(false);
+                            }
+                        };
                     });
+                };
+                CustomerInlineDialog.prototype._dismissPendingAlert = function (motivo) {
+                    var pending = this._pendingAlertResolve;
+                    if (!pending) {
+                        return;
+                    }
+                    this._logChunked("=== Alerta pendiente cerrada ===", motivo);
+                    this._pendingAlertResolve = null;
+                    pending(false);
+                };
+                CustomerInlineDialog.prototype._resetAlert = function (element) {
+                    var overlay = element.querySelector("#customerInlineAlertOverlay");
+                    this._pendingAlertResolve = null;
+                    if (overlay) {
+                        overlay.style.display = "none";
+                        overlay.onclick = null;
+                        overlay.onkeydown = null;
+                    }
                 };
                 CustomerInlineDialog.prototype._continueCreate = function (element, documentNumber, name) {
                     this._showMessage(element, "Paso 1: Resolviendo dirección (Ubigeo)...");
@@ -1519,6 +1562,13 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._updateCustomer = function (element) {
                     var _this = this;
+                    var direccionIncompleta = this._validateAddressCompleteness(element);
+                    if (direccionIncompleta) {
+                        return this._showAlert(element, "Dirección incompleta", direccionIncompleta, "Entendido", "")
+                            .then(function () {
+                            _this._showMessage(element, "Complete la dirección o déjela vacía para guardar.");
+                        });
+                    }
                     return this._loadCustomerForEdit(element)
                         .then(function (customer) {
                         var documentNumber = _this._sunatService.normalizeDocument(_this._getValue(element, "customerInlineEditDocument"));
@@ -1651,6 +1701,38 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         return;
                     }
                     this._applyAddressParts(element, typed);
+                };
+                CustomerInlineDialog.prototype._validateAddressCompleteness = function (element) {
+                    var street = this._getValue(element, "customerInlineCreateAddress");
+                    var streetNumber = this._getValue(element, "customerInlineCreateStreetNumber");
+                    var compliment = this._getValue(element, "customerInlineCreateBuildingCompliment");
+                    var stateId = this._getValue(element, "customerInlineCreateDepartment");
+                    var countyId = this._getValue(element, "customerInlineCreateProvince");
+                    var cityCode = this._getValue(element, "customerInlineCreateDistrict");
+                    var tieneAlgo = !!(street || streetNumber || compliment || stateId || countyId || cityCode);
+                    if (!tieneAlgo) {
+                        return "";
+                    }
+                    var faltan = [];
+                    if (!street) {
+                        faltan.push("Calle / Dirección fiscal");
+                    }
+                    if (!stateId) {
+                        faltan.push("Departamento");
+                    }
+                    if (!countyId) {
+                        faltan.push("Provincia");
+                    }
+                    if (!cityCode) {
+                        faltan.push("Distrito");
+                    }
+                    if (faltan.length === 0) {
+                        return "";
+                    }
+                    return "Para registrar la dirección falta completar:\n\n"
+                        + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
+                        + "Complete esos campos, o borre los datos de dirección si este cliente no va a "
+                        + "tener una: una dirección a medias no se guarda.";
                 };
                 CustomerInlineDialog.prototype._buildAddressFromForm = function (element, recordId) {
                     var street = this._getValue(element, "customerInlineCreateAddress");
