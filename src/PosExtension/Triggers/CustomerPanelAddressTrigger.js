@@ -89,12 +89,17 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                     }
                 };
                 CustomerPanelAddressTrigger.prototype._findAddressButton = function (target) {
+                    var porBinding = this._findByKnockoutBinding(target);
+                    if (porBinding) {
+                        return porBinding;
+                    }
                     var node = target;
                     for (var depth = 0; node && depth < 5; depth++) {
                         var raw = node.textContent || "";
                         if (raw.length > CustomerPanelAddressTrigger.MAX_LABEL_LENGTH) {
                             if (this._looksLikeAddressLabel(raw)) {
-                                this._reportUnknownLabel(raw.substring(0, 120) + " [...] (texto largo, descartado)");
+                                var limpio = raw.replace(/\s+/g, " ").trim();
+                                this._reportUnknownLabel(limpio.substring(0, 120) + " [...] (texto largo)");
                             }
                             return null;
                         }
@@ -115,6 +120,20 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                     }
                     this._unknownLabels[texto] = true;
                     this.context.logger.logInformational("CustomerPanelAddressTrigger: rotulo parecido NO reconocido: '" + texto + "'");
+                };
+                CustomerPanelAddressTrigger.prototype._findByKnockoutBinding = function (target) {
+                    var node = target;
+                    for (var depth = 0; node && depth < 10; depth++) {
+                        if (typeof node.getAttribute === "function") {
+                            var bind = node.getAttribute("data-bind") || "";
+                            if (bind.indexOf("addressEditClickHandler") >= 0
+                                || bind.indexOf("AddressEditClick") >= 0) {
+                                return node;
+                            }
+                        }
+                        node = node.parentElement;
+                    }
+                    return null;
                 };
                 CustomerPanelAddressTrigger.prototype._looksLikeAddressLabel = function (raw) {
                     var text = raw.toUpperCase();

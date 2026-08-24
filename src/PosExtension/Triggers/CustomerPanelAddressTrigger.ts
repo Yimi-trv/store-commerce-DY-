@@ -132,6 +132,22 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
      * acabaría reconociendo el panel entero.
      */
     private _findAddressButton(target: HTMLElement): HTMLElement | null {
+        // PRIMERO, LA SEÑAL BUENA: el binding de knockout del propio POS.
+        //
+        // El rastro de la navegación lo dejó claro:
+        //     addressEditClickHandler @ Pos.ViewModels.js
+        //     onAddressEditClicked    @ Pos.Views.js
+        //
+        // El botón está declarado como `data-bind="click: addressEditClickHandler"`, y knockout
+        // deja ese atributo en el DOM. Es una marca estructural del POS —no depende del idioma,
+        // ni del rótulo, ni de dónde esté anidado— justo lo que la regla del proyecto pide usar
+        // en lugar de reconocer por texto. El texto queda solo como respaldo.
+        const porBinding: HTMLElement | null = this._findByKnockoutBinding(target);
+
+        if (porBinding) {
+            return porBinding;
+        }
+
         let node: HTMLElement = target;
 
         for (let depth: number = 0; node && depth < 5; depth++) {
@@ -147,7 +163,12 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
                 // es justo la pista que haria falta si el rotulo real fuera mas extenso de lo
                 // previsto, y perderla obligaria a otro despliegue solo para averiguarlo.
                 if (this._looksLikeAddressLabel(raw)) {
-                    this._reportUnknownLabel(raw.substring(0, 120) + " [...] (texto largo, descartado)");
+                    // Se normalizan los espacios ANTES de truncar: el textContent de un
+                    // contenedor arrastra la sangría del HTML, y cortar a ciegas los primeros
+                    // caracteres devolvía puro espacio en blanco. El aviso anterior salió así,
+                    // vacío y sin decir nada.
+                    const limpio: string = raw.replace(/\s+/g, " ").trim();
+                    this._reportUnknownLabel(limpio.substring(0, 120) + " [...] (texto largo)");
                 }
 
                 return null;
@@ -189,6 +210,31 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
         this._unknownLabels[texto] = true;
         this.context.logger.logInformational(
             "CustomerPanelAddressTrigger: rotulo parecido NO reconocido: '" + texto + "'");
+    }
+
+    /**
+     * Busca el elemento cuyo `data-bind` declara el manejador de editar dirección del POS.
+     *
+     * Sube más niveles que la búsqueda por texto (el atributo está en el botón, y lo pulsado
+     * suele ser un icono o un span dentro) y no mira el contenido, así que subir es barato.
+     */
+    private _findByKnockoutBinding(target: HTMLElement): HTMLElement | null {
+        let node: HTMLElement = target;
+
+        for (let depth: number = 0; node && depth < 10; depth++) {
+            if (typeof node.getAttribute === "function") {
+                const bind: string = node.getAttribute("data-bind") || "";
+
+                if (bind.indexOf("addressEditClickHandler") >= 0
+                    || bind.indexOf("AddressEditClick") >= 0) {
+                    return node;
+                }
+            }
+
+            node = node.parentElement;
+        }
+
+        return null;
     }
 
     /** Filtro previo por subcadena: descarta sin normalizar ni recorrer ancestros. */
