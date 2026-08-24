@@ -155,7 +155,11 @@ export function construirCss(): string {
         + ".sct-tbtn-dark{background-color:#1B1A19 !important;border:1px solid rgba(255,255,255,0.16) !important;}\n"
         + ".sct-tbtn-outline{background-color:#1B1A19 !important;border:1.5px solid " + ROJO + " !important;}\n"
         + ".sct-tbtn-fill{background-color:" + ROJO + " !important;border:1.5px solid " + ROJO + " !important;}\n"
-        + ".sct-tbtn::after{white-space:pre-line;position:absolute;left:6px;right:6px;top:96px;text-align:center;color:#FFF;font-size:17px;line-height:1.3;}\n"
+        // El rotulo se ancla ABAJO, no a un `top` fijo. Estaba en top:96px, medida pensada para
+        // tiles de 170px de alto: cuando el tile es mas bajo (el POS los da a 72px, y el reparto
+        // los calcula segun la tarjeta), el rotulo caia fuera y `overflow:hidden` se lo comia. Con
+        // `bottom` vale para cualquier alto.
+        + ".sct-tbtn::after{white-space:pre-line;position:absolute;left:6px;right:6px;top:auto;bottom:8px;text-align:center;color:#FFF;font-size:17px;line-height:1.3;}\n"
         + ".sct-t1::after{content:'Anular\\A Pago';}\n"
         + ".sct-t2::after{content:'Anular\\A Producto';}\n"
         + ".sct-t3::after{content:'Definir\\A Cantidad';}\n"
@@ -386,13 +390,16 @@ export function construirCss(): string {
         + "#ButtonGrid1Control .sct-cbtn > div{left:88px !important;right:8px !important;}\n"
         + "#ButtonGrid1Control .sct-cbtn > div *{font-size:15px !important;}\n"
         + "#ButtonGrid2Control .sct-tbtn .sct-ic{width:44px !important;height:44px !important;top:14px !important;}\n"
-        + "#ButtonGrid2Control .sct-tbtn::after{top:68px !important;font-size:13px !important;line-height:1.15 !important;}\n"
+        + "#ButtonGrid2Control .sct-tbtn::after{top:auto !important;bottom:8px !important;font-size:13px !important;line-height:1.15 !important;}\n"
         + "#ButtonGrid3Control .sct-bbtn .sct-ic{left:18px !important;width:46px !important;height:46px !important;}\n"
         + "#ButtonGrid3Control .sct-bbtn::after{left:80px !important;}\n"
         + "#ButtonGrid3Control .sct-bbtn > div:first-of-type{left:96px !important;right:10px !important;}\n"
         + "#ButtonGrid3Control .sct-b-t{font-size:16px !important;}\n"
         + "#ButtonGrid3Control .sct-b-s{font-size:12px !important;}\n"
-        + "#CustomControl1{width:340px !important;height:94px !important;min-height:0 !important;max-height:94px !important;padding:6px 10px 7px !important;box-sizing:border-box !important;overflow:hidden !important;border:1px solid rgba(255,255,255,0.12) !important;border-radius:14px !important;background:rgba(22,21,20,0.6) !important;}\n"
+        // Alto 94 -> 78: su contenido (titulo 12px + select 24 + boton 26 + relleno) necesita ~78,
+        // y los 16 que sobraban hacen falta abajo para que la fila de pagos entre entera. A 1024,
+        // entre el fondo de la tarjeta de pestanas y el fondo de los importes hay 244px justos.
+        + "#CustomControl1{width:340px !important;height:78px !important;min-height:0 !important;max-height:78px !important;padding:6px 10px 7px !important;box-sizing:border-box !important;overflow:hidden !important;border:1px solid rgba(255,255,255,0.12) !important;border-radius:14px !important;background:rgba(22,21,20,0.6) !important;}\n"
         // El titulo de la tarjeta ("Boleta"/"Factura") solo tenia regla en el bloque AMPLIO
         // (.sct-live-zona-boleta .sct-titulo, 17px). En compacto se quedaba con el h3 nativo del
         // POS dentro de una tarjeta de 94px, que es casi un tercio del alto disponible.
@@ -402,7 +409,10 @@ export function construirCss(): string {
         + "#CustomControl1 .sct-titulo,.sct-boleta .sct-titulo{font-size:12px !important;font-weight:600 !important;color:#FFFFFF !important;line-height:1.1 !important;margin:0 !important;}\n"
         + "#CustomControl1 select{width:100% !important;height:24px !important;min-height:24px !important;font-size:11px !important;}\n"
         + "#CustomControl1 #btnToggle{width:100% !important;height:26px !important;min-height:26px !important;max-height:26px !important;font-size:11px !important;line-height:1 !important;}\n"
-        + "#ButtonGrid4, #ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer{width:340px !important;height:127px !important;min-height:0 !important;max-height:127px !important;overflow:hidden !important;padding:0 !important;}\n"
+        // Sin alto: lo calcula acomodarColumnaDerecha() con el espacio que quede hasta el fondo de
+        // los importes. Estaba en 127px y el POS necesita 152 para sus dos filas, asi que recortaba
+        // 25px de NIUBIZ.
+        + "#ButtonGrid4, #ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer{width:340px !important;overflow:hidden !important;padding:0 !important;}\n"
         + "#ButtonGrid4Control .sct-pbtn{border-radius:9px !important;}\n"
         // Icono 25 -> 30px y texto 9 -> 11px (el rotulo largo de .sct-p4, 10.5). La CAJA no cambia:
         // sigue en 82x64. Solo crecen el icono y la tipografia, que a 9px eran ilegibles.
@@ -485,23 +495,20 @@ export function construirCss(): string {
         // Los huecos entre bloques estaban en 8px, demasiado apretados, y sobraban 23px muertos al
         // final de la pantalla. Repartidos, quedan en 12 y 11px.
         //
-        // POR QUE 12 Y 11 Y NO 16: el bloque de pagos tiene que acabar en y=752, que es donde acaba
-        // la caja de montos de la izquierda (#TotalsPanel) — asi NIUBIZ queda alineado con ella.
-        // Desde el fondo de la tarjeta de pestanas (508) hasta 752 hay 244px, y el contenido ocupa
-        // 221 (Boleta 94 + pagos 127): solo quedan 23px para los DOS huecos. Con 16+16 no cabe.
-        // La otra salida era encoger los tiles de pago, y esos no se tocan.
-        //
-        // Los valores del CSS llevan un desfase de -60px respecto a la pantalla (asi venia el
-        // original): top 460 pinta en y=520, top 565 pinta en y=625.
-        + "#CustomControl1{position:absolute !important;left:630px !important;top:460px !important;right:auto !important;width:340px !important;height:94px !important;min-height:0px !important;max-height:94px !important;transform:none !important;padding:6px 10px 7px !important;overflow:hidden !important;}\n"
+        // El TOP ya no se fija: lo calcula acomodarColumnaDerecha() anclando esta tarjeta al inicio
+        // de la caja de importes. Estaba en 460 (pintaba en y=520) y en master los importes
+        // arrancan en 524, asi que quedaba descolgada. Aqui solo queda la posicion horizontal.
+        + "#CustomControl1{position:absolute !important;left:630px !important;right:auto !important;width:340px !important;height:78px !important;min-height:0px !important;max-height:78px !important;transform:none !important;padding:6px 10px 7px !important;overflow:hidden !important;}\n"
         // BUG CORREGIDO (1024x768): esta regla aplicaba la MISMA posicion absoluta a tres
         // elementos ANIDADOS (#ButtonGrid4 > #ButtonGrid4Control > .buttonsContainer). Como cada
         // uno se posiciona respecto al anterior, los desplazamientos se SUMABAN
         // (630+630+630 / 644+644+644) y los tiles de pago acababan en x=1910, y=1961:
         // completamente fuera de la pantalla. Solo la ZONA exterior lleva left/top.
-        // top 565 -> el bloque pinta en y=625 y acaba en 752, alineado con #TotalsPanel.
-        + "#ButtonGrid4{position:absolute !important;left:630px !important;top:565px !important;right:auto !important;width:340px !important;height:127px !important;min-height:0px !important;max-height:127px !important;transform:none !important;}\n"
-        + "#ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer{position:absolute !important;left:0 !important;top:0 !important;right:auto !important;width:340px !important;height:127px !important;min-height:0px !important;max-height:127px !important;transform:none !important;}\n"
+        // Sin top ni alto: los calcula acomodarColumnaDerecha() para que el bloque quede debajo de
+        // la tarjeta de Boleta y acabe donde acaba #TotalsPanel. Estaban en top 565 y alto 127,
+        // medidos contra UAT.
+        + "#ButtonGrid4{position:absolute !important;left:630px !important;right:auto !important;width:340px !important;transform:none !important;}\n"
+        + "#ButtonGrid4Control, #ButtonGrid4Control .buttonsContainer{position:absolute !important;left:0 !important;top:0 !important;right:auto !important;width:340px !important;transform:none !important;}\n"
         // El contenedor nativo del teclado mide 256px con overflow:hidden y recortaba la 4a
         // columna (Retroceso, Mas/Menos, Veces, abc), que llega hasta los 316px del bloque.
         + "#NumberPad, #NumberPad .numpad{width:316px !important;max-width:316px !important;}\n"
