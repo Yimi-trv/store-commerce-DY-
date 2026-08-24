@@ -606,13 +606,29 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         ThemeEngine.observarCambios();
                     }
                 };
+                ThemeEngine.pasadaColapsada = function () {
+                    var ahora = new Date().getTime();
+                    if (ahora - ThemeEngine.ultimaPasadaInmediata > 120) {
+                        ThemeEngine.ultimaPasadaInmediata = ahora;
+                        ThemeEngine.pasada();
+                    }
+                    ThemeEngine.programarRepasoFinal(60);
+                };
                 ThemeEngine.programarRepasoFinal = function (demora) {
                     window.clearTimeout(ThemeEngine.temporizador);
                     ThemeEngine.temporizador = window.setTimeout(function () { ThemeEngine.pasada(); }, demora);
                 };
-                ThemeEngine.alInteractuar = function () {
-                    window.setTimeout(function () { ThemeEngine.pasada(); }, 0);
-                    ThemeEngine.programarRepasoFinal(60);
+                ThemeEngine.alInteractuar = function (evento) {
+                    var tipo = (evento && evento.type) || "";
+                    var escribiendo = tipo === "keyup";
+                    if (!escribiendo) {
+                        var ahora = new Date().getTime();
+                        if (ahora - ThemeEngine.ultimaPasadaInmediata > 120) {
+                            ThemeEngine.ultimaPasadaInmediata = ahora;
+                            window.setTimeout(function () { ThemeEngine.pasada(); }, 0);
+                        }
+                    }
+                    ThemeEngine.programarRepasoFinal(escribiendo ? 300 : 60);
                 };
                 ThemeEngine.iniciar = function () {
                     if (!ThemeAssets_1.TEMA_ACTIVO)
@@ -645,13 +661,11 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             }
                         }
                         if (forzar) {
-                            ThemeEngine.pasada();
-                            ThemeEngine.programarRepasoFinal(60);
+                            ThemeEngine.pasadaColapsada();
                         }
                     });
                     ThemeEngine.observadorEstilos = new MutationObserver(function () {
-                        ThemeEngine.pasada();
-                        ThemeEngine.programarRepasoFinal(60);
+                        ThemeEngine.pasadaColapsada();
                     });
                     ThemeEngine.observarCambios();
                     var eventos = ["focusin", "click", "keyup", "mouseup", "pointerup"];
@@ -668,6 +682,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     ThemeEngine.pasada();
                 };
                 ThemeEngine.ID_ESTILO = "sct-theme";
+                ThemeEngine.ultimaPasadaInmediata = 0;
                 ThemeEngine.observadorDom = null;
                 ThemeEngine.observadorEstilos = null;
                 ThemeEngine.ocupado = false;

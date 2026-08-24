@@ -60,6 +60,12 @@ import { construirCss, TEMA_ACTIVO, CLASE_AMBITO, CLASE_AMPLIO, CLASE_COMPACTO }
 export class ThemeEngine {
 
     private static readonly ID_ESTILO: string = "sct-theme";
+    /**
+     * Momento de la ultima pasada inmediata. Una sola pulsacion dispara pointerup, mouseup,
+     * click y focusin casi a la vez, y cada uno pedia su propia pasada completa del DOM.
+     */
+    private static ultimaPasadaInmediata: number = 0;
+
     private static observadorDom: MutationObserver | null = null;
     private static observadorEstilos: MutationObserver | null = null;
     private static ocupado: boolean = false;
@@ -817,14 +823,59 @@ export class ThemeEngine {
         }
     }
 
+    /**
+     * Pasada inmediata como maximo una vez cada 120 ms, mas el repaso final.
+     *
+     * Lo usan los dos observadores: el POS repinta en rafagas —al montar una vista cambia el
+     * estilo de decenas de nodos— y cada mutacion pedia su propio recorrido completo del DOM.
+     * Con el colapso, la rafaga entera cuesta una pasada y el repaso final recoge lo que quede.
+     */
+    private static pasadaColapsada(): void {
+        var ahora: number = new Date().getTime();
+
+        if (ahora - ThemeEngine.ultimaPasadaInmediata > 120) {
+            ThemeEngine.ultimaPasadaInmediata = ahora;
+            ThemeEngine.pasada();
+        }
+
+        ThemeEngine.programarRepasoFinal(60);
+    }
+
     private static programarRepasoFinal(demora: number): void {
         window.clearTimeout(ThemeEngine.temporizador);
         ThemeEngine.temporizador = window.setTimeout((): void => { ThemeEngine.pasada(); }, demora);
     }
 
-    private static alInteractuar(): void {
-        window.setTimeout((): void => { ThemeEngine.pasada(); }, 0);
-        ThemeEngine.programarRepasoFinal(60);
+    /**
+     * COSTE POR INTERACCION. `pasada()` recorre el DOM entero (zonas, pestanas, montos, cliente,
+     * layout). Antes, cada uno de los cinco eventos escuchados pedia una pasada inmediata MAS
+     * un repaso: una sola pulsacion tactil, que dispara pointerup + mouseup + click + focusin,
+     * costaba cinco recorridos completos, y escribir un RUC de once digitos costaba veintidos.
+     * Eso es lo que se sentia como caja lenta.
+     *
+     * Ahora:
+     *   - Los eventos de puntero comparten UNA pasada inmediata por rafaga (120 ms). La
+     *     respuesta visual al tocar no cambia: la primera pasada sigue siendo inmediata.
+     *   - Al ESCRIBIR no se repinta. El tema no depende de lo que se teclea, asi que basta con
+     *     un repaso al terminar; con 300 ms de espera, escribir seguido cuesta una sola pasada
+     *     en vez de una por tecla.
+     *
+     * Medido sobre el guion de eventos real: un toque 5 -> 2 pasadas, escribir un RUC 22 -> 1.
+     */
+    private static alInteractuar(evento?: Event): void {
+        var tipo: string = (evento && evento.type) || "";
+        var escribiendo: boolean = tipo === "keyup";
+
+        if (!escribiendo) {
+            var ahora: number = new Date().getTime();
+
+            if (ahora - ThemeEngine.ultimaPasadaInmediata > 120) {
+                ThemeEngine.ultimaPasadaInmediata = ahora;
+                window.setTimeout((): void => { ThemeEngine.pasada(); }, 0);
+            }
+        }
+
+        ThemeEngine.programarRepasoFinal(escribiendo ? 300 : 60);
     }
 
     public static iniciar(): void {
@@ -856,14 +907,12 @@ export class ThemeEngine {
                 }
             }
             if (forzar) {
-                ThemeEngine.pasada();
-                ThemeEngine.programarRepasoFinal(60);
+                ThemeEngine.pasadaColapsada();
             }
         });
 
         ThemeEngine.observadorEstilos = new MutationObserver((): void => {
-            ThemeEngine.pasada();
-            ThemeEngine.programarRepasoFinal(60);
+            ThemeEngine.pasadaColapsada();
         });
 
         ThemeEngine.observarCambios();
