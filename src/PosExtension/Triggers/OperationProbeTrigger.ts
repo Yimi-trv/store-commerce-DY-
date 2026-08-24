@@ -1,7 +1,7 @@
 import { ClientEntities } from "PosApi/Entities";
 import { IOperationTriggerOptions, PreOperationTrigger } from "PosApi/Extend/Triggers/OperationTriggers";
 import CustomerInlineDialog, { ICustomerInlineDialogResult } from "../Controls/Dialogs/CustomerInline/CustomerInlineDialog";
-import { GUARD_KEY, PROGRAMMATIC_KEY, searchAndAssignCustomer } from "./CustomerModalHelper";
+import { GUARD_KEY, PROGRAMMATIC_KEY, searchAndAssignCustomer, esVistaDeVenta } from "./CustomerModalHelper";
 
 /**
  * Operación 602 = "Customer search". Es la que dispara el botón "Agregar cliente" del panel de
@@ -29,6 +29,15 @@ const CUSTOMER_SEARCH_OPERATION_ID: number = 602;
  */
 export default class OperationProbeTrigger extends PreOperationTrigger {
     public execute(options: IOperationTriggerOptions): Promise<ClientEntities.ICancelable> {
+        // Fuera de la pantalla de venta NO se abre el modal: hay vistas que piden un cliente
+        // para otra cosa (pago a cuenta de terceros) y esperan recibirlo en su propia pantalla.
+        // Ver esVistaDeVenta en CustomerModalHelper.
+        if (!esVistaDeVenta()) {
+            this.context.logger.logInformational(
+                "OperationProbeTrigger: fuera de la pantalla de venta; se deja el comportamiento nativo del POS.");
+            return Promise.resolve({ canceled: false });
+        }
+
         // Lectura directa y sin registro: esto corre en CADA operación de la caja, así que lo
         // único que hace en el caso normal es comparar un número y dejar pasar.
         const request: any = options ? options.operationRequest : null;

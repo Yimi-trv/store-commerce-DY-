@@ -37,6 +37,10 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                     return _super !== null && _super.apply(this, arguments) || this;
                 }
                 OperationProbeTrigger.prototype.execute = function (options) {
+                    if (!CustomerModalHelper_1.esVistaDeVenta()) {
+                        this.context.logger.logInformational("OperationProbeTrigger: fuera de la pantalla de venta; se deja el comportamiento nativo del POS.");
+                        return Promise.resolve({ canceled: false });
+                    }
                     var request = options ? options.operationRequest : null;
                     var operationId = request ? request.operationId : null;
                     if (operationId === CUSTOMER_SEARCH_OPERATION_ID) {

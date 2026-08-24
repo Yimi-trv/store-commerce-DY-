@@ -2,6 +2,14 @@ System.register(["PosApi/Consume/Customer", "PosApi/Consume/Cart"], function (ex
     "use strict";
     var Customer_1, Cart_1, GUARD_KEY, PROGRAMMATIC_KEY;
     var __moduleName = context_1 && context_1.id;
+    function esVistaDeVenta() {
+        if (typeof document === "undefined") {
+            return true;
+        }
+        return !!document.querySelector("#ButtonGrid4Control")
+            && !!document.querySelector(".transactionLinesPane");
+    }
+    exports_1("esVistaDeVenta", esVistaDeVenta);
     function searchAndAssignCustomer(context, searchText) {
         var correlationId = context && context.logger && context.logger.getNewCorrelationId
             ? context.logger.getNewCorrelationId()

@@ -37,6 +37,10 @@ System.register(["PosApi/Extend/Triggers/CustomerTriggers", "../Controls/Dialogs
                 }
                 PreCustomerSearchModalTrigger.prototype.execute = function (options) {
                     var _this = this;
+                    if (!CustomerModalHelper_1.esVistaDeVenta()) {
+                        this.context.logger.logInformational("PreCustomerSearchModalTrigger: fuera de la pantalla de venta; se deja el comportamiento nativo del POS.");
+                        return Promise.resolve({ canceled: false });
+                    }
                     if (window[CustomerModalHelper_1.GUARD_KEY] || window[CustomerModalHelper_1.PROGRAMMATIC_KEY]) {
                         return Promise.resolve({ canceled: false });
                     }
