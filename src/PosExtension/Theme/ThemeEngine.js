@@ -665,7 +665,54 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         window.dispatchEvent(new Event("resize"));
                     });
                 };
+                ThemeEngine.rotuloDeHQ = function (boton) {
+                    try {
+                        var coincide = /(?:^|\s)button(\d+)(?:\s|$)/.exec(boton.className || "");
+                        if (!coincide)
+                            return "";
+                        var indice = parseInt(coincide[1], 10);
+                        var zona = boton.parentElement;
+                        while (zona && !/^ButtonGrid\d+$/.test(zona.id || ""))
+                            zona = zona.parentElement;
+                        if (!zona)
+                            return "";
+                        var numero = (zona.id || "").replace("ButtonGrid", "");
+                        var contexto = window.Commerce;
+                        var proxy = contexto
+                            && contexto.ApplicationContext
+                            && contexto.ApplicationContext.Instance
+                            && contexto.ApplicationContext.Instance._tillLayoutProxy;
+                        if (!proxy || !proxy._tillLayoutResponse || !proxy._allButtonGrids)
+                            return "";
+                        var zonas = proxy._tillLayoutResponse.ButtonGridZones || [];
+                        var idCuadricula = "";
+                        for (var i = 0; i < zonas.length; i++) {
+                            if (zonas[i].ZoneId === "TransactionScreen" + numero) {
+                                idCuadricula = String(zonas[i].ButtonGridId);
+                                break;
+                            }
+                        }
+                        if (!idCuadricula)
+                            return "";
+                        var cuadriculas = proxy._allButtonGrids || [];
+                        for (var j = 0; j < cuadriculas.length; j++) {
+                            var c = cuadriculas[j];
+                            var idC = String(c.ButtonGridId !== undefined ? c.ButtonGridId : c.Id);
+                            if (idC !== idCuadricula)
+                                continue;
+                            var lista = c.Buttons || [];
+                            if (indice < 0 || indice >= lista.length)
+                                return "";
+                            return String(lista[indice].DisplayText || "").trim();
+                        }
+                    }
+                    catch (e) { }
+                    return "";
+                };
                 ThemeEngine.rotuloPago = function (boton) {
+                    var deHQ = ThemeEngine.rotuloDeHQ(boton);
+                    if (deHQ.length > 0)
+                        return deHQ;
                     var titulo = (boton.getAttribute("title") || "").trim();
                     if (titulo.length > 0 && titulo.length <= 40)
                         return titulo;
