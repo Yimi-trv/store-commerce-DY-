@@ -15,7 +15,7 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var OperationTriggers_1, CustomerInlineDialog_1, CustomerModalHelper_1, CUSTOMER_SEARCH_OPERATION_ID, OperationProbeTrigger;
+    var OperationTriggers_1, CustomerInlineDialog_1, CustomerModalHelper_1, CUSTOMER_SEARCH_OPERATION_ID, PAY_CUSTOMER_ACCOUNT_OPERATION_ID, OperationProbeTrigger;
     var __moduleName = context_1 && context_1.id;
     function esOperacionDeCliente(operationId) {
         return operationId === 600 || operationId === 602 || operationId === 603;
@@ -34,6 +34,7 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
         ],
         execute: function () {
             CUSTOMER_SEARCH_OPERATION_ID = 602;
+            PAY_CUSTOMER_ACCOUNT_OPERATION_ID = 202;
             OperationProbeTrigger = (function (_super) {
                 __extends(OperationProbeTrigger, _super);
                 function OperationProbeTrigger() {
@@ -42,6 +43,9 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                 OperationProbeTrigger.prototype.execute = function (options) {
                     var request = options ? options.operationRequest : null;
                     var operationId = request ? request.operationId : null;
+                    if (operationId === PAY_CUSTOMER_ACCOUNT_OPERATION_ID) {
+                        return this._pedirClienteAntesDePagar(request);
+                    }
                     if (operationId === CUSTOMER_SEARCH_OPERATION_ID) {
                         return this._openModalForSearch();
                     }
@@ -59,6 +63,9 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                     this.context.logger.logInformational("OperationProbeTrigger: busqueda de cliente | la pidio "
                         + (envolvente ? ("la operacion " + (envolvente.operationId || "(sin id)")) : "el cajero")
                         + " | esVistaDeVenta()=" + CustomerModalHelper_1.esVistaDeVenta() + " (solo dato, no decide)");
+                    if (envolvente) {
+                        return Promise.resolve({ canceled: false });
+                    }
                     window[CustomerModalHelper_1.GUARD_KEY] = true;
                     var dialog = new CustomerInlineDialog_1.default();
                     return dialog.open("search", null, "")
@@ -67,10 +74,6 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                             return CustomerModalHelper_1.searchAndAssignCustomer(_this.context, result.searchText || "");
                         }
                         window[CustomerModalHelper_1.GUARD_KEY] = false;
-                        var cuenta = (result && result.customerAccountNumber) || "";
-                        if (envolvente && cuenta) {
-                            _this._devolverElControl(envolvente, cuenta);
-                        }
                         return Promise.resolve({ canceled: true });
                     })
                         .catch(function (reason) {
@@ -79,22 +82,36 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                         return { canceled: false };
                     });
                 };
-                OperationProbeTrigger.prototype._devolverElControl = function (envolvente, accountNumber) {
+                OperationProbeTrigger.prototype._pedirClienteAntesDePagar = function (request) {
                     var _this = this;
-                    this.context.logger.logInformational("OperationProbeTrigger: cliente " + accountNumber + " asignado; se relanza la operacion "
-                        + (envolvente.operationId || "(sin id)") + " que pidio la busqueda, para que vuelva a"
-                        + " leer el carrito.");
-                    window.setTimeout(function () {
-                        try {
-                            _this.context.runtime.executeAsync(envolvente)
-                                .catch(function (reason) {
-                                _this.context.logger.logError("OperationProbeTrigger: no se pudo relanzar la operación: " + JSON.stringify(reason));
-                            });
+                    if (window[CustomerModalHelper_1.GUARD_KEY] || window[CustomerModalHelper_1.PROGRAMMATIC_KEY]) {
+                        return Promise.resolve({ canceled: false });
+                    }
+                    window[CustomerModalHelper_1.GUARD_KEY] = true;
+                    var dialog = new CustomerInlineDialog_1.default();
+                    return dialog.open("search", null, "")
+                        .then(function (result) {
+                        if (result && result.action === "native_search") {
+                            return CustomerModalHelper_1.seleccionarYAsignarCliente(_this.context, result.searchText || "")
+                                .then(function (cuenta) { return _this._seguirSiHayCuenta(cuenta); });
                         }
-                        catch (error) {
-                            _this.context.logger.logError("OperationProbeTrigger: relanzar la operación lanzó: " + error);
-                        }
-                    }, 600);
+                        window[CustomerModalHelper_1.GUARD_KEY] = false;
+                        return Promise.resolve(_this._seguirSiHayCuenta((result && result.customerAccountNumber) || ""));
+                    })
+                        .catch(function (reason) {
+                        window[CustomerModalHelper_1.GUARD_KEY] = false;
+                        _this.context.logger.logError("OperationProbeTrigger (202) error: " + JSON.stringify(reason));
+                        return { canceled: false };
+                    });
+                };
+                OperationProbeTrigger.prototype._seguirSiHayCuenta = function (accountNumber) {
+                    if (!accountNumber) {
+                        this.context.logger.logInformational("OperationProbeTrigger: no se eligio cliente; el pago a cuenta no se abre.");
+                        return { canceled: true };
+                    }
+                    this.context.logger.logInformational("OperationProbeTrigger: cuenta " + accountNumber + " elegida ANTES de abrir el pago;"
+                        + " la pantalla la leera del carrito al cargarse.");
+                    return { canceled: false };
                 };
                 return OperationProbeTrigger;
             }(OperationTriggers_1.PreOperationTrigger));

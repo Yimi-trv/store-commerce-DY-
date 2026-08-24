@@ -2,8 +2,8 @@ import { ClientEntities } from "PosApi/Entities";
 import { IOperationTriggerOptions, PreOperationTrigger } from "PosApi/Extend/Triggers/OperationTriggers";
 import CustomerInlineDialog, { ICustomerInlineDialogResult } from "../Controls/Dialogs/CustomerInline/CustomerInlineDialog";
 import {
-    GUARD_KEY, PROGRAMMATIC_KEY, searchAndAssignCustomer, esVistaDeVenta,
-    anotarOperacionIniciada, tomarOperacionEnvolvente
+    GUARD_KEY, PROGRAMMATIC_KEY, searchAndAssignCustomer, seleccionarYAsignarCliente,
+    esVistaDeVenta, anotarOperacionIniciada, tomarOperacionEnvolvente
 } from "./CustomerModalHelper";
 
 /**
@@ -15,6 +15,12 @@ import {
  * abrir el modal en su lugar.
  */
 const CUSTOMER_SEARCH_OPERATION_ID: number = 602;
+
+/**
+ * Operacion 202 = "Pay customer account" ("A cuenta de terceros"). Necesita saber A QUE CUENTA
+ * se abona, y lo resuelve abriendo la busqueda de cliente DESDE DENTRO de su propia pantalla.
+ */
+const PAY_CUSTOMER_ACCOUNT_OPERATION_ID: number = 202;
 
 /**
  * ABRE EL MODAL DESDE EL BOTÓN "AGREGAR CLIENTE" DEL PANEL DE LA VENTA
@@ -36,6 +42,11 @@ export default class OperationProbeTrigger extends PreOperationTrigger {
         // único que hace en el caso normal es comparar un número, apuntar y dejar pasar.
         const request: any = options ? options.operationRequest : null;
         const operationId: any = request ? request.operationId : null;
+
+        // ANTES de que la pantalla de pago se abra, no despues. Ver _pedirClienteAntesDePagar.
+        if (operationId === PAY_CUSTOMER_ACCOUNT_OPERATION_ID) {
+            return this._pedirClienteAntesDePagar(request);
+        }
 
         if (operationId === CUSTOMER_SEARCH_OPERATION_ID) {
             return this._openModalForSearch();
@@ -64,19 +75,30 @@ export default class OperationProbeTrigger extends PreOperationTrigger {
             return Promise.resolve({ canceled: false });
         }
 
-        // SE DECIDE POR LA OPERACIÓN EN CURSO, NO POR LA PANTALLA. Reconocer la pantalla se
-        // intentó dos veces y falló las dos (ver CustomerModalHelper): el POS deja la vista de
-        // venta montada y midiendo detrás de la de pago. Y era la pregunta equivocada: lo que
-        // importa no es qué pantalla se ve, sino si alguien está esperando el cliente.
-        //
-        // Se resuelve ANTES de abrir el modal, porque mientras está abierto pueden empezar otras
-        // operaciones y lo que interesa es quién pidió ESTA búsqueda.
+        // ¿La pidió el cajero, o la pidió otra operación desde dentro de su propia pantalla?
         const envolvente: any = tomarOperacionEnvolvente();
 
         this.context.logger.logInformational(
             "OperationProbeTrigger: busqueda de cliente | la pidio "
             + (envolvente ? ("la operacion " + (envolvente.operationId || "(sin id)")) : "el cajero")
             + " | esVistaDeVenta()=" + esVistaDeVenta() + " (solo dato, no decide)");
+
+        // LA PIDIÓ OTRA OPERACIÓN: se deja pasar al buscador nativo del POS.
+        //
+        // Esa operación espera un RESULTADO, y un PreOperationTrigger no puede entregarlo: solo
+        // dejar pasar o cancelar. Se intentó cancelar y relanzar la operación de fuera para que
+        // volviera a leer el carrito. Funcionaba —el log de UAT muestra el cobro completándose—
+        // pero dejaba la caja colgada en "Se sigue trabajando en su solicitud...": el pago
+        // entero corría dentro de un setTimeout nuestro, disparado desde un trigger que ya había
+        // resuelto, y al desmontarse la vista la cola de bloqueos de periféricos se quedaba con
+        // promesas rechazadas que nadie recogía.
+        //
+        // Cancelar y volver a lanzar operaciones del POS desde fuera de su propio flujo no es
+        // algo que la extensión pueda hacer de forma sana. Aquí ya no hace falta: el cliente se
+        // pide en _pedirClienteAntesDePagar, antes de que esta pantalla exista.
+        if (envolvente) {
+            return Promise.resolve({ canceled: false });
+        }
 
         (window as any)[GUARD_KEY] = true;
         const dialog: CustomerInlineDialog = new CustomerInlineDialog();
@@ -87,12 +109,6 @@ export default class OperationProbeTrigger extends PreOperationTrigger {
                     return searchAndAssignCustomer(this.context, result.searchText || "");
                 }
                 (window as any)[GUARD_KEY] = false;
-
-                const cuenta: string = (result && result.customerAccountNumber) || "";
-
-                if (envolvente && cuenta) {
-                    this._devolverElControl(envolvente, cuenta);
-                }
 
                 return Promise.resolve({ canceled: true });
             })
@@ -105,35 +121,58 @@ export default class OperationProbeTrigger extends PreOperationTrigger {
     }
 
     /**
-     * Relanza la operación que había pedido la búsqueda, para que vuelva a leer el carrito.
+     * PIDE EL CLIENTE ANTES DE ABRIR LA PANTALLA DE PAGO.
+     * ===================================================
      *
-     * Sin esto, elegir el cliente en "A cuenta de terceros" no servía de nada: el cliente sí
-     * quedaba en el carrito, pero la pantalla de pago ya lo había leído al abrirse y seguía
-     * pidiendo cuenta. Un PreOperationTrigger no puede entregarle el cliente —solo cancelar—,
-     * así que la única forma de que lo vea es que la pantalla se vuelva a abrir.
+     * "A cuenta de terceros" necesita saber a qué cuenta abona. Su forma de averiguarlo es abrir
+     * la búsqueda de cliente DESDE DENTRO de su pantalla, y quedarse esperando el resultado —un
+     * resultado que un PreOperationTrigger no puede entregarle.
      *
-     * NO relanzar es una salida válida: si no se sabe qué operación era, el cliente ya quedó
-     * asignado y el cajero puede repetir la acción a mano. Peor sería mandarlo a otra pantalla.
+     * Así que se le pregunta antes. Cuando la pantalla se abre, el carrito ya tiene la cuenta y
+     * la lee sola por el camino de siempre. No hay nada que cancelar, nada que relanzar y nada
+     * que pueda quedar a medias: la operación sigue su curso normal, solo que más informada.
+     *
+     * Si el cajero cierra el modal sin elegir, se cancela la operación. Es lo correcto: cancelar
+     * un pago que todavía no abrió ninguna pantalla no deja rastro.
      */
-    private _devolverElControl(envolvente: any, accountNumber: string): void {
-        this.context.logger.logInformational(
-            "OperationProbeTrigger: cliente " + accountNumber + " asignado; se relanza la operacion "
-            + (envolvente.operationId || "(sin id)") + " que pidio la busqueda, para que vuelva a"
-            + " leer el carrito.");
+    private _pedirClienteAntesDePagar(request: any): Promise<ClientEntities.ICancelable> {
+        if ((window as any)[GUARD_KEY] || (window as any)[PROGRAMMATIC_KEY]) {
+            return Promise.resolve({ canceled: false });
+        }
 
-        // Se espera a que el POS termine de deshacer la operación cancelada. Lanzada en el mismo
-        // turno, la nueva llega mientras la anterior aún se está cerrando y se pierde.
-        window.setTimeout((): void => {
-            try {
-                this.context.runtime.executeAsync(envolvente)
-                    .catch((reason: any): void => {
-                        this.context.logger.logError(
-                            "OperationProbeTrigger: no se pudo relanzar la operación: " + JSON.stringify(reason));
-                    });
-            } catch (error) {
-                this.context.logger.logError("OperationProbeTrigger: relanzar la operación lanzó: " + error);
-            }
-        }, 600);
+        (window as any)[GUARD_KEY] = true;
+        const dialog: CustomerInlineDialog = new CustomerInlineDialog();
+
+        return dialog.open("search", null, "")
+            .then((result: ICustomerInlineDialogResult | null): Promise<ClientEntities.ICancelable> => {
+                if (result && result.action === "native_search") {
+                    return seleccionarYAsignarCliente(this.context, result.searchText || "")
+                        .then((cuenta: string): ClientEntities.ICancelable => this._seguirSiHayCuenta(cuenta));
+                }
+
+                (window as any)[GUARD_KEY] = false;
+                return Promise.resolve(this._seguirSiHayCuenta((result && result.customerAccountNumber) || ""));
+            })
+            .catch((reason: any): ClientEntities.ICancelable => {
+                (window as any)[GUARD_KEY] = false;
+                this.context.logger.logError("OperationProbeTrigger (202) error: " + JSON.stringify(reason));
+                // Ante un fallo se deja pasar: el POS pedirá el cliente a su manera, que funciona.
+                return { canceled: false };
+            });
+    }
+
+    /** Con cuenta elegida el pago sigue; sin ella no se abre la pantalla. */
+    private _seguirSiHayCuenta(accountNumber: string): ClientEntities.ICancelable {
+        if (!accountNumber) {
+            this.context.logger.logInformational(
+                "OperationProbeTrigger: no se eligio cliente; el pago a cuenta no se abre.");
+            return { canceled: true };
+        }
+
+        this.context.logger.logInformational(
+            "OperationProbeTrigger: cuenta " + accountNumber + " elegida ANTES de abrir el pago;"
+            + " la pantalla la leera del carrito al cargarse.");
+        return { canceled: false };
     }
 }
 

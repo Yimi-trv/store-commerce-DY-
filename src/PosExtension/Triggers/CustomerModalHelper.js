@@ -49,14 +49,19 @@ System.register(["PosApi/Consume/Customer", "PosApi/Consume/Cart"], function (ex
     }
     exports_1("tomarOperacionEnvolvente", tomarOperacionEnvolvente);
     function searchAndAssignCustomer(context, searchText) {
+        return seleccionarYAsignarCliente(context, searchText)
+            .then(function () { return ({ canceled: true }); });
+    }
+    exports_1("searchAndAssignCustomer", searchAndAssignCustomer);
+    function seleccionarYAsignarCliente(context, searchText) {
         var correlationId = context && context.logger && context.logger.getNewCorrelationId
             ? context.logger.getNewCorrelationId()
             : "customer-inline-search";
         window[PROGRAMMATIC_KEY] = true;
-        var release = function (result) {
+        var release = function (accountNumber) {
             window[PROGRAMMATIC_KEY] = false;
             window[GUARD_KEY] = false;
-            return result;
+            return accountNumber;
         };
         return context.runtime
             .executeAsync(new Customer_1.SelectCustomerClientRequest(correlationId, searchText))
@@ -64,22 +69,22 @@ System.register(["PosApi/Consume/Customer", "PosApi/Consume/Cart"], function (ex
             var selected = response && response.data && response.data.result;
             var accountNumber = (selected && selected.AccountNumber) || "";
             if (response && response.canceled) {
-                return Promise.resolve(release({ canceled: true }));
+                return Promise.resolve(release(""));
             }
             if (!accountNumber) {
-                context.logger.logError("searchAndAssignCustomer: la selección no devolvió AccountNumber.");
-                return Promise.resolve(release({ canceled: true }));
+                context.logger.logError("seleccionarYAsignarCliente: la selección no devolvió AccountNumber.");
+                return Promise.resolve(release(""));
             }
             return context.runtime
                 .executeAsync(new Cart_1.SetCustomerOnCartOperationRequest(correlationId, accountNumber))
-                .then(function () { return release({ canceled: true }); });
+                .then(function () { return release(accountNumber); });
         })
             .catch(function (reason) {
-            context.logger.logError("searchAndAssignCustomer error: " + safeStringify(reason));
-            return release({ canceled: true });
+            context.logger.logError("seleccionarYAsignarCliente error: " + safeStringify(reason));
+            return release("");
         });
     }
-    exports_1("searchAndAssignCustomer", searchAndAssignCustomer);
+    exports_1("seleccionarYAsignarCliente", seleccionarYAsignarCliente);
     function safeStringify(value) {
         try {
             return JSON.stringify(value);

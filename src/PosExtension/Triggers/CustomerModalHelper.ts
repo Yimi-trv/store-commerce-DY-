@@ -137,41 +137,55 @@ export function tomarOperacionEnvolvente(): any {
 }
 
 export function searchAndAssignCustomer(context: any, searchText: string): Promise<ClientEntities.ICancelable> {
+    // Quien llama aqui viene de una operacion que hay que CANCELAR igualmente: el cliente ya
+    // quedo en el carrito y la operacion original no tiene nada mas que hacer.
+    return seleccionarYAsignarCliente(context, searchText)
+        .then((): ClientEntities.ICancelable => ({ canceled: true }));
+}
+
+/**
+ * Abre la seleccion nativa del POS, asigna el elegido al carrito y devuelve SU CUENTA.
+ *
+ * Devuelve la cuenta y no un ICancelable porque hay dos usos con decisiones opuestas: uno
+ * necesita cancelar la operacion que lo llamo y el otro necesita DEJARLA PASAR. Con un
+ * `canceled: true` fijo no habia forma de distinguir "el cajero eligio" de "el cajero se
+ * arrepintio", y las dos cosas terminaban igual. Cadena vacia = no se eligio a nadie.
+ */
+export function seleccionarYAsignarCliente(context: any, searchText: string): Promise<string> {
     const correlationId: string = context && context.logger && context.logger.getNewCorrelationId
         ? context.logger.getNewCorrelationId()
         : "customer-inline-search";
 
     (window as any)[PROGRAMMATIC_KEY] = true;
 
-    const release: (result: ClientEntities.ICancelable) => ClientEntities.ICancelable =
-        (result: ClientEntities.ICancelable): ClientEntities.ICancelable => {
-            (window as any)[PROGRAMMATIC_KEY] = false;
-            (window as any)[GUARD_KEY] = false;
-            return result;
-        };
+    const release: (accountNumber: string) => string = (accountNumber: string): string => {
+        (window as any)[PROGRAMMATIC_KEY] = false;
+        (window as any)[GUARD_KEY] = false;
+        return accountNumber;
+    };
 
     return context.runtime
         .executeAsync(new SelectCustomerClientRequest<SelectCustomerClientResponse>(correlationId, searchText))
-        .then((response: any): Promise<ClientEntities.ICancelable> => {
+        .then((response: any): Promise<string> => {
             const selected: any = response && response.data && response.data.result;
             const accountNumber: string = (selected && selected.AccountNumber) || "";
 
             if (response && response.canceled) {
-                return Promise.resolve(release({ canceled: true }));
+                return Promise.resolve(release(""));
             }
 
             if (!accountNumber) {
-                context.logger.logError("searchAndAssignCustomer: la selección no devolvió AccountNumber.");
-                return Promise.resolve(release({ canceled: true }));
+                context.logger.logError("seleccionarYAsignarCliente: la selección no devolvió AccountNumber.");
+                return Promise.resolve(release(""));
             }
 
             return context.runtime
                 .executeAsync(new SetCustomerOnCartOperationRequest<SetCustomerOnCartOperationResponse>(correlationId, accountNumber))
-                .then((): ClientEntities.ICancelable => release({ canceled: true }));
+                .then((): string => release(accountNumber));
         })
-        .catch((reason: any): ClientEntities.ICancelable => {
-            context.logger.logError("searchAndAssignCustomer error: " + safeStringify(reason));
-            return release({ canceled: true });
+        .catch((reason: any): string => {
+            context.logger.logError("seleccionarYAsignarCliente error: " + safeStringify(reason));
+            return release("");
         });
 }
 
