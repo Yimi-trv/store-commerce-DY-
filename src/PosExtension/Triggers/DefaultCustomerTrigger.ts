@@ -1,5 +1,4 @@
 import { IPostProductSaleTriggerOptions, PostProductSaleTrigger } from "PosApi/Extend/Triggers/ProductTriggers";
-import { GetCurrentCartClientRequest, GetCurrentCartClientResponse } from "PosApi/Consume/Cart";
 import { SetCustomerOnCartOperationRequest, SetCustomerOnCartOperationResponse } from "PosApi/Consume/Cart";
 import { GUARD_KEY } from "./CustomerModalHelper";
 
@@ -42,18 +41,21 @@ export default class DefaultCustomerTrigger extends PostProductSaleTrigger {
             return Promise.resolve();
         }
 
+        // EL CARRITO YA VIENE EN options.cart. Antes se pedía al servidor en CADA producto
+        // agregado, y a partir del segundo la respuesta siempre decía lo mismo: que ya hay
+        // cliente. Era una ida y vuelta por artículo, la que más se notaba en caja.
+        const cart: any = options ? options.cart : null;
+
+        // Sin carrito no hay dónde asignar; con cliente ya puesto no hay nada que hacer, y ese
+        // es el caso de todos los productos menos el primero: sale sin tocar la red.
+        if (!cart || (cart.CustomerId && cart.CustomerId !== "")) {
+            return Promise.resolve();
+        }
+
         const correlationId: string = this.context.logger.getNewCorrelationId();
 
-        return this.context.runtime
-            .executeAsync(new GetCurrentCartClientRequest<GetCurrentCartClientResponse>(correlationId))
-            .then((response: any): Promise<void> => {
-                const cart: any = response && response.data && response.data.result;
-
-                // Sin carrito no hay dónde asignar; con cliente ya puesto no hay nada que hacer.
-                if (!cart || (cart.CustomerId && cart.CustomerId !== "")) {
-                    return Promise.resolve();
-                }
-
+        return Promise.resolve()
+            .then((): Promise<void> => {
                 return this.context.runtime
                     .executeAsync(new SetCustomerOnCartOperationRequest<SetCustomerOnCartOperationResponse>(
                         correlationId, DefaultCustomerTrigger.DEFAULT_CUSTOMER_ACCOUNT))

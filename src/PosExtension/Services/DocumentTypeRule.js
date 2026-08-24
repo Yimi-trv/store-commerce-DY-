@@ -21,12 +21,15 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
             DocumentTypeRule = (function () {
                 function DocumentTypeRule() {
                 }
-                DocumentTypeRule.evaluateCurrentCart = function (context) {
+                DocumentTypeRule.evaluateCart = function (context, cartFromTrigger) {
                     var correlationId = context.logger.getNewCorrelationId();
-                    return context.runtime
-                        .executeAsync(new Cart_1.GetCurrentCartClientRequest(correlationId))
-                        .then(function (response) {
-                        var cart = response && response.data && response.data.result;
+                    var cartPromise = cartFromTrigger
+                        ? Promise.resolve(cartFromTrigger)
+                        : context.runtime
+                            .executeAsync(new Cart_1.GetCurrentCartClientRequest(correlationId))
+                            .then(function (response) { return response && response.data && response.data.result; });
+                    return cartPromise
+                        .then(function (cart) {
                         if (!cart) {
                             return Promise.resolve("");
                         }
@@ -40,11 +43,18 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
                                 ? "La venta no tiene cliente asignado y la FACTURA exige un cliente con RUC."
                                 : "");
                         }
+                        var cached = DocumentTypeRule._documentCache[accountNumber];
+                        if (typeof cached === "string") {
+                            return Promise.resolve(DocumentTypeRule._evaluateDocument(document, cached, accountNumber, context));
+                        }
                         return context.runtime
                             .executeAsync(new Customer_1.GetCustomerClientRequest(accountNumber, correlationId))
                             .then(function (customerResponse) {
                             var customer = customerResponse && customerResponse.data && customerResponse.data.result;
-                            return DocumentTypeRule._evaluate(document, customer, accountNumber, context);
+                            var service = new SunatCustomerService_1.default();
+                            var documentNumber = customer ? service.getDocumentNumber(customer) : "";
+                            DocumentTypeRule._documentCache[accountNumber] = documentNumber;
+                            return DocumentTypeRule._evaluateDocument(document, documentNumber, accountNumber, context);
                         });
                     })
                         .catch(function (reason) {
@@ -59,9 +69,8 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
                         return "";
                     });
                 };
-                DocumentTypeRule._evaluate = function (document, customer, accountNumber, context) {
+                DocumentTypeRule._evaluateDocument = function (document, documentNumber, accountNumber, context) {
                     var service = new SunatCustomerService_1.default();
-                    var documentNumber = customer ? service.getDocumentNumber(customer) : "";
                     var documentType = service.getDocumentType(documentNumber);
                     var hasRuc = documentType === "RUC";
                     context.logger.logInformational("DocumentTypeRule: comprobante=" + document
@@ -80,6 +89,11 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
                             + "\n\nCambie el comprobante a Boleta, o asigne a la venta un cliente con RUC.";
                     }
                     return "";
+                };
+                DocumentTypeRule.forget = function (accountNumber) {
+                    if (accountNumber && DocumentTypeRule._documentCache.hasOwnProperty(accountNumber)) {
+                        delete DocumentTypeRule._documentCache[accountNumber];
+                    }
                 };
                 DocumentTypeRule._readSelectedOption = function (cart) {
                     var properties = (cart && cart.ExtensionProperties) || [];
@@ -107,6 +121,7 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
                 };
                 DocumentTypeRule.BOLETA = "BOLETA";
                 DocumentTypeRule.FACTURA = "FACTURA";
+                DocumentTypeRule._documentCache = {};
                 return DocumentTypeRule;
             }());
             exports_1("DocumentTypeRule", DocumentTypeRule);

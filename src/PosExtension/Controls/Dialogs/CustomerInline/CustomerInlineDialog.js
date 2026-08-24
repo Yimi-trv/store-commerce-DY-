@@ -1,4 +1,4 @@
-System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest", "../../../DataService/CustomerSearchRequest", "../../../DataService/CustomerSearchByFieldsRequest", "../../../DataService/GeographicRequests", "PosApi/Consume/StoreOperations"], function (exports_1, context_1) {
+System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Consume/Cart", "PosApi/Consume/Device", "PosApi/Entities", "../../../Services/SunatCustomerService", "../../../Services/DocumentTypeRule", "../../../DataService/DataServiceRequests.g", "../../../DataService/AddressPurposesRequest", "../../../DataService/CustomerGroupsRequest", "../../../DataService/CustomerSearchRequest", "../../../DataService/CustomerSearchByFieldsRequest", "../../../DataService/GeographicRequests", "PosApi/Consume/StoreOperations"], function (exports_1, context_1) {
     "use strict";
     var __extends = (this && this.__extends) || (function () {
         var extendStatics = function (d, b) {
@@ -15,7 +15,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, CustomerSearchRequest_1, CustomerSearchByFieldsRequest_1, GeographicRequests_1, StoreOperations_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
+    var Dialogs_1, Customer_1, Cart_1, Device_1, Entities_1, SunatCustomerService_1, DocumentTypeRule_1, DataServiceRequests_g_1, AddressPurposesRequest_1, CustomerGroupsRequest_1, CustomerSearchRequest_1, CustomerSearchByFieldsRequest_1, GeographicRequests_1, StoreOperations_1, GUARD_KEY, DIAG_PREFIX, CustomerInlineDialog;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -36,6 +36,9 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
             },
             function (SunatCustomerService_1_1) {
                 SunatCustomerService_1 = SunatCustomerService_1_1;
+            },
+            function (DocumentTypeRule_1_1) {
+                DocumentTypeRule_1 = DocumentTypeRule_1_1;
             },
             function (DataServiceRequests_g_1_1) {
                 DataServiceRequests_g_1 = DataServiceRequests_g_1_1;
@@ -1632,6 +1635,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     });
                 };
                 CustomerInlineDialog.prototype._setCustomerOnCart = function (accountNumber) {
+                    DocumentTypeRule_1.default.forget(accountNumber);
                     var request = new Cart_1.SetCustomerOnCartOperationRequest(this._getCorrelationId(), accountNumber);
                     return this.context.runtime.executeAsync(request)
                         .then(function (response) {

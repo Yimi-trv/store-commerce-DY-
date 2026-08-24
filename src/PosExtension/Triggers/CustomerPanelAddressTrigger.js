@@ -79,12 +79,22 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                 CustomerPanelAddressTrigger.prototype._findAddressButton = function (target) {
                     var node = target;
                     for (var depth = 0; node && depth < 5; depth++) {
-                        if (this._isInsideCustomerPanel(node) && this._matchesLabel(node)) {
+                        var raw = node.textContent || "";
+                        if (raw.length > CustomerPanelAddressTrigger.MAX_LABEL_LENGTH) {
+                            return null;
+                        }
+                        if (this._looksLikeAddressLabel(raw)
+                            && this._isInsideCustomerPanel(node)
+                            && this._matchesLabel(node)) {
                             return node;
                         }
                         node = node.parentElement;
                     }
                     return null;
+                };
+                CustomerPanelAddressTrigger.prototype._looksLikeAddressLabel = function (raw) {
+                    var text = raw.toUpperCase();
+                    return text.indexOf("IRECCI") >= 0 || text.indexOf("DDRESS") >= 0;
                 };
                 CustomerPanelAddressTrigger.prototype._isInsideCustomerPanel = function (node) {
                     var current = node;
@@ -157,6 +167,7 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                     });
                 };
                 CustomerPanelAddressTrigger.INSTALLED_KEY = "__customerPanelAddressHooked";
+                CustomerPanelAddressTrigger.MAX_LABEL_LENGTH = 40;
                 CustomerPanelAddressTrigger.LABELS = [
                     "AGREGAR DIRECCION",
                     "ANADIR DIRECCION",

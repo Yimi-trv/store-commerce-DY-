@@ -72,6 +72,7 @@ import {
 } from "PosApi/Consume/Device";
 import { ProxyEntities } from "PosApi/Entities";
 import SunatCustomerService, { ISunatCustomerData } from "../../../Services/SunatCustomerService";
+import DocumentTypeRule from "../../../Services/DocumentTypeRule";
 import { TRU_Diagnostics, TRU_GeographicData, Entities } from "../../../DataService/DataServiceRequests.g";
 import { GetAddressPurposesRequest, GetAddressPurposesResponse } from "../../../DataService/AddressPurposesRequest";
 import { GetCustomerGroupsRequest, GetCustomerGroupsResponse } from "../../../DataService/CustomerGroupsRequest";
@@ -2563,6 +2564,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     private _setCustomerOnCart(accountNumber: string): Promise<void> {
+        // El documento de esta cuenta pudo cambiar en el modal (alta, edición o elección de
+        // otro cliente). Se olvida lo cacheado para que la regla de comprobante lo relea: con
+        // el dato viejo, un cliente al que se le acaba de poner RUC seguiría admitiendo boleta.
+        DocumentTypeRule.forget(accountNumber);
+
         const request: SetCustomerOnCartOperationRequest<SetCustomerOnCartOperationResponse> =
             new SetCustomerOnCartOperationRequest(this._getCorrelationId(), accountNumber);
 

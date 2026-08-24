@@ -17,7 +17,8 @@ import DocumentTypeRule from "../Services/DocumentTypeRule";
 export default class PrePaymentDocumentTypeTrigger extends PrePaymentTrigger {
 
     public execute(options: IPrePaymentTriggerOptions): Promise<ClientEntities.ICancelable> {
-        return DocumentTypeRule.evaluateCurrentCart(this.context)
+        // options.cart ya trae el carrito: pedirlo otra vez era una ida y vuelta por cobro.
+        return DocumentTypeRule.evaluateCart(this.context, options ? options.cart : null)
             .then((reason: string): Promise<ClientEntities.ICancelable> => {
                 if (!reason) {
                     return Promise.resolve({ canceled: false });

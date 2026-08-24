@@ -34,7 +34,7 @@ System.register(["PosApi/Extend/Triggers/PaymentTriggers", "../Services/Document
                 }
                 PrePaymentDocumentTypeTrigger.prototype.execute = function (options) {
                     var _this = this;
-                    return DocumentTypeRule_1.default.evaluateCurrentCart(this.context)
+                    return DocumentTypeRule_1.default.evaluateCart(this.context, options ? options.cart : null)
                         .then(function (reason) {
                         if (!reason) {
                             return Promise.resolve({ canceled: false });

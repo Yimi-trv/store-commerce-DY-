@@ -15,7 +15,7 @@ System.register(["PosApi/Extend/Triggers/ProductTriggers", "PosApi/Consume/Cart"
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var ProductTriggers_1, Cart_1, Cart_2, CustomerModalHelper_1, DefaultCustomerTrigger;
+    var ProductTriggers_1, Cart_1, CustomerModalHelper_1, DefaultCustomerTrigger;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -24,7 +24,6 @@ System.register(["PosApi/Extend/Triggers/ProductTriggers", "PosApi/Consume/Cart"
             },
             function (Cart_1_1) {
                 Cart_1 = Cart_1_1;
-                Cart_2 = Cart_1_1;
             },
             function (CustomerModalHelper_1_1) {
                 CustomerModalHelper_1 = CustomerModalHelper_1_1;
@@ -41,16 +40,15 @@ System.register(["PosApi/Extend/Triggers/ProductTriggers", "PosApi/Consume/Cart"
                     if (window[CustomerModalHelper_1.GUARD_KEY]) {
                         return Promise.resolve();
                     }
+                    var cart = options ? options.cart : null;
+                    if (!cart || (cart.CustomerId && cart.CustomerId !== "")) {
+                        return Promise.resolve();
+                    }
                     var correlationId = this.context.logger.getNewCorrelationId();
-                    return this.context.runtime
-                        .executeAsync(new Cart_1.GetCurrentCartClientRequest(correlationId))
-                        .then(function (response) {
-                        var cart = response && response.data && response.data.result;
-                        if (!cart || (cart.CustomerId && cart.CustomerId !== "")) {
-                            return Promise.resolve();
-                        }
+                    return Promise.resolve()
+                        .then(function () {
                         return _this.context.runtime
-                            .executeAsync(new Cart_2.SetCustomerOnCartOperationRequest(correlationId, DefaultCustomerTrigger.DEFAULT_CUSTOMER_ACCOUNT))
+                            .executeAsync(new Cart_1.SetCustomerOnCartOperationRequest(correlationId, DefaultCustomerTrigger.DEFAULT_CUSTOMER_ACCOUNT))
                             .then(function () {
                             _this.context.logger.logInformational("DefaultCustomerTrigger: cliente descriptivo "
                                 + DefaultCustomerTrigger.DEFAULT_CUSTOMER_ACCOUNT + " asignado a la venta.");

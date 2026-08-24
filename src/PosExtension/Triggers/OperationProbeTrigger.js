@@ -37,22 +37,8 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                     return _super !== null && _super.apply(this, arguments) || this;
                 }
                 OperationProbeTrigger.prototype.execute = function (options) {
-                    var operationId = null;
-                    try {
-                        var request = options ? options.operationRequest : null;
-                        operationId = request ? request.operationId : null;
-                        var typeName = "";
-                        if (request && request.constructor && request.constructor.name) {
-                            typeName = request.constructor.name;
-                        }
-                        var line = "=== OPERACION === id=" + operationId + " | tipo=" + typeName;
-                        if (typeof console !== "undefined" && console.log) {
-                            console.log(line);
-                        }
-                        this.context.logger.logInformational(line);
-                    }
-                    catch (error) {
-                    }
+                    var request = options ? options.operationRequest : null;
+                    var operationId = request ? request.operationId : null;
                     if (operationId === CUSTOMER_SEARCH_OPERATION_ID) {
                         return this._openModalForSearch();
                     }

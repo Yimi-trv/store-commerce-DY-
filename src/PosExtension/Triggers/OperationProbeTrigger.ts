@@ -14,48 +14,25 @@ import { GUARD_KEY, PROGRAMMATIC_KEY, searchAndAssignCustomer } from "./Customer
 const CUSTOMER_SEARCH_OPERATION_ID: number = 602;
 
 /**
- * SONDA DE DIAGNÓSTICO — TEMPORAL
- * ================================
+ * ABRE EL MODAL DESDE EL BOTÓN "AGREGAR CLIENTE" DEL PANEL DE LA VENTA
+ * ====================================================================
  *
- * Registra en la consola qué operación dispara cada botón del POS, sin interferir con ninguna:
- * siempre deja pasar la operación.
+ * Nació como sonda de diagnóstico: registraba en consola CADA operación del POS para averiguar
+ * cuál dispara ese botón. La respuesta fue la 602, y con eso el trigger pasó a interceptarla.
  *
- * PARA QUÉ EXISTE
- * El botón "Agregar cliente" del panel de la venta no abre el modal, y no se sabe qué operación
- * ejecuta. Los triggers actuales cubren PreCustomerSearch, PreCustomerAdd y PreCustomerEdit; si
- * ese botón usara alguna de esas, el modal se abriría. Como no lo hace, dispara otra cosa.
+ * ESE REGISTRO YA NO ESTÁ. Corría en cada acción de la caja —cada tecla del numpad, cada
+ * producto, cada pago— escribiendo en consola y en el log del POS. Como diagnóstico valía la
+ * pena; una vez resuelto lo que buscaba, era trabajo constante a cambio de nada.
  *
- * CÓMO USARLA
- * Presionar el botón en cuestión y buscar en la consola (F12):
- *
- *     === OPERACION === id=612 | nombre=CustomerAdd
- *
- * Con ese número se decide si hace falta un trigger nuevo o si alcanza con los existentes.
- *
- * ELIMINAR cuando el botón "Agregar cliente" quede resuelto. Está registrada en manifest.json
- * como OperationProbeTrigger.
+ * Si hiciera falta volver a averiguar qué operación dispara un botón, el bloque está en el
+ * historial de git (buscar "=== OPERACION ===").
  */
 export default class OperationProbeTrigger extends PreOperationTrigger {
     public execute(options: IOperationTriggerOptions): Promise<ClientEntities.ICancelable> {
-        let operationId: any = null;
-
-        try {
-            const request: any = options ? options.operationRequest : null;
-            operationId = request ? request.operationId : null;
-
-            let typeName: string = "";
-            if (request && request.constructor && request.constructor.name) {
-                typeName = request.constructor.name;
-            }
-
-            const line: string = "=== OPERACION === id=" + operationId + " | tipo=" + typeName;
-            if (typeof console !== "undefined" && console.log) {
-                console.log(line);
-            }
-            this.context.logger.logInformational(line);
-        } catch (error) {
-            // La sonda jamás debe romper una operación de caja.
-        }
+        // Lectura directa y sin registro: esto corre en CADA operación de la caja, así que lo
+        // único que hace en el caso normal es comparar un número y dejar pasar.
+        const request: any = options ? options.operationRequest : null;
+        const operationId: any = request ? request.operationId : null;
 
         if (operationId === CUSTOMER_SEARCH_OPERATION_ID) {
             return this._openModalForSearch();

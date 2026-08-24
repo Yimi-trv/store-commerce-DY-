@@ -37,6 +37,9 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
     /** El listener se instala UNA vez por sesión del POS. */
     private static readonly INSTALLED_KEY: string = "__customerPanelAddressHooked";
 
+    /** Largo máximo que puede tener el rótulo; por encima, no es el botón. */
+    private static readonly MAX_LABEL_LENGTH: number = 40;
+
     private static readonly LABELS: string[] = [
         "AGREGAR DIRECCION",
         "ANADIR DIRECCION",
@@ -106,7 +109,20 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
         let node: HTMLElement = target;
 
         for (let depth: number = 0; node && depth < 5; depth++) {
-            if (this._isInsideCustomerPanel(node) && this._matchesLabel(node)) {
+            const raw: string = node.textContent || "";
+
+            // DESCARTE BARATO PRIMERO. Esto corre en cada click de la caja: `textContent` de un
+            // nodo alto devuelve el texto de todo su subárbol, y normalizarlo con siete
+            // expresiones regulares para descubrir que no era el botón es trabajo tirado.
+            // El rótulo es corto, y los ancestros solo pueden tener MÁS texto: en cuanto se
+            // pasa del largo posible, no hay nada más arriba que mirar.
+            if (raw.length > CustomerPanelAddressTrigger.MAX_LABEL_LENGTH) {
+                return null;
+            }
+
+            if (this._looksLikeAddressLabel(raw)
+                && this._isInsideCustomerPanel(node)
+                && this._matchesLabel(node)) {
                 return node;
             }
 
@@ -114,6 +130,12 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
         }
 
         return null;
+    }
+
+    /** Filtro previo por subcadena: descarta sin normalizar ni recorrer ancestros. */
+    private _looksLikeAddressLabel(raw: string): boolean {
+        const text: string = raw.toUpperCase();
+        return text.indexOf("IRECCI") >= 0 || text.indexOf("DDRESS") >= 0;
     }
 
     private _isInsideCustomerPanel(node: HTMLElement): boolean {

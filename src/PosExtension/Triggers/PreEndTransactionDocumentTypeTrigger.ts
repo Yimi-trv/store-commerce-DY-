@@ -16,7 +16,8 @@ import DocumentTypeRule from "../Services/DocumentTypeRule";
 export default class PreEndTransactionDocumentTypeTrigger extends PreEndTransactionTrigger {
 
     public execute(options: IPreEndTransactionTriggerOptions): Promise<ClientEntities.ICancelable> {
-        return DocumentTypeRule.evaluateCurrentCart(this.context)
+        // options.cart ya trae el carrito: pedirlo otra vez era una ida y vuelta por cierre.
+        return DocumentTypeRule.evaluateCart(this.context, options ? options.cart : null)
             .then((reason: string): Promise<ClientEntities.ICancelable> => {
                 if (!reason) {
                     return Promise.resolve({ canceled: false });

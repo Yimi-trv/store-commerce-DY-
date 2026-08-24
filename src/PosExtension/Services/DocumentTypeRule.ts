@@ -37,19 +37,35 @@ export class DocumentTypeRule {
     private static readonly FACTURA: string = "FACTURA";
 
     /**
-     * Evalúa la venta actual. Resuelve el motivo del bloqueo, o cadena vacía si es válida.
+     * Documento fiscal por cuenta, para no releer el mismo cliente en cada punto de control.
+     *
+     * El documento de un cliente no cambia durante una venta, y la regla se evalúa dos veces
+     * (al pagar y al cerrar): sin caché eran dos lecturas idénticas seguidas. Vive en memoria
+     * y se pierde al recargar el POS, que es lo correcto — no se persisten datos de clientes.
+     */
+    private static _documentCache: { [accountNumber: string]: string } = {};
+
+    /**
+     * Evalúa la venta. Resuelve el motivo del bloqueo, o cadena vacía si es válida.
+     *
+     * El carrito llega por parámetro: los triggers de pago y de fin de transacción ya lo
+     * reciben en `options.cart`, así que pedirlo otra vez al servidor era una ida y vuelta
+     * regalada en cada cobro. Solo se pide si quien llama no lo tiene.
      *
      * NUNCA lanza: ante cualquier fallo de lectura devuelve "" y la venta sigue. Es el mismo
      * criterio de todo el proyecto — un problema técnico no detiene una caja.
      */
-    public static evaluateCurrentCart(context: any): Promise<string> {
+    public static evaluateCart(context: any, cartFromTrigger: any): Promise<string> {
         const correlationId: string = context.logger.getNewCorrelationId();
 
-        return context.runtime
-            .executeAsync(new GetCurrentCartClientRequest<GetCurrentCartClientResponse>(correlationId))
-            .then((response: any): Promise<string> => {
-                const cart: any = response && response.data && response.data.result;
+        const cartPromise: Promise<any> = cartFromTrigger
+            ? Promise.resolve(cartFromTrigger)
+            : context.runtime
+                .executeAsync(new GetCurrentCartClientRequest<GetCurrentCartClientResponse>(correlationId))
+                .then((response: any): any => response && response.data && response.data.result);
 
+        return cartPromise
+            .then((cart: any): Promise<string> => {
                 if (!cart) {
                     return Promise.resolve("");
                 }
@@ -71,13 +87,26 @@ export class DocumentTypeRule {
                         : "");
                 }
 
+                // El documento ya conocido evita releer el cliente en el segundo punto de
+                // control: al cobrar y al cerrar se preguntaba lo mismo dos veces.
+                const cached: string = DocumentTypeRule._documentCache[accountNumber];
+
+                if (typeof cached === "string") {
+                    return Promise.resolve(
+                        DocumentTypeRule._evaluateDocument(document, cached, accountNumber, context));
+                }
+
                 return context.runtime
                     .executeAsync(new GetCustomerClientRequest<GetCustomerClientResponse>(accountNumber, correlationId))
                     .then((customerResponse: any): string => {
                         const customer: ProxyEntities.Customer =
                             customerResponse && customerResponse.data && customerResponse.data.result;
+                        const service: SunatCustomerService = new SunatCustomerService();
+                        const documentNumber: string = customer ? service.getDocumentNumber(customer) : "";
 
-                        return DocumentTypeRule._evaluate(document, customer, accountNumber, context);
+                        DocumentTypeRule._documentCache[accountNumber] = documentNumber;
+
+                        return DocumentTypeRule._evaluateDocument(document, documentNumber, accountNumber, context);
                     });
             })
             .catch((reason: any): string => {
@@ -92,9 +121,8 @@ export class DocumentTypeRule {
      * Decide con el documento fiscal del cliente, NO con su CustomerTypeValue: un RUC 10 es
      * persona natural y sí lleva factura.
      */
-    private static _evaluate(document: string, customer: ProxyEntities.Customer, accountNumber: string, context: any): string {
+    private static _evaluateDocument(document: string, documentNumber: string, accountNumber: string, context: any): string {
         const service: SunatCustomerService = new SunatCustomerService();
-        const documentNumber: string = customer ? service.getDocumentNumber(customer) : "";
         const documentType: string | null = service.getDocumentType(documentNumber);
         const hasRuc: boolean = documentType === "RUC";
 
@@ -118,6 +146,18 @@ export class DocumentTypeRule {
         }
 
         return "";
+    }
+
+    /**
+     * Olvida el documento cacheado de una cuenta. HAY QUE LLAMARLO al crear o editar un
+     * cliente: el documento SÍ se puede cambiar desde el modal, y una caché vieja diría que
+     * un cliente que acaba de recibir un RUC sigue sin tenerlo — dejando pasar la boleta que
+     * esta regla existe para impedir.
+     */
+    public static forget(accountNumber: string): void {
+        if (accountNumber && DocumentTypeRule._documentCache.hasOwnProperty(accountNumber)) {
+            delete DocumentTypeRule._documentCache[accountNumber];
+        }
     }
 
     /** Lee la propiedad de extensión que escribe el control de DP, normalizada a mayúsculas. */
