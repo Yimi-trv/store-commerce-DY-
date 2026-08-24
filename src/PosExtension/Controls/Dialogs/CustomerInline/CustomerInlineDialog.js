@@ -1056,11 +1056,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this._showMessage(element, "El nombre/razón social es obligatorio.");
                         return Promise.resolve();
                     }
-                    var direccionIncompleta = this._validateAddressCompleteness(element);
-                    if (direccionIncompleta) {
-                        return this._showAlert(element, "Dirección incompleta", direccionIncompleta, "Entendido", "")
+                    var esRuc = this._sunatService.getDocumentType(documentNumber) === "RUC";
+                    var avisoDireccion = this._validateAddress(element, esRuc);
+                    if (avisoDireccion) {
+                        return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Entendido", "")
                             .then(function () {
-                            _this._showMessage(element, "Complete la dirección o déjela vacía para continuar.");
+                            _this._showMessage(element, avisoDireccion.pie);
                         });
                     }
                     this._showMessage(element, "Verificando la situación del documento en SUNAT...");
@@ -1565,11 +1566,11 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._updateCustomer = function (element) {
                     var _this = this;
-                    var direccionIncompleta = this._validateAddressCompleteness(element);
-                    if (direccionIncompleta) {
-                        return this._showAlert(element, "Dirección incompleta", direccionIncompleta, "Entendido", "")
+                    var avisoDireccion = this._validateAddress(element, false);
+                    if (avisoDireccion) {
+                        return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Entendido", "")
                             .then(function () {
-                            _this._showMessage(element, "Complete la dirección o déjela vacía para guardar.");
+                            _this._showMessage(element, avisoDireccion.pie);
                         });
                     }
                     return this._loadCustomerForEdit(element)
@@ -1706,7 +1707,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                     this._applyAddressParts(element, typed);
                 };
-                CustomerInlineDialog.prototype._validateAddressCompleteness = function (element) {
+                CustomerInlineDialog.prototype._validateAddress = function (element, direccionObligatoria) {
                     var street = this._getValue(element, "customerInlineCreateAddress");
                     var streetNumber = this._getValue(element, "customerInlineCreateStreetNumber");
                     var compliment = this._getValue(element, "customerInlineCreateBuildingCompliment");
@@ -1715,7 +1716,17 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     var cityCode = this._getValue(element, "customerInlineCreateDistrict");
                     var tieneAlgo = !!(street || streetNumber || compliment || stateId || countyId || cityCode);
                     if (!tieneAlgo) {
-                        return "";
+                        if (!direccionObligatoria) {
+                            return null;
+                        }
+                        return {
+                            titulo: "Falta la dirección fiscal",
+                            motivo: "Este cliente tiene RUC, y un cliente con RUC se registra con su"
+                                + " dirección fiscal: es la que sale impresa en la factura."
+                                + "\n\nComplete Calle, Departamento, Provincia y Distrito."
+                                + "\n\nSi lo que necesita es un cliente sin dirección, regístrelo con DNI.",
+                            pie: "La dirección fiscal es obligatoria para un cliente con RUC."
+                        };
                     }
                     var faltan = [];
                     if (!street) {
@@ -1731,12 +1742,20 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         faltan.push("Distrito");
                     }
                     if (faltan.length === 0) {
-                        return "";
+                        return null;
                     }
-                    return "Para registrar la dirección falta completar:\n\n"
-                        + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
-                        + "Complete esos campos, o borre los datos de dirección si este cliente no va a "
-                        + "tener una: una dirección a medias no se guarda.";
+                    return {
+                        titulo: "Dirección incompleta",
+                        motivo: "Para registrar la dirección falta completar:\n\n"
+                            + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
+                            + (direccionObligatoria
+                                ? "Complete esos campos: una dirección a medias no se guarda."
+                                : "Complete esos campos, o borre los datos de dirección si este cliente no va a"
+                                    + " tener una: una dirección a medias no se guarda."),
+                        pie: direccionObligatoria
+                            ? "Complete la dirección para continuar."
+                            : "Complete la dirección o déjela vacía para continuar."
+                    };
                 };
                 CustomerInlineDialog.prototype._buildAddressFromForm = function (element, recordId) {
                     var street = this._getValue(element, "customerInlineCreateAddress");

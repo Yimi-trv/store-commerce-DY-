@@ -106,6 +106,14 @@ const DIAG_PREFIX: string = "__diag:";
 
 export type CustomerInlineDialogMode = "search" | "create" | "edit";
 
+/** Lo que hay que decirle al cajero sobre la dirección, cuando hay algo que decirle. */
+interface IAvisoDeDireccion {
+    titulo: string;
+    motivo: string;
+    /** Línea corta que queda en el pie del modal despues de cerrar la alerta. */
+    pie: string;
+}
+
 export interface ICustomerInlineDialogResult {
     mode: CustomerInlineDialogMode;
     action: string;
@@ -1661,11 +1669,14 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return Promise.resolve();
         }
 
-        const direccionIncompleta: string = this._validateAddressCompleteness(element);
-        if (direccionIncompleta) {
-            return this._showAlert(element, "Dirección incompleta", direccionIncompleta, "Entendido", "")
+        // Con RUC la dirección fiscal es obligatoria; con DNI es opcional.
+        const esRuc: boolean = this._sunatService.getDocumentType(documentNumber) === "RUC";
+        const avisoDireccion: IAvisoDeDireccion | null = this._validateAddress(element, esRuc);
+
+        if (avisoDireccion) {
+            return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Entendido", "")
                 .then((): void => {
-                    this._showMessage(element, "Complete la dirección o déjela vacía para continuar.");
+                    this._showMessage(element, avisoDireccion.pie);
                 });
         }
 
@@ -2463,12 +2474,17 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     private _updateCustomer(element: HTMLElement): Promise<void> {
-        // Misma regla que al crear: o la dirección va entera, o no va.
-        const direccionIncompleta: string = this._validateAddressCompleteness(element);
-        if (direccionIncompleta) {
-            return this._showAlert(element, "Dirección incompleta", direccionIncompleta, "Entendido", "")
+        // AL EDITAR NO SE EXIGE DIRECCIÓN, ni siquiera con RUC. La obligatoriedad se pidió para
+        // el ALTA, y aplicarla aquí dejaría sin poder guardar a los clientes con RUC que ya
+        // existen sin dirección: el cajero entraría a corregir un teléfono y se encontraría
+        // bloqueado por un dato que no vino a tocar. Lo que sí se mantiene es que, si escribe
+        // una dirección, vaya entera.
+        const avisoDireccion: IAvisoDeDireccion | null = this._validateAddress(element, false);
+
+        if (avisoDireccion) {
+            return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Entendido", "")
                 .then((): void => {
-                    this._showMessage(element, "Complete la dirección o déjela vacía para guardar.");
+                    this._showMessage(element, avisoDireccion.pie);
                 });
         }
 
@@ -2671,18 +2687,20 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     /**
-     * Comprueba que la dirección esté completa. Devuelve el motivo, o "" si se puede continuar.
+     * Comprueba la dirección. Devuelve qué avisar, o null si se puede continuar.
      *
-     * LA DIRECCIÓN ES OPCIONAL, PERO A MEDIAS NO SIRVE. D365 valida el ubigeo contra sus
-     * maestros y descarta en silencio una dirección sin State/County/City: el cliente se creaba
-     * "con dirección" y en la ficha aparecía incompleta o vacía, sin que nadie se enterara
-     * hasta emitir el comprobante.
+     * DOS REGLAS DISTINTAS, Y CONVIENE NO CONFUNDIRLAS:
      *
-     * Por eso: o no se pone dirección, o se pone entera. Si hay calle pero falta algún nivel
-     * del ubigeo —el caso real es olvidar el último desplegable— se detiene y se dice
-     * exactamente qué falta.
+     * 1. ¿HACE FALTA DIRECCIÓN? Con RUC sí: es la dirección fiscal que sale impresa en la
+     *    factura, y un contribuyente sin ella no se registra completo. Con DNI no: un
+     *    consumidor final puede quedar registrado solo con su documento y su nombre.
+     *
+     * 2. SI SE PONE, VA ENTERA. Esto vale para los dos. D365 valida el ubigeo contra sus
+     *    maestros y descarta EN SILENCIO una dirección sin State/County/City: el cliente se
+     *    creaba "con dirección" y en la ficha aparecía vacía, sin que nadie se enterara hasta
+     *    emitir el comprobante. El caso real es olvidar el último desplegable.
      */
-    private _validateAddressCompleteness(element: HTMLElement): string {
+    private _validateAddress(element: HTMLElement, direccionObligatoria: boolean): IAvisoDeDireccion | null {
         const street: string = this._getValue(element, "customerInlineCreateAddress");
         const streetNumber: string = this._getValue(element, "customerInlineCreateStreetNumber");
         const compliment: string = this._getValue(element, "customerInlineCreateBuildingCompliment");
@@ -2692,9 +2710,20 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
         const tieneAlgo: boolean = !!(street || streetNumber || compliment || stateId || countyId || cityCode);
 
-        // Sin ningún dato, el cliente simplemente no tendrá dirección. Es válido.
         if (!tieneAlgo) {
-            return "";
+            // Sin ningún dato: con DNI es válido, el cliente no tendrá dirección.
+            if (!direccionObligatoria) {
+                return null;
+            }
+
+            return {
+                titulo: "Falta la dirección fiscal",
+                motivo: "Este cliente tiene RUC, y un cliente con RUC se registra con su"
+                    + " dirección fiscal: es la que sale impresa en la factura."
+                    + "\n\nComplete Calle, Departamento, Provincia y Distrito."
+                    + "\n\nSi lo que necesita es un cliente sin dirección, regístrelo con DNI.",
+                pie: "La dirección fiscal es obligatoria para un cliente con RUC."
+            };
         }
 
         const faltan: string[] = [];
@@ -2704,13 +2733,22 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         if (!cityCode) { faltan.push("Distrito"); }
 
         if (faltan.length === 0) {
-            return "";
+            return null;
         }
 
-        return "Para registrar la dirección falta completar:\n\n"
-            + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
-            + "Complete esos campos, o borre los datos de dirección si este cliente no va a "
-            + "tener una: una dirección a medias no se guarda.";
+        // Se empezó a escribir una dirección: va entera, con RUC o con DNI.
+        return {
+            titulo: "Dirección incompleta",
+            motivo: "Para registrar la dirección falta completar:\n\n"
+                + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
+                + (direccionObligatoria
+                    ? "Complete esos campos: una dirección a medias no se guarda."
+                    : "Complete esos campos, o borre los datos de dirección si este cliente no va a"
+                      + " tener una: una dirección a medias no se guarda."),
+            pie: direccionObligatoria
+                ? "Complete la dirección para continuar."
+                : "Complete la dirección o déjela vacía para continuar."
+        };
     }
 
     /**
