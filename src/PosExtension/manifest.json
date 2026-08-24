@@ -63,6 +63,24 @@
      "modulePath": "Triggers/DefaultCustomerTrigger",
      "name": "DefaultCustomerTrigger",
      "description": "Asigna el cliente descriptivo (TRV-000001) al agregar un producto si la venta no tiene cliente, para que el panel muestre la tarjeta y la boleta salga con cliente desde el primer articulo."
+    },
+    {
+     "triggerType": "ApplicationStart",
+     "modulePath": "Triggers/CustomerPanelAddressTrigger",
+     "name": "CustomerPanelAddressTrigger",
+     "description": "Intercepta el boton 'Agregar direccion' del panel de cliente y abre el modal en Editar Actual, para que la direccion se cargue con ubigeo validado en vez de a mano."
+    },
+    {
+     "triggerType": "PrePayment",
+     "modulePath": "Triggers/PrePaymentDocumentTypeTrigger",
+     "name": "PrePaymentDocumentTypeTrigger",
+     "description": "Impide cobrar si el comprobante elegido no corresponde al documento del cliente: boleta a un RUC, o factura a un cliente sin RUC."
+    },
+    {
+     "triggerType": "PreEndTransaction",
+     "modulePath": "Triggers/PreEndTransactionDocumentTypeTrigger",
+     "name": "PreEndTransactionDocumentTypeTrigger",
+     "description": "Red de seguridad: impide cerrar la transaccion con un comprobante que no corresponde al documento del cliente."
     }
    ]
   },

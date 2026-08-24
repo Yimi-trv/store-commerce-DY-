@@ -1,0 +1,172 @@
+System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/Cart", "PosApi/Consume/Customer", "../Controls/Dialogs/CustomerInline/CustomerInlineDialog", "./CustomerModalHelper"], function (exports_1, context_1) {
+    "use strict";
+    var __extends = (this && this.__extends) || (function () {
+        var extendStatics = function (d, b) {
+            extendStatics = Object.setPrototypeOf ||
+                ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+                function (d, b) { for (var p in b) if (Object.prototype.hasOwnProperty.call(b, p)) d[p] = b[p]; };
+            return extendStatics(d, b);
+        };
+        return function (d, b) {
+            if (typeof b !== "function" && b !== null)
+                throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
+            extendStatics(d, b);
+            function __() { this.constructor = d; }
+            d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+        };
+    })();
+    var ApplicationTriggers_1, Cart_1, Customer_1, CustomerInlineDialog_1, CustomerModalHelper_1, CustomerPanelAddressTrigger;
+    var __moduleName = context_1 && context_1.id;
+    return {
+        setters: [
+            function (ApplicationTriggers_1_1) {
+                ApplicationTriggers_1 = ApplicationTriggers_1_1;
+            },
+            function (Cart_1_1) {
+                Cart_1 = Cart_1_1;
+            },
+            function (Customer_1_1) {
+                Customer_1 = Customer_1_1;
+            },
+            function (CustomerInlineDialog_1_1) {
+                CustomerInlineDialog_1 = CustomerInlineDialog_1_1;
+            },
+            function (CustomerModalHelper_1_1) {
+                CustomerModalHelper_1 = CustomerModalHelper_1_1;
+            }
+        ],
+        execute: function () {
+            CustomerPanelAddressTrigger = (function (_super) {
+                __extends(CustomerPanelAddressTrigger, _super);
+                function CustomerPanelAddressTrigger() {
+                    return _super !== null && _super.apply(this, arguments) || this;
+                }
+                CustomerPanelAddressTrigger.prototype.execute = function (options) {
+                    var _this = this;
+                    if (typeof document === "undefined" || window[CustomerPanelAddressTrigger.INSTALLED_KEY]) {
+                        return Promise.resolve();
+                    }
+                    window[CustomerPanelAddressTrigger.INSTALLED_KEY] = true;
+                    document.addEventListener("click", function (event) {
+                        _this._onDocumentClick(event);
+                    }, true);
+                    this.context.logger.logInformational("CustomerPanelAddressTrigger: intercepcion de 'Agregar direccion' instalada.");
+                    return Promise.resolve();
+                };
+                CustomerPanelAddressTrigger.prototype._onDocumentClick = function (event) {
+                    try {
+                        if (window[CustomerModalHelper_1.GUARD_KEY]) {
+                            return;
+                        }
+                        var clickable = this._findAddressButton(event.target);
+                        if (!clickable) {
+                            return;
+                        }
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (typeof event.stopImmediatePropagation === "function") {
+                            event.stopImmediatePropagation();
+                        }
+                        this.context.logger.logInformational("CustomerPanelAddressTrigger: interceptado '"
+                            + (clickable.textContent || "").replace(/\s+/g, " ").trim()
+                            + "' | clases=" + (typeof clickable.className === "string" ? clickable.className : "(sin clases)"));
+                        this._openEditDialog();
+                    }
+                    catch (error) {
+                        this.context.logger.logError("CustomerPanelAddressTrigger error: " + String(error));
+                    }
+                };
+                CustomerPanelAddressTrigger.prototype._findAddressButton = function (target) {
+                    var node = target;
+                    for (var depth = 0; node && depth < 5; depth++) {
+                        if (this._isInsideCustomerPanel(node) && this._matchesLabel(node)) {
+                            return node;
+                        }
+                        node = node.parentElement;
+                    }
+                    return null;
+                };
+                CustomerPanelAddressTrigger.prototype._isInsideCustomerPanel = function (node) {
+                    var current = node;
+                    for (var depth = 0; current && depth < 12; depth++) {
+                        var id = current.id || "";
+                        var cls = typeof current.className === "string" ? current.className : "";
+                        if (id.indexOf("CustomerPanel") >= 0
+                            || cls.indexOf("customerPanel") >= 0
+                            || cls.indexOf("customerDetailsCardStyle") >= 0) {
+                            return true;
+                        }
+                        current = current.parentElement;
+                    }
+                    return false;
+                };
+                CustomerPanelAddressTrigger.prototype._matchesLabel = function (node) {
+                    var text = (node.textContent || "")
+                        .toUpperCase()
+                        .replace(/[ÁÀÄÂ]/g, "A").replace(/[ÉÈËÊ]/g, "E").replace(/[ÍÌÏÎ]/g, "I")
+                        .replace(/[ÓÒÖÔ]/g, "O").replace(/[ÚÙÜÛ]/g, "U")
+                        .replace(/Ñ/g, "N")
+                        .replace(/[^A-Z ]/g, " ")
+                        .replace(/\s+/g, " ")
+                        .trim();
+                    for (var i = 0; i < CustomerPanelAddressTrigger.LABELS.length; i++) {
+                        if (text === CustomerPanelAddressTrigger.LABELS[i]) {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                CustomerPanelAddressTrigger.prototype._openEditDialog = function () {
+                    var _this = this;
+                    var correlationId = this.context.logger.getNewCorrelationId();
+                    this.context.runtime
+                        .executeAsync(new Cart_1.GetCurrentCartClientRequest(correlationId))
+                        .then(function (response) {
+                        var cart = response && response.data && response.data.result;
+                        var accountNumber = (cart && cart.CustomerId) || "";
+                        if (!accountNumber) {
+                            return Promise.resolve(null);
+                        }
+                        return _this.context.runtime
+                            .executeAsync(new Customer_1.GetCustomerClientRequest(accountNumber, correlationId))
+                            .then(function (customerResponse) {
+                            return (customerResponse && customerResponse.data && customerResponse.data.result) || null;
+                        });
+                    })
+                        .then(function (customer) {
+                        if (!customer) {
+                            _this.context.logger.logInformational("CustomerPanelAddressTrigger: la venta no tiene cliente; se abre el modal en Buscar.");
+                        }
+                        window[CustomerModalHelper_1.GUARD_KEY] = true;
+                        var dialog = new CustomerInlineDialog_1.default();
+                        return dialog.open(customer ? "edit" : "search", customer, "");
+                    })
+                        .then(function () {
+                        window[CustomerModalHelper_1.GUARD_KEY] = false;
+                    })
+                        .catch(function (reason) {
+                        window[CustomerModalHelper_1.GUARD_KEY] = false;
+                        var detail = "";
+                        try {
+                            detail = JSON.stringify(reason);
+                        }
+                        catch (error) {
+                            detail = String(reason);
+                        }
+                        _this.context.logger.logError("CustomerPanelAddressTrigger: no se pudo abrir el modal: " + detail);
+                    });
+                };
+                CustomerPanelAddressTrigger.INSTALLED_KEY = "__customerPanelAddressHooked";
+                CustomerPanelAddressTrigger.LABELS = [
+                    "AGREGAR DIRECCION",
+                    "ANADIR DIRECCION",
+                    "ADD ADDRESS",
+                    "ADD AN ADDRESS",
+                    "NEW ADDRESS"
+                ];
+                return CustomerPanelAddressTrigger;
+            }(ApplicationTriggers_1.ApplicationStartTrigger));
+            exports_1("default", CustomerPanelAddressTrigger);
+        }
+    };
+});
