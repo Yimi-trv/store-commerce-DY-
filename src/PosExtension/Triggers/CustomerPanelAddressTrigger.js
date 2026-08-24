@@ -39,7 +39,10 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
             CustomerPanelAddressTrigger = (function (_super) {
                 __extends(CustomerPanelAddressTrigger, _super);
                 function CustomerPanelAddressTrigger() {
-                    return _super !== null && _super.apply(this, arguments) || this;
+                    var _this = _super !== null && _super.apply(this, arguments) || this;
+                    _this._lastInterceptAt = 0;
+                    _this._unknownLabels = {};
+                    return _this;
                 }
                 CustomerPanelAddressTrigger.prototype.execute = function (options) {
                     var _this = this;
@@ -47,9 +50,12 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                         return Promise.resolve();
                     }
                     window[CustomerPanelAddressTrigger.INSTALLED_KEY] = true;
-                    document.addEventListener("click", function (event) {
-                        _this._onDocumentClick(event);
-                    }, true);
+                    var eventos = ["pointerdown", "mousedown", "click"];
+                    for (var i = 0; i < eventos.length; i++) {
+                        document.addEventListener(eventos[i], function (event) {
+                            _this._onDocumentClick(event);
+                        }, true);
+                    }
                     this.context.logger.logInformational("CustomerPanelAddressTrigger: intercepcion de 'Agregar direccion' instalada.");
                     return Promise.resolve();
                 };
@@ -67,9 +73,15 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                         if (typeof event.stopImmediatePropagation === "function") {
                             event.stopImmediatePropagation();
                         }
-                        this.context.logger.logInformational("CustomerPanelAddressTrigger: interceptado '"
+                        var ahora = new Date().getTime();
+                        if (ahora - this._lastInterceptAt < 900) {
+                            return;
+                        }
+                        this._lastInterceptAt = ahora;
+                        this.context.logger.logInformational("CustomerPanelAddressTrigger: interceptado por " + event.type + " | rotulo='"
                             + (clickable.textContent || "").replace(/\s+/g, " ").trim()
-                            + "' | clases=" + (typeof clickable.className === "string" ? clickable.className : "(sin clases)"));
+                            + "' | clases=" + (typeof clickable.className === "string" ? clickable.className : "(sin clases)")
+                            + " | dentro del panel=" + this._isInsideCustomerPanel(clickable));
                         this._openEditDialog();
                     }
                     catch (error) {
@@ -81,16 +93,28 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                     for (var depth = 0; node && depth < 5; depth++) {
                         var raw = node.textContent || "";
                         if (raw.length > CustomerPanelAddressTrigger.MAX_LABEL_LENGTH) {
+                            if (this._looksLikeAddressLabel(raw)) {
+                                this._reportUnknownLabel(raw.substring(0, 120) + " [...] (texto largo, descartado)");
+                            }
                             return null;
                         }
-                        if (this._looksLikeAddressLabel(raw)
-                            && this._isInsideCustomerPanel(node)
-                            && this._matchesLabel(node)) {
-                            return node;
+                        if (this._looksLikeAddressLabel(raw)) {
+                            if (this._matchesLabel(node)) {
+                                return node;
+                            }
+                            this._reportUnknownLabel(raw);
                         }
                         node = node.parentElement;
                     }
                     return null;
+                };
+                CustomerPanelAddressTrigger.prototype._reportUnknownLabel = function (raw) {
+                    var texto = (raw || "").replace(/\s+/g, " ").trim();
+                    if (!texto || this._unknownLabels[texto]) {
+                        return;
+                    }
+                    this._unknownLabels[texto] = true;
+                    this.context.logger.logInformational("CustomerPanelAddressTrigger: rotulo parecido NO reconocido: '" + texto + "'");
                 };
                 CustomerPanelAddressTrigger.prototype._looksLikeAddressLabel = function (raw) {
                     var text = raw.toUpperCase();

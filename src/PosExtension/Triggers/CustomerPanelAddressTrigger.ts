@@ -37,6 +37,15 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
     /** El listener se instala UNA vez por sesión del POS. */
     private static readonly INSTALLED_KEY: string = "__customerPanelAddressHooked";
 
+    /**
+     * Momento de la última intercepción. Se escuchan pointerdown, mousedown y click, y los tres
+     * llegan por la misma pulsación: sin esto se abrirían tres modales.
+     */
+    private _lastInterceptAt: number = 0;
+
+    /** Rótulos ya registrados, para no repetir la misma línea en cada click. */
+    private _unknownLabels: { [texto: string]: boolean } = {};
+
     /** Largo máximo que puede tener el rótulo; por encima, no es el botón. */
     private static readonly MAX_LABEL_LENGTH: number = 40;
 
@@ -55,11 +64,17 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
 
         (window as any)[CustomerPanelAddressTrigger.INSTALLED_KEY] = true;
 
-        // Fase de CAPTURA: es la única forma de quedarse con el click antes de que el POS lo
-        // procese y navegue. En fase de burbuja ya sería tarde.
-        document.addEventListener("click", (event: Event): void => {
-            this._onDocumentClick(event);
-        }, true);
+        // Fase de CAPTURA y los TRES eventos de pulsación. En una caja táctil el POS puede
+        // navegar en `pointerdown` o `mousedown`, mucho antes de que llegue el `click`: si solo
+        // se escucha `click`, se cancela una navegación que ya ocurrió. Se cancelan los tres y
+        // el modal se abre una sola vez (ver _recentlyIntercepted).
+        const eventos: string[] = ["pointerdown", "mousedown", "click"];
+
+        for (let i: number = 0; i < eventos.length; i++) {
+            document.addEventListener(eventos[i], (event: Event): void => {
+                this._onDocumentClick(event);
+            }, true);
+        }
 
         this.context.logger.logInformational(
             "CustomerPanelAddressTrigger: intercepcion de 'Agregar direccion' instalada.");
@@ -88,10 +103,21 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
                 (event as any).stopImmediatePropagation();
             }
 
+            // Los tres eventos de una misma pulsación se cancelan, pero el modal se abre una
+            // sola vez.
+            const ahora: number = new Date().getTime();
+
+            if (ahora - this._lastInterceptAt < 900) {
+                return;
+            }
+
+            this._lastInterceptAt = ahora;
+
             this.context.logger.logInformational(
-                "CustomerPanelAddressTrigger: interceptado '"
+                "CustomerPanelAddressTrigger: interceptado por " + event.type + " | rotulo='"
                 + (clickable.textContent || "").replace(/\s+/g, " ").trim()
-                + "' | clases=" + (typeof clickable.className === "string" ? clickable.className : "(sin clases)"));
+                + "' | clases=" + (typeof clickable.className === "string" ? clickable.className : "(sin clases)")
+                + " | dentro del panel=" + this._isInsideCustomerPanel(clickable));
 
             this._openEditDialog();
         } catch (error) {
@@ -117,19 +143,52 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
             // El rótulo es corto, y los ancestros solo pueden tener MÁS texto: en cuanto se
             // pasa del largo posible, no hay nada más arriba que mirar.
             if (raw.length > CustomerPanelAddressTrigger.MAX_LABEL_LENGTH) {
+                // Si el texto largo hablaba de direcciones, se registra antes de descartarlo:
+                // es justo la pista que haria falta si el rotulo real fuera mas extenso de lo
+                // previsto, y perderla obligaria a otro despliegue solo para averiguarlo.
+                if (this._looksLikeAddressLabel(raw)) {
+                    this._reportUnknownLabel(raw.substring(0, 120) + " [...] (texto largo, descartado)");
+                }
+
                 return null;
             }
 
-            if (this._looksLikeAddressLabel(raw)
-                && this._isInsideCustomerPanel(node)
-                && this._matchesLabel(node)) {
-                return node;
+            if (this._looksLikeAddressLabel(raw)) {
+                if (this._matchesLabel(node)) {
+                    return node;
+                }
+
+                // Parecía el botón y no lo era: casi siempre significa que el rótulo real es
+                // otro. Se registra UNA vez por texto distinto para poder añadirlo a LABELS sin
+                // adivinar, en vez de gastar un despliegue entero en averiguarlo.
+                this._reportUnknownLabel(raw);
             }
 
             node = node.parentElement;
         }
 
         return null;
+    }
+
+    /**
+     * Registra un rótulo parecido pero no reconocido, sin repetir.
+     *
+     * El requisito de estar dentro del panel de cliente SE QUITÓ del camino de decisión: la
+     * comprobación subía doce niveles buscando clases concretas y, si el POS anida el botón
+     * más hondo o usa otras, el rótulo correcto se descartaba igual. La coincidencia EXACTA
+     * del rótulo ya es señal suficiente —ningún otro control del POS se llama "Agregar
+     * dirección"— y el panel se sigue registrando en el log como dato.
+     */
+    private _reportUnknownLabel(raw: string): void {
+        const texto: string = (raw || "").replace(/\s+/g, " ").trim();
+
+        if (!texto || this._unknownLabels[texto]) {
+            return;
+        }
+
+        this._unknownLabels[texto] = true;
+        this.context.logger.logInformational(
+            "CustomerPanelAddressTrigger: rotulo parecido NO reconocido: '" + texto + "'");
     }
 
     /** Filtro previo por subcadena: descarta sin normalizar ni recorrer ancestros. */
