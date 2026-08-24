@@ -56,7 +56,12 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                             _this._onDocumentClick(event);
                         }, true);
                     }
-                    this.context.logger.logInformational("CustomerPanelAddressTrigger: intercepcion de 'Agregar direccion' instalada.");
+                    var marca = "RegenerateFE 1.2.3 activo | reglas: comprobante-vs-documento,"
+                        + " veto-RUC-observado, cliente-descriptivo, direccion-completa, modal-solo-en-venta";
+                    this.context.logger.logInformational(marca);
+                    if (typeof console !== "undefined" && console.log) {
+                        console.log("=== " + marca + " ===");
+                    }
                     return Promise.resolve();
                 };
                 CustomerPanelAddressTrigger.prototype._onDocumentClick = function (event) {

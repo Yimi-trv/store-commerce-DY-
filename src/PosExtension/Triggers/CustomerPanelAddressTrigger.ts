@@ -76,8 +76,18 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
             }, true);
         }
 
-        this.context.logger.logInformational(
-            "CustomerPanelAddressTrigger: intercepcion de 'Agregar direccion' instalada.");
+        // HUELLA DEL PAQUETE. Dos versiones distintas del paquete se llamaban igual (1.2.2) y
+        // no habia forma de saber cual estaba cargado: se depuro un problema ya resuelto
+        // porque en la caja corria un paquete anterior. Esta linea dice de un vistazo que
+        // reglas trae el que esta corriendo.
+        const marca: string = "RegenerateFE 1.2.3 activo | reglas: comprobante-vs-documento,"
+            + " veto-RUC-observado, cliente-descriptivo, direccion-completa, modal-solo-en-venta";
+
+        this.context.logger.logInformational(marca);
+
+        if (typeof console !== "undefined" && console.log) {
+            console.log("=== " + marca + " ===");
+        }
 
         return Promise.resolve();
     }

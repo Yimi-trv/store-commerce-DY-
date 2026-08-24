@@ -1,5 +1,6 @@
 import { IPostProductSaleTriggerOptions, PostProductSaleTrigger } from "PosApi/Extend/Triggers/ProductTriggers";
 import { SetCustomerOnCartOperationRequest, SetCustomerOnCartOperationResponse } from "PosApi/Consume/Cart";
+import { GetCurrentCartClientRequest, GetCurrentCartClientResponse } from "PosApi/Consume/Cart";
 import { GUARD_KEY } from "./CustomerModalHelper";
 
 /**
@@ -41,21 +42,36 @@ export default class DefaultCustomerTrigger extends PostProductSaleTrigger {
             return Promise.resolve();
         }
 
-        // EL CARRITO YA VIENE EN options.cart. Antes se pedía al servidor en CADA producto
+        // EL CARRITO VIENE EN options.cart. Antes se pedía al servidor en CADA producto
         // agregado, y a partir del segundo la respuesta siempre decía lo mismo: que ya hay
         // cliente. Era una ida y vuelta por artículo, la que más se notaba en caja.
-        const cart: any = options ? options.cart : null;
+        const cartFromTrigger: any = options ? options.cart : null;
 
-        // Sin carrito no hay dónde asignar; con cliente ya puesto no hay nada que hacer, y ese
-        // es el caso de todos los productos menos el primero: sale sin tocar la red.
-        if (!cart || (cart.CustomerId && cart.CustomerId !== "")) {
+        // Con cliente ya puesto no hay nada que hacer, y ese es el caso de todos los productos
+        // menos el primero: sale sin tocar la red.
+        if (cartFromTrigger && cartFromTrigger.CustomerId && cartFromTrigger.CustomerId !== "") {
             return Promise.resolve();
         }
 
         const correlationId: string = this.context.logger.getNewCorrelationId();
 
-        return Promise.resolve()
-            .then((): Promise<void> => {
+        // SI EL TRIGGER NO TRAE EL CARRITO, SE PIDE. El typing lo declara, pero de que esté
+        // declarado no se sigue que venga siempre poblado: dando por hecho que sí, un carrito
+        // ausente hacía que el trigger no hiciera NADA y en silencio —el cliente descriptivo
+        // simplemente dejaba de aparecer, sin ningún error. La optimización se conserva para
+        // el caso normal; esto es solo la red debajo.
+        const cartPromise: Promise<any> = cartFromTrigger
+            ? Promise.resolve(cartFromTrigger)
+            : this.context.runtime
+                .executeAsync(new GetCurrentCartClientRequest<GetCurrentCartClientResponse>(correlationId))
+                .then((response: any): any => response && response.data && response.data.result);
+
+        return cartPromise
+            .then((cart: any): Promise<void> => {
+                if (!cart || (cart.CustomerId && cart.CustomerId !== "")) {
+                    return Promise.resolve();
+                }
+
                 return this.context.runtime
                     .executeAsync(new SetCustomerOnCartOperationRequest<SetCustomerOnCartOperationResponse>(
                         correlationId, DefaultCustomerTrigger.DEFAULT_CUSTOMER_ACCOUNT))
