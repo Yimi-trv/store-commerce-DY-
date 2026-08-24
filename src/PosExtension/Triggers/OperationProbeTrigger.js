@@ -17,6 +17,9 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
     })();
     var OperationTriggers_1, CustomerInlineDialog_1, CustomerModalHelper_1, CUSTOMER_SEARCH_OPERATION_ID, OperationProbeTrigger;
     var __moduleName = context_1 && context_1.id;
+    function esOperacionDeCliente(operationId) {
+        return operationId === 600 || operationId === 602 || operationId === 603;
+    }
     return {
         setters: [
             function (OperationTriggers_1_1) {
@@ -42,7 +45,9 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                     if (operationId === CUSTOMER_SEARCH_OPERATION_ID) {
                         return this._openModalForSearch();
                     }
-                    CustomerModalHelper_1.anotarOperacionIniciada(operationId, request);
+                    if (!esOperacionDeCliente(operationId)) {
+                        CustomerModalHelper_1.anotarOperacionIniciada(operationId, request);
+                    }
                     return Promise.resolve({ canceled: false });
                 };
                 OperationProbeTrigger.prototype._openModalForSearch = function () {
@@ -50,8 +55,10 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                     if (window[CustomerModalHelper_1.GUARD_KEY] || window[CustomerModalHelper_1.PROGRAMMATIC_KEY]) {
                         return Promise.resolve({ canceled: false });
                     }
-                    var enLaVenta = CustomerModalHelper_1.esVistaDeVenta();
-                    var envolvente = enLaVenta ? null : CustomerModalHelper_1.tomarOperacionEnvolvente();
+                    var envolvente = CustomerModalHelper_1.tomarOperacionEnvolvente();
+                    this.context.logger.logInformational("OperationProbeTrigger: busqueda de cliente | la pidio "
+                        + (envolvente ? ("la operacion " + (envolvente.operationId || "(sin id)")) : "el cajero")
+                        + " | esVistaDeVenta()=" + CustomerModalHelper_1.esVistaDeVenta() + " (solo dato, no decide)");
                     window[CustomerModalHelper_1.GUARD_KEY] = true;
                     var dialog = new CustomerInlineDialog_1.default();
                     return dialog.open("search", null, "")
@@ -61,7 +68,7 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                         }
                         window[CustomerModalHelper_1.GUARD_KEY] = false;
                         var cuenta = (result && result.customerAccountNumber) || "";
-                        if (!enLaVenta && cuenta) {
+                        if (envolvente && cuenta) {
                             _this._devolverElControl(envolvente, cuenta);
                         }
                         return Promise.resolve({ canceled: true });
@@ -74,14 +81,9 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                 };
                 OperationProbeTrigger.prototype._devolverElControl = function (envolvente, accountNumber) {
                     var _this = this;
-                    if (!envolvente) {
-                        this.context.logger.logInformational("OperationProbeTrigger: cliente " + accountNumber + " asignado fuera de la venta,"
-                            + " pero no se sabe qué operación pidió la búsqueda; no se relanza nada.");
-                        return;
-                    }
-                    this.context.logger.logInformational("OperationProbeTrigger: cliente " + accountNumber + " asignado fuera de la pantalla de"
-                        + " venta; se relanza la operación " + (envolvente.operationId || "(sin id)")
-                        + " para que vuelva a leer el carrito.");
+                    this.context.logger.logInformational("OperationProbeTrigger: cliente " + accountNumber + " asignado; se relanza la operacion "
+                        + (envolvente.operationId || "(sin id)") + " que pidio la busqueda, para que vuelva a"
+                        + " leer el carrito.");
                     window.setTimeout(function () {
                         try {
                             _this.context.runtime.executeAsync(envolvente)

@@ -20,16 +20,19 @@ export const PROGRAMMATIC_KEY: string = "__customerSearchProgrammatic";
 /**
  * ¿Está el POS en la pantalla de VENTA?
  *
- * SE MIRA SI LOS ELEMENTOS ESTÁN A LA VISTA, NO SI EXISTEN. La versión anterior preguntaba solo
- * por `querySelector`, y en UAT devolvía "es la venta" también en la pantalla de pago: el POS
- * NAVEGA entre vistas dejando la anterior montada y oculta, así que la rejilla de botones y el
- * panel de líneas seguían estando en el DOM detrás de la vista de pago. La comprobación no
- * distinguía nada.
+ * NO DECIDE NADA. Solo se registra en el log como dato.
  *
- * PARA QUÉ SIRVE SABERLO
- * Ya NO para decidir si se abre el modal —el modal se abre siempre, que es lo que se pidió—,
- * sino para saber si el cliente elegido basta con dejarlo en el carrito (venta) o si además hay
- * que devolverle el control a la pantalla que pidió la búsqueda. Ver `tomarOperacionEnvolvente`.
+ * DOS INTENTOS FALLIDOS, LOS DOS COMPROBADOS EN UAT:
+ *   1) Preguntar si los elementos EXISTEN (`querySelector`). Daba "es la venta" también en la
+ *      pantalla de pago: el POS navega dejando la vista anterior montada, así que la rejilla de
+ *      botones y el panel de líneas seguían en el DOM.
+ *   2) Preguntar si están A LA VISTA (`offsetParent` / `getClientRects`). Daba lo mismo. El POS
+ *      no oculta la vista anterior con `display:none`, así que sus elementos siguen midiendo.
+ *
+ * La conclusión es que la pantalla no se puede reconocer así, y sobre todo que era la pregunta
+ * equivocada. Lo que hace falta saber no es QUÉ PANTALLA es, sino si la búsqueda de cliente la
+ * pidió el cajero o la pidió OTRA OPERACIÓN que sigue esperando respuesta. Eso se sabe con
+ * certeza mirando qué operaciones están en curso: ver `tomarOperacionEnvolvente`.
  */
 export function esVistaDeVenta(): boolean {
     if (typeof document === "undefined") {

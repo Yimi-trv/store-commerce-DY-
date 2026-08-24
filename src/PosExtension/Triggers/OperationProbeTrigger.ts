@@ -42,7 +42,12 @@ export default class OperationProbeTrigger extends PreOperationTrigger {
         }
 
         // Se apunta para saber, si más tarde llega una búsqueda de cliente, quién la envolvía.
-        anotarOperacionIniciada(operationId, request);
+        // Las operaciones de cliente NO cuentan: relanzar un "Customer clear" o un "Customer"
+        // no devolvería a nadie a donde estaba, y "Customer clear" además envuelve a "Customer",
+        // así que apuntarlas ensuciaría el anidamiento con ruido propio del propio flujo.
+        if (!esOperacionDeCliente(operationId)) {
+            anotarOperacionIniciada(operationId, request);
+        }
 
         // Cualquier otra operación pasa sin tocarse.
         return Promise.resolve({ canceled: false });
@@ -59,10 +64,19 @@ export default class OperationProbeTrigger extends PreOperationTrigger {
             return Promise.resolve({ canceled: false });
         }
 
-        // Se resuelve ANTES de abrir el modal: mientras el modal está abierto la pantalla puede
-        // cambiar, y lo que interesa es dónde estaba el cajero cuando pidió el cliente.
-        const enLaVenta: boolean = esVistaDeVenta();
-        const envolvente: any = enLaVenta ? null : tomarOperacionEnvolvente();
+        // SE DECIDE POR LA OPERACIÓN EN CURSO, NO POR LA PANTALLA. Reconocer la pantalla se
+        // intentó dos veces y falló las dos (ver CustomerModalHelper): el POS deja la vista de
+        // venta montada y midiendo detrás de la de pago. Y era la pregunta equivocada: lo que
+        // importa no es qué pantalla se ve, sino si alguien está esperando el cliente.
+        //
+        // Se resuelve ANTES de abrir el modal, porque mientras está abierto pueden empezar otras
+        // operaciones y lo que interesa es quién pidió ESTA búsqueda.
+        const envolvente: any = tomarOperacionEnvolvente();
+
+        this.context.logger.logInformational(
+            "OperationProbeTrigger: busqueda de cliente | la pidio "
+            + (envolvente ? ("la operacion " + (envolvente.operationId || "(sin id)")) : "el cajero")
+            + " | esVistaDeVenta()=" + esVistaDeVenta() + " (solo dato, no decide)");
 
         (window as any)[GUARD_KEY] = true;
         const dialog: CustomerInlineDialog = new CustomerInlineDialog();
@@ -76,7 +90,7 @@ export default class OperationProbeTrigger extends PreOperationTrigger {
 
                 const cuenta: string = (result && result.customerAccountNumber) || "";
 
-                if (!enLaVenta && cuenta) {
+                if (envolvente && cuenta) {
                     this._devolverElControl(envolvente, cuenta);
                 }
 
@@ -102,17 +116,10 @@ export default class OperationProbeTrigger extends PreOperationTrigger {
      * asignado y el cajero puede repetir la acción a mano. Peor sería mandarlo a otra pantalla.
      */
     private _devolverElControl(envolvente: any, accountNumber: string): void {
-        if (!envolvente) {
-            this.context.logger.logInformational(
-                "OperationProbeTrigger: cliente " + accountNumber + " asignado fuera de la venta,"
-                + " pero no se sabe qué operación pidió la búsqueda; no se relanza nada.");
-            return;
-        }
-
         this.context.logger.logInformational(
-            "OperationProbeTrigger: cliente " + accountNumber + " asignado fuera de la pantalla de"
-            + " venta; se relanza la operación " + (envolvente.operationId || "(sin id)")
-            + " para que vuelva a leer el carrito.");
+            "OperationProbeTrigger: cliente " + accountNumber + " asignado; se relanza la operacion "
+            + (envolvente.operationId || "(sin id)") + " que pidio la busqueda, para que vuelva a"
+            + " leer el carrito.");
 
         // Se espera a que el POS termine de deshacer la operación cancelada. Lanzada en el mismo
         // turno, la nueva llega mientras la anterior aún se está cerrando y se pierde.
@@ -128,4 +135,12 @@ export default class OperationProbeTrigger extends PreOperationTrigger {
             }
         }, 600);
     }
+}
+
+/**
+ * Operaciones del propio flujo de cliente. No sirven como "operación que envolvía la búsqueda".
+ * 600 Customer · 602 Customer search · 603 Customer clear.
+ */
+function esOperacionDeCliente(operationId: any): boolean {
+    return operationId === 600 || operationId === 602 || operationId === 603;
 }
