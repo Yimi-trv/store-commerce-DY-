@@ -15,7 +15,7 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var ApplicationTriggers_1, Cart_1, Customer_1, CustomerInlineDialog_1, CustomerModalHelper_1, CustomerPanelAddressTrigger;
+    var ApplicationTriggers_1, Cart_1, Customer_1, CustomerInlineDialog_1, CustomerModalHelper_1, RE_ESPACIOS, SALTO, CustomerPanelAddressTrigger;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -36,6 +36,8 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
             }
         ],
         execute: function () {
+            RE_ESPACIOS = new RegExp("[\\s]+", "g");
+            SALTO = String.fromCharCode(10);
             CustomerPanelAddressTrigger = (function (_super) {
                 __extends(CustomerPanelAddressTrigger, _super);
                 function CustomerPanelAddressTrigger() {
@@ -56,9 +58,9 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                             _this._onDocumentClick(event);
                         }, true);
                     }
-                    var marca = "RegenerateFE 1.2.5 activo | reglas: comprobante-vs-documento,"
+                    var marca = "RegenerateFE 1.2.6 activo | reglas: comprobante-vs-documento,"
                         + " veto-RUC-observado, cliente-descriptivo, direccion-completa,"
-                        + " modal-en-toda-vista, relanza-a-quien-pidio-el-cliente";
+                        + " modal-en-toda-vista, relanza-a-quien-pidio-el-cliente, mapa-de-clicks";
                     this.context.logger.logInformational(marca);
                     if (typeof console !== "undefined" && console.log) {
                         console.log("=== " + marca + " ===");
@@ -69,6 +71,9 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                     try {
                         if (window[CustomerModalHelper_1.GUARD_KEY]) {
                             return;
+                        }
+                        if (event.type === "click") {
+                            this._mapearElemento(event.target);
                         }
                         var clickable = this._findAddressButton(event.target);
                         if (!clickable) {
@@ -118,6 +123,63 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                         node = node.parentElement;
                     }
                     return null;
+                };
+                CustomerPanelAddressTrigger.prototype._mapearElemento = function (target) {
+                    if (window.__mapaDeClicks === false || !target) {
+                        return;
+                    }
+                    var lineas = ["=== CLICK ==="];
+                    var nodo = target;
+                    for (var nivel = 0; nodo && nivel < 7; nivel++) {
+                        var clases = (typeof nodo.className === "string" && nodo.className)
+                            ? "." + nodo.className.replace(RE_ESPACIOS, ".")
+                            : "";
+                        var id = nodo.id ? "#" + nodo.id : "";
+                        var bind = nodo.getAttribute ? (nodo.getAttribute("data-bind") || "") : "";
+                        var texto = (nodo.textContent || "").replace(RE_ESPACIOS, " ").trim();
+                        lineas.push("  " + nivel + ") " + nodo.tagName + id + clases);
+                        if (bind) {
+                            lineas.push("       bind = " + bind);
+                        }
+                        if (texto) {
+                            lineas.push("       texto = '" + texto.substring(0, 60) + "'");
+                        }
+                        nodo = nodo.parentElement;
+                    }
+                    this._mapearModeloDeVista(target, lineas);
+                    var salida = lineas.join(SALTO);
+                    if (typeof console !== "undefined" && console.log) {
+                        console.log(salida);
+                    }
+                    this.context.logger.logInformational(salida);
+                };
+                CustomerPanelAddressTrigger.prototype._mapearModeloDeVista = function (target, lineas) {
+                    var ko = window.ko;
+                    if (!ko || typeof ko.dataFor !== "function") {
+                        lineas.push("  ko: no disponible");
+                        return;
+                    }
+                    try {
+                        var modelo = ko.dataFor(target);
+                        if (!modelo) {
+                            lineas.push("  ko: sin modelo de vista en este elemento");
+                            return;
+                        }
+                        var nombre = (modelo.constructor && modelo.constructor.name) || "(anonimo)";
+                        var interesantes = [];
+                        for (var clave in modelo) {
+                            var k = clave.toLowerCase();
+                            if (k.indexOf("customer") >= 0 || k.indexOf("account") >= 0 || k.indexOf("cart") >= 0) {
+                                interesantes.push(clave + " (" + typeof modelo[clave] + ")");
+                            }
+                        }
+                        lineas.push("  ko: " + nombre);
+                        lineas.push("       cliente/cuenta/carrito: "
+                            + (interesantes.length ? interesantes.join(", ") : "(ninguna)"));
+                    }
+                    catch (error) {
+                        lineas.push("  ko: no se pudo leer el modelo de vista (" + error + ")");
+                    }
                 };
                 CustomerPanelAddressTrigger.prototype._reportUnknownLabel = function (raw) {
                     var texto = (raw || "").replace(/\s+/g, " ").trim();

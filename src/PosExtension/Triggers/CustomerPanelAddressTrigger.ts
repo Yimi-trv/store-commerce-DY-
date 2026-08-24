@@ -32,6 +32,18 @@ import { GUARD_KEY } from "./CustomerModalHelper";
  * Cada intercepción se registra en consola con el rótulo y las clases del elemento, para
  * poder afinar la detección sin adivinar si algún día cambia.
  */
+/**
+ * Espacios en blanco consecutivos. Fuera de la clase: se compila una sola vez.
+ *
+ * LAS DOS BARRAS SON NECESARIAS. Con una sola, la cadena entrega [s]+ a la expresion -\s
+ * no es un escape de cadena, asi que se queda en s- y en vez de colapsar espacios borraba
+ * la letra s: "changeCustomerLabel" salia como "changeCu.tomerLabel".
+ */
+const RE_ESPACIOS: RegExp = new RegExp("[\\s]+", "g");
+
+/** Salto de linea. Construido asi para no depender de escapes en el generador. */
+const SALTO: string = String.fromCharCode(10);
+
 export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger {
 
     /** El listener se instala UNA vez por sesión del POS. */
@@ -80,9 +92,9 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
         // no habia forma de saber cual estaba cargado: se depuro un problema ya resuelto
         // porque en la caja corria un paquete anterior. Esta linea dice de un vistazo que
         // reglas trae el que esta corriendo.
-        const marca: string = "RegenerateFE 1.2.5 activo | reglas: comprobante-vs-documento,"
+        const marca: string = "RegenerateFE 1.2.6 activo | reglas: comprobante-vs-documento,"
             + " veto-RUC-observado, cliente-descriptivo, direccion-completa,"
-            + " modal-en-toda-vista, relanza-a-quien-pidio-el-cliente";
+            + " modal-en-toda-vista, relanza-a-quien-pidio-el-cliente, mapa-de-clicks";
 
         this.context.logger.logInformational(marca);
 
@@ -97,6 +109,12 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
         try {
             if ((window as any)[GUARD_KEY]) {
                 return;
+            }
+
+            // Solo en "click": los tres eventos llegan por la misma pulsacion y mapear en los
+            // tres imprimiria todo por triplicado.
+            if (event.type === "click") {
+                this._mapearElemento(event.target as HTMLElement);
             }
 
             const clickable: HTMLElement | null = this._findAddressButton(event.target as HTMLElement);
@@ -203,7 +221,114 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
     }
 
     /**
-     * Registra un rótulo parecido pero no reconocido, sin repetir.
+     * DIAGNOSTICO: dice QUE se acaba de pulsar y con que lo maneja el POS.
+     * =====================================================================
+     *
+     * TEMPORAL. Quitar cuando "Cambiar cuenta de cliente" quede resuelto.
+     *
+     * PARA QUE
+     * Un boton del POS solo se puede interceptar bien si se sabe por que senal reconocerlo. Con
+     * "Agregar direccion" se resolvio asi: aparecio `addressEditClickHandler` en el `data-bind`
+     * y eso reemplazo a la comparacion de textos, que era fragil. Aqui hace falta lo mismo para
+     * "Cambiar cuenta de cliente".
+     *
+     * QUE IMPRIME
+     * La cadena de ancestros con su `data-bind` -el nombre del manejador de knockout, que es lo
+     * que de verdad identifica al control- y, si knockout esta a mano, el modelo de vista que
+     * hay detras y sus propiedades de cliente. Eso ultimo es lo que diria si al cliente elegido
+     * se le puede entregar DIRECTAMENTE a la pantalla de pago, que es justo lo que la API de
+     * triggers no permite.
+     *
+     * COSTE
+     * Una linea por clic, y solo por clic. No es lo que hacia lenta la caja: aquello registraba
+     * cada operacion y cada tecla. Para apagarlo sin reempaquetar, en la consola:
+     *     window.__mapaDeClicks = false
+     */
+    private _mapearElemento(target: HTMLElement): void {
+        if ((window as any).__mapaDeClicks === false || !target) {
+            return;
+        }
+
+        const lineas: string[] = ["=== CLICK ==="];
+        let nodo: HTMLElement = target;
+
+        for (let nivel: number = 0; nodo && nivel < 7; nivel++) {
+            const clases: string = (typeof nodo.className === "string" && nodo.className)
+                ? "." + nodo.className.replace(RE_ESPACIOS, ".")
+                : "";
+            const id: string = nodo.id ? "#" + nodo.id : "";
+            const bind: string = nodo.getAttribute ? (nodo.getAttribute("data-bind") || "") : "";
+            const texto: string = (nodo.textContent || "").replace(RE_ESPACIOS, " ").trim();
+
+            lineas.push("  " + nivel + ") " + nodo.tagName + id + clases);
+
+            // El data-bind es LA senal util: es el nombre del manejador en el modelo de vista.
+            if (bind) {
+                lineas.push("       bind = " + bind);
+            }
+
+            if (texto) {
+                lineas.push("       texto = '" + texto.substring(0, 60) + "'");
+            }
+
+            nodo = nodo.parentElement;
+        }
+
+        this._mapearModeloDeVista(target, lineas);
+
+        const salida: string = lineas.join(SALTO);
+
+        if (typeof console !== "undefined" && console.log) {
+            console.log(salida);
+        }
+
+        this.context.logger.logInformational(salida);
+    }
+
+    /**
+     * El modelo de vista de knockout que hay detras del elemento, y sus propiedades de cliente.
+     *
+     * Es la parte que puede desbloquear el problema de fondo: un PreOperationTrigger no puede
+     * devolverle el cliente a la pantalla que lo pidio, pero si el modelo de vista expone algo
+     * como `customer` o `customerAccountNumber`, si se le puede poner ahi directamente.
+     */
+    private _mapearModeloDeVista(target: HTMLElement, lineas: string[]): void {
+        const ko: any = (window as any).ko;
+
+        if (!ko || typeof ko.dataFor !== "function") {
+            lineas.push("  ko: no disponible");
+            return;
+        }
+
+        try {
+            const modelo: any = ko.dataFor(target);
+
+            if (!modelo) {
+                lineas.push("  ko: sin modelo de vista en este elemento");
+                return;
+            }
+
+            const nombre: string = (modelo.constructor && modelo.constructor.name) || "(anonimo)";
+            const interesantes: string[] = [];
+
+            for (const clave in modelo) {
+                const k: string = clave.toLowerCase();
+
+                if (k.indexOf("customer") >= 0 || k.indexOf("account") >= 0 || k.indexOf("cart") >= 0) {
+                    interesantes.push(clave + " (" + typeof modelo[clave] + ")");
+                }
+            }
+
+            lineas.push("  ko: " + nombre);
+            lineas.push("       cliente/cuenta/carrito: "
+                + (interesantes.length ? interesantes.join(", ") : "(ninguna)"));
+        } catch (error) {
+            lineas.push("  ko: no se pudo leer el modelo de vista (" + error + ")");
+        }
+    }
+
+    /**
+     * Registra un rotulo parecido pero no reconocido, sin repetir.
      *
      * El requisito de estar dentro del panel de cliente SE QUITÓ del camino de decisión: la
      * comprobación subía doce niveles buscando clases concretas y, si el POS anida el botón
