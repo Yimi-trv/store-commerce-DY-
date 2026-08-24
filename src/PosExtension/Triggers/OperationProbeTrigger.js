@@ -37,15 +37,12 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                     return _super !== null && _super.apply(this, arguments) || this;
                 }
                 OperationProbeTrigger.prototype.execute = function (options) {
-                    if (!CustomerModalHelper_1.esVistaDeVenta()) {
-                        this.context.logger.logInformational("OperationProbeTrigger: fuera de la pantalla de venta; se deja el comportamiento nativo del POS.");
-                        return Promise.resolve({ canceled: false });
-                    }
                     var request = options ? options.operationRequest : null;
                     var operationId = request ? request.operationId : null;
                     if (operationId === CUSTOMER_SEARCH_OPERATION_ID) {
                         return this._openModalForSearch();
                     }
+                    CustomerModalHelper_1.anotarOperacionIniciada(operationId, request);
                     return Promise.resolve({ canceled: false });
                 };
                 OperationProbeTrigger.prototype._openModalForSearch = function () {
@@ -53,6 +50,8 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                     if (window[CustomerModalHelper_1.GUARD_KEY] || window[CustomerModalHelper_1.PROGRAMMATIC_KEY]) {
                         return Promise.resolve({ canceled: false });
                     }
+                    var enLaVenta = CustomerModalHelper_1.esVistaDeVenta();
+                    var envolvente = enLaVenta ? null : CustomerModalHelper_1.tomarOperacionEnvolvente();
                     window[CustomerModalHelper_1.GUARD_KEY] = true;
                     var dialog = new CustomerInlineDialog_1.default();
                     return dialog.open("search", null, "")
@@ -61,6 +60,10 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                             return CustomerModalHelper_1.searchAndAssignCustomer(_this.context, result.searchText || "");
                         }
                         window[CustomerModalHelper_1.GUARD_KEY] = false;
+                        var cuenta = (result && result.customerAccountNumber) || "";
+                        if (!enLaVenta && cuenta) {
+                            _this._devolverElControl(envolvente, cuenta);
+                        }
                         return Promise.resolve({ canceled: true });
                     })
                         .catch(function (reason) {
@@ -68,6 +71,28 @@ System.register(["PosApi/Extend/Triggers/OperationTriggers", "../Controls/Dialog
                         _this.context.logger.logError("OperationProbeTrigger (602) error: " + JSON.stringify(reason));
                         return { canceled: false };
                     });
+                };
+                OperationProbeTrigger.prototype._devolverElControl = function (envolvente, accountNumber) {
+                    var _this = this;
+                    if (!envolvente) {
+                        this.context.logger.logInformational("OperationProbeTrigger: cliente " + accountNumber + " asignado fuera de la venta,"
+                            + " pero no se sabe qué operación pidió la búsqueda; no se relanza nada.");
+                        return;
+                    }
+                    this.context.logger.logInformational("OperationProbeTrigger: cliente " + accountNumber + " asignado fuera de la pantalla de"
+                        + " venta; se relanza la operación " + (envolvente.operationId || "(sin id)")
+                        + " para que vuelva a leer el carrito.");
+                    window.setTimeout(function () {
+                        try {
+                            _this.context.runtime.executeAsync(envolvente)
+                                .catch(function (reason) {
+                                _this.context.logger.logError("OperationProbeTrigger: no se pudo relanzar la operación: " + JSON.stringify(reason));
+                            });
+                        }
+                        catch (error) {
+                            _this.context.logger.logError("OperationProbeTrigger: relanzar la operación lanzó: " + error);
+                        }
+                    }, 600);
                 };
                 return OperationProbeTrigger;
             }(OperationTriggers_1.PreOperationTrigger));

@@ -1,15 +1,53 @@
 System.register(["PosApi/Consume/Customer", "PosApi/Consume/Cart"], function (exports_1, context_1) {
     "use strict";
-    var Customer_1, Cart_1, GUARD_KEY, PROGRAMMATIC_KEY;
+    var Customer_1, Cart_1, GUARD_KEY, PROGRAMMATIC_KEY, operacionesEnCurso, VIGENCIA_MS;
     var __moduleName = context_1 && context_1.id;
     function esVistaDeVenta() {
         if (typeof document === "undefined") {
             return true;
         }
-        return !!document.querySelector("#ButtonGrid4Control")
-            && !!document.querySelector(".transactionLinesPane");
+        return estaALaVista("#ButtonGrid4Control") && estaALaVista(".transactionLinesPane");
     }
     exports_1("esVistaDeVenta", esVistaDeVenta);
+    function estaALaVista(selector) {
+        var nodo = document.querySelector(selector);
+        if (!nodo) {
+            return false;
+        }
+        if (nodo.offsetParent) {
+            return true;
+        }
+        return typeof nodo.getClientRects === "function" && nodo.getClientRects().length > 0;
+    }
+    function anotarOperacionIniciada(id, request) {
+        operacionesEnCurso.push({ id: id, request: request, at: new Date().getTime() });
+        if (operacionesEnCurso.length > 6) {
+            operacionesEnCurso.shift();
+        }
+    }
+    exports_1("anotarOperacionIniciada", anotarOperacionIniciada);
+    function anotarOperacionTerminada(id) {
+        for (var i = operacionesEnCurso.length - 1; i >= 0; i--) {
+            if (operacionesEnCurso[i].id === id) {
+                operacionesEnCurso.splice(i, 1);
+                return;
+            }
+        }
+    }
+    exports_1("anotarOperacionTerminada", anotarOperacionTerminada);
+    function tomarOperacionEnvolvente() {
+        var ahora = new Date().getTime();
+        var elegida = null;
+        for (var i = operacionesEnCurso.length - 1; i >= 0; i--) {
+            if (ahora - operacionesEnCurso[i].at <= VIGENCIA_MS) {
+                elegida = operacionesEnCurso[i].request;
+                break;
+            }
+        }
+        operacionesEnCurso.length = 0;
+        return elegida;
+    }
+    exports_1("tomarOperacionEnvolvente", tomarOperacionEnvolvente);
     function searchAndAssignCustomer(context, searchText) {
         var correlationId = context && context.logger && context.logger.getNewCorrelationId
             ? context.logger.getNewCorrelationId()
@@ -62,6 +100,8 @@ System.register(["PosApi/Consume/Customer", "PosApi/Consume/Cart"], function (ex
         execute: function () {
             exports_1("GUARD_KEY", GUARD_KEY = "__customerInlineDialogActive");
             exports_1("PROGRAMMATIC_KEY", PROGRAMMATIC_KEY = "__customerSearchProgrammatic");
+            operacionesEnCurso = [];
+            VIGENCIA_MS = 60000;
         }
     };
 });

@@ -2,7 +2,7 @@
  "$schema": "./devDependencies/schemas/manifestSchema.json",
  "name": "RegenerateFE",
  "publisher": "DP",
- "version": "1.2.3",
+ "version": "1.2.4",
  "minimumPosVersion": "9.51.0.0",
  "description": "Extension POS: consulta de RUC y DNI via SUNAT en Customer Add/Edit + tema visual Trujillo Market (layout amplio y compacto 1024x768)",
  "components": {
@@ -81,6 +81,12 @@
      "modulePath": "Triggers/PreEndTransactionDocumentTypeTrigger",
      "name": "PreEndTransactionDocumentTypeTrigger",
      "description": "Red de seguridad: impide cerrar la transaccion con un comprobante que no corresponde al documento del cliente."
+    },
+    {
+     "triggerType": "PostOperation",
+     "modulePath": "Triggers/OperationDoneTrigger",
+     "name": "OperationProbeTrigger",
+     "description": "Intercepta la operacion 602 (Customer search) para abrir el modal de cliente en vez de la pantalla nativa. El boton Agregar cliente del panel de la venta usa esa operacion y no dispara PreCustomerSearch. Ademas registra en consola cada operacion, util para identificar otros botones."
     }
    ]
   },
