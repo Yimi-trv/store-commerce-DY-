@@ -352,20 +352,26 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     ThemeEngine.repartirBotonesPago(altoPagos, HUECO);
                 };
                 ThemeEngine.repartirPanel = function (idControl, proporcion) {
-                    var zona = ThemeEngine.q("#" + idControl.replace("Control", ""));
                     var control = ThemeEngine.q("#" + idControl);
                     var tarjeta = ThemeEngine.q("#TabControl .tabContent");
-                    if (!zona || !control || !tarjeta)
+                    if (!control || !tarjeta)
                         return;
                     var botones = ThemeEngine.todos("#" + idControl + " .buttonGridButton");
                     if (botones.length === 0)
+                        return;
+                    if (control.offsetParent === null)
+                        return;
+                    var rControl = control.getBoundingClientRect();
+                    if (rControl.width < 1 || rControl.height < 1)
+                        return;
+                    var rPrimero = botones[0].getBoundingClientRect();
+                    if (rPrimero.width < 1 || rPrimero.height < 1)
                         return;
                     var estilosTarjeta = getComputedStyle(tarjeta);
                     var rTarjeta = tarjeta.getBoundingClientRect();
                     var anchoUtil = Math.round(rTarjeta.width - (parseFloat(estilosTarjeta.paddingLeft) || 0) - (parseFloat(estilosTarjeta.paddingRight) || 0));
                     var altoUtil = Math.round(rTarjeta.height - (parseFloat(estilosTarjeta.paddingTop) || 0) - (parseFloat(estilosTarjeta.paddingBottom) || 0));
-                    var anchoZona = Math.round(zona.getBoundingClientRect().width);
-                    var ancho = Math.min(anchoZona, anchoUtil);
+                    var ancho = anchoUtil;
                     if (ancho < 100 || altoUtil < 80)
                         return;
                     var HUECO = 8;
@@ -467,6 +473,40 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         }
                     }
                 };
+                ThemeEngine.anclarZonaPestanas = function () {
+                    var zona = ThemeEngine.q("#TabControl");
+                    var carrito = ThemeEngine.q("#TransactionGrid");
+                    if (!zona || !carrito)
+                        return;
+                    var rZona = zona.getBoundingClientRect();
+                    var rCarrito = carrito.getBoundingClientRect();
+                    if (rZona.height < 100 || rCarrito.height < 100)
+                        return;
+                    var anclarTop = document.body.classList.contains(ThemeAssets_1.CLASE_COMPACTO)
+                        && getComputedStyle(zona).position === "absolute";
+                    var topZona = 0;
+                    var altoZona = 0;
+                    if (anclarTop) {
+                        topZona = Math.round(ThemeEngine.topActual(zona) + (rCarrito.top - rZona.top));
+                        altoZona = Math.round(rCarrito.height);
+                    }
+                    else {
+                        altoZona = Math.round(rCarrito.bottom - rZona.top);
+                    }
+                    if (altoZona < 160)
+                        return;
+                    var css = "body." + ThemeAssets_1.CLASE_AMBITO + " #TabControl{"
+                        + (anclarTop ? "top:" + topZona + "px !important;" : "")
+                        + "height:" + altoZona + "px !important;max-height:" + altoZona + "px !important;overflow:visible !important;}\n";
+                    if (!ThemeEngine.estiloZona) {
+                        ThemeEngine.estiloZona = document.createElement("style");
+                        ThemeEngine.estiloZona.setAttribute("id", "sct-zona");
+                        document.head.appendChild(ThemeEngine.estiloZona);
+                    }
+                    if (ThemeEngine.estiloZona.textContent !== css) {
+                        ThemeEngine.estiloZona.textContent = css;
+                    }
+                };
                 ThemeEngine.ajustarNumpad = function () {
                     var zona = ThemeEngine.q("#TabControl");
                     var tabs = ThemeEngine.q("#TabControl .tabsContainer");
@@ -477,8 +517,13 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     var teclas = ThemeEngine.todos("#TabControl .numpad-control-buttons button");
                     if (teclas.length === 0)
                         return;
+                    if (teclas[0].offsetParent === null)
+                        return;
+                    var rTecla = teclas[0].getBoundingClientRect();
+                    if (rTecla.width < 1 || rTecla.height < 1)
+                        return;
                     if (!ThemeEngine.teclaNativa) {
-                        ThemeEngine.teclaNativa = Math.round(teclas[0].getBoundingClientRect().height) || 54;
+                        ThemeEngine.teclaNativa = Math.round(rTecla.height) || 54;
                     }
                     var filasY = [];
                     for (var i = 0; i < teclas.length; i++) {
@@ -507,8 +552,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         altoTecla = 30;
                     var altoTeclado = filas * altoTecla + (filas - 1) * SEP;
                     var raiz = "body." + ThemeAssets_1.CLASE_AMBITO + " ";
-                    var css = raiz + "#TabControl{height:" + altoZona + "px !important;max-height:" + altoZona + "px !important;overflow:visible !important;}\n"
-                        + raiz + "#TabControl .numpad-control-input-wrapper{height:" + ALTO_INPUT + "px !important;min-height:" + ALTO_INPUT + "px !important;max-height:" + ALTO_INPUT + "px !important;}\n"
+                    var css = raiz + "#TabControl .numpad-control-input-wrapper{height:" + ALTO_INPUT + "px !important;min-height:" + ALTO_INPUT + "px !important;max-height:" + ALTO_INPUT + "px !important;}\n"
                         + raiz + "#TabControl .numpad-control-input{height:" + ALTO_INPUT + "px !important;min-height:" + ALTO_INPUT + "px !important;max-height:" + ALTO_INPUT + "px !important;line-height:" + ALTO_INPUT + "px !important;font-size:22px !important;}\n"
                         + raiz + "#TabControl .numpad-control-buttons{height:" + altoTeclado + "px !important;max-height:" + altoTeclado + "px !important;min-height:0 !important;margin:" + HUECO + "px auto 0 auto !important;}\n"
                         + raiz + "#TabControl .numpad-control-buttons button," + raiz + "#TabControl .numpad-control-buttons .enter{height:" + altoTecla + "px !important;min-height:" + altoTecla + "px !important;max-height:" + altoTecla + "px !important;}\n";
@@ -726,6 +770,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                                 hojas[0].classList.add("sct-live-direccion");
                         }
                     }
+                    ThemeEngine.anclarZonaPestanas();
                     ThemeEngine.ajustarNumpad();
                     ThemeEngine.acomodarColumnaDerecha();
                     ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
@@ -783,6 +828,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         }
                     }
                     ThemeEngine.decorarBoleto(ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton"));
+                    ThemeEngine.anclarZonaPestanas();
                     ThemeEngine.ajustarNumpad();
                     ThemeEngine.acomodarColumnaDerecha();
                     ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
@@ -945,6 +991,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                 ThemeEngine.eventosRegistrados = false;
                 ThemeEngine.estiloNumpad = null;
                 ThemeEngine.estiloAlineacion = null;
+                ThemeEngine.estiloZona = null;
                 ThemeEngine.teclaNativa = 0;
                 ThemeEngine.sondaEstilos = null;
                 ThemeEngine.estilosNormalizados = {};

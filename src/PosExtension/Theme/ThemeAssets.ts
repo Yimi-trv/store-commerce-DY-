@@ -279,8 +279,16 @@ export function construirCss(): string {
     //   y=508          -> cierran a la vez el carrito y la tarjeta de pestañas.
     //   y=752          -> cierran A LA VEZ TRES cosas: #TotalsPanel, la fila de pagos (NIUBIZ) y
     //                     la tarjeta de direccion del cliente (.sct-dom-card, de ahi su alto 148).
-    //                     De ahi salen #CustomControl1{top:460} y #ButtonGrid4{top:565}, y de ahi
-    //                     que los huecos verticales sean 12 y 11 y no 16: no cabe mas.
+    //
+    //   OJO CON ESTAS DOS ULTIMAS: 508 y 752 son las de UAT, y estan aqui como REFERENCIA de como
+    //   tiene que quedar la pantalla, NO como valores a escribir. En master el carrito arranca 16px
+    //   mas arriba y todo baja en bloque. Las verticales de la columna derecha ya no se fijan aqui:
+    //     - el arranque de la tarjeta de pestañas  -> ThemeEngine.anclarZonaPestanas()  (al carrito)
+    //     - su alto                                -> ThemeEngine.ajustarNumpad()       (al carrito)
+    //     - Boleta y la fila de pagos              -> ThemeEngine.acomodarColumnaDerecha() (a
+    //                                                 #TotalsPanel, o sea a la columna izquierda)
+    //   Estaban clavadas en top:48 / height:400 / top:460 / top:565 y fue exactamente eso lo que
+    //   rompio master. Si algo no cuadra en vertical, se arregla en esas tres funciones.
     //   228            -> alto de la zona de cliente. Dentro caben JUSTO ficha 80 + direccion 148.
     //                     Si crece cualquiera de las dos, la otra se corta (la zona tiene
     //                     overflow:hidden y no puede crecer: topa con el carrito arriba y con el
@@ -330,8 +338,18 @@ export function construirCss(): string {
     var cssCompacto: string = ""
         // Reparto vertical de la columna derecha en 768px de alto (medido en vivo):
         //   pestanas 108-170 | tarjeta numpad hasta 508 | Boleta 516-610 | tiles 618-745
-        // top 132->48: las pestanas arrancan a la MISMA altura que el carrito (y=108), como en
-        // la vista amplia. height 422->400 para que quepan las pestanas ARRIBA y el Enter entero.
+        //
+        // OJO: el `top` y el `height` de aqui son SEMILLA, no la posicion final. Quien manda es
+        // ThemeEngine.ajustarNumpad(), que en compacto ancla esta zona al carrito: arranca donde
+        // arranca #TransactionGrid y mide lo que mide el carrito.
+        //
+        // POR QUE. Estos dos numeros salieron de UAT, donde el carrito empieza en y=108. En master
+        // empieza en y=92, asi que la columna derecha quedaba 16px por debajo de la izquierda y de
+        // ahi salian todos los desajustes que veniamos persiguiendo (la tarjeta acababa en 508 con
+        // el carrito en 492, y Boleta se le montaba encima). NO volver a calibrar estos valores
+        // mirando una pantalla: si algo no cuadra, el sitio es ajustarNumpad().
+        // Se dejan porque son el punto de partida del calculo (la primera medida se toma sobre
+        // ellos) y porque evitan un salto feo en el primer pintado.
         + "#TabControl{position:absolute !important;left:518px !important;top:48px !important;right:auto !important;width:452px !important;height:400px !important;transform:none !important;pointer-events:none !important;}\n"
         // El carrito perdia su tarjeta en compacto (borde 0, radio 0) mientras el resto de
         // paneles si la tenian.
@@ -351,7 +369,11 @@ export function construirCss(): string {
         + "#TabControl .numpad-control-buttons{height:266px !important;max-height:266px !important;min-height:0 !important;}\n"
         // (Aqui habia dos reglas mas, teclas a 32px y su tipografia a 20px, que las de mas abajo
         // pisaban por completo: no pintaban nada. Se retiran para que el fichero no engane.)
-        + "#TabControl .commerceTabControl.righttabs{width:452px !important;height:400px !important;overflow:visible !important;box-sizing:border-box !important;}\n"
+        // height 400px -> 100%: el alto de #TabControl ya no es fijo (lo calcula ajustarNumpad
+        // contra el carrito), asi que el rail interior tiene que SEGUIRLO. Con 400 clavados, en un
+        // entorno donde el carrito no midiera 400 el contenido se salia o dejaba hueco.
+        // En master da el mismo 400 de siempre, asi que no cambia nada de lo ya aprobado.
+        + "#TabControl .commerceTabControl.righttabs{width:452px !important;height:100% !important;overflow:visible !important;box-sizing:border-box !important;}\n"
         + "#TabControl .commerceTabControl.righttabs .tabsContainer{display:flex !important;flex-direction:row !important;justify-content:flex-start !important;align-items:flex-start !important;width:340px !important;min-width:340px !important;max-width:340px !important;height:62px !important;gap:6px !important;padding:0 !important;margin:0 0 8px 112px !important;left:0 !important;right:auto !important;transform:none !important;overflow:visible !important;box-sizing:border-box !important;pointer-events:auto !important;}\n"
         + "#TabControl .commerceTabControl.righttabs .tabsContainer .tab{position:relative !important;flex:0 0 80px !important;width:80px !important;min-width:80px !important;max-width:80px !important;height:58px !important;left:auto !important;right:auto !important;top:auto !important;margin:0 !important;transform:none !important;border-radius:9px !important;box-sizing:border-box !important;border:1px solid rgba(255,255,255,0.25) !important;background:#161514 !important;}\n"
         + "#TabControl .commerceTabControl.righttabs .tabsContainer .tab:hover,#TabControl .commerceTabControl.righttabs .tabsContainer .tab.hover,#TabControl .commerceTabControl.righttabs .tabsContainer .tab.pressed{border-color:" + ROJO + " !important;background:#1B1A19 !important;}\n"
@@ -363,7 +385,13 @@ export function construirCss(): string {
         + ".sct-tab1 .icon{background-image:" + ICONOS["tab1"] + " !important;}\n"
         + ".sct-tab2 .icon{background-image:" + ICONOS["tab2"] + " !important;}\n"
         + ".sct-tab3 .icon{background-image:" + ICONOS["tab3"] + " !important;}\n"
-        + "#TabControl .commerceTabControl.righttabs > .tabContent{flex:0 0 330px !important;width:340px !important;height:330px !important;margin-left:112px !important;padding:10px 12px !important;box-sizing:border-box !important;overflow:hidden !important;pointer-events:auto !important;border:" + BORDE_TARJETA + " !important;border-radius:12px !important;}\n"
+        // flex 0 0 330px -> 1 1 auto (misma razon que el righttabs de arriba): la tarjeta ocupa lo
+        // que quede tras el rail de pestanas, en vez de 330px clavados. Es ademas lo que
+        // ajustarNumpad() ya daba por hecho al calcular el tamano de tecla
+        // (disponible = alto de zona - pestanas - margen - relleno). Con 330 fijos, el calculo y la
+        // tarjeta podian discrepar. min-height:0 es obligatorio: sin el, un hijo flex no encoge.
+        // En master: 400 de zona - 62 de pestanas - 8 de margen = 330. Identico a lo aprobado.
+        + "#TabControl .commerceTabControl.righttabs > .tabContent{flex:1 1 auto !important;width:340px !important;height:auto !important;min-height:0 !important;margin-left:112px !important;padding:10px 12px !important;box-sizing:border-box !important;overflow:hidden !important;pointer-events:auto !important;border:" + BORDE_TARJETA + " !important;border-radius:12px !important;}\n"
         // El translateX(-12px) venia de cuando el numpad tenia otro ancho: dejaba el bloque 22px
         // descentrado (se metia 11px en el borde izquierdo de la tarjeta y sobraban 11px a la
         // derecha). Medido y corregido: ahora los margenes quedan en 1px y -1px.
@@ -479,14 +507,24 @@ export function construirCss(): string {
         + "#CustomerPanel .sct-dom-card .h4{line-height:13px !important;}\n"
         + "#CustomerPanel .sct-dom-card .h4.ellipsis{white-space:normal !important;display:-webkit-box !important;-webkit-box-orient:vertical !important;-webkit-line-clamp:2 !important;overflow:hidden !important;}\n"
         + ".sct-dom-card .sct-live-direccion{display:block !important;width:100% !important;max-width:100% !important;max-height:58px !important;margin:0 !important;padding:0 !important;overflow:hidden !important;overflow-wrap:anywhere !important;word-break:normal !important;white-space:normal !important;font-size:10px !important;line-height:1.1 !important;box-sizing:border-box !important;}\n"
-        + ".sct-live-zona-cliente{height:228px !important;min-height:0 !important;max-height:228px !important;margin-top:0px !important;transform:translateY(-20px) !important;overflow:hidden !important;box-sizing:border-box !important;}\n"
+        // SIN transform. Llevaba translateY(-20px), medido en UAT para pegar estas dos cajas al
+        // carrito. En master el carrito acaba 20px mas abajo, asi que ese desplazamiento las metia
+        // DEBAJO del carrito y desalineaba de rebote toda la columna derecha (que se ancla a
+        // #TotalsPanel). Sin el, las dos cajas caen donde las pone el POS, justo bajo el carrito con
+        // los 12px de aire que da el layout de HQ. Validado en vivo en master a 1024x768.
+        // Su pareja es el #TotalsPanel de mas abajo: los dos llevaban el mismo translateY.
+        + ".sct-live-zona-cliente{height:228px !important;min-height:0 !important;max-height:228px !important;margin-top:0px !important;overflow:hidden !important;box-sizing:border-box !important;}\n"
         + ".sct-live-zona-montos{height:228px !important;min-height:0 !important;max-height:228px !important;margin-top:0px !important;overflow:hidden !important;box-sizing:border-box !important;}\n"
         // Ancho 312 -> 298. La caja de montos terminaba en x=648 y la columna derecha empieza en
         // x=650: quedaban 2px entre las dos, pegadas. Con 298 acaba en 634, que es donde acaba
         // ahora el carrito (ver propLineas en ThemeEngine.aplicarLayoutCompacto): las dos cajas de
         // la izquierda alineadas y 16px de aire hasta la columna derecha.
         // Los dos anchos van de la mano: si se cambia uno, se cambia el otro o se descuadran.
-        + "#TotalsPanel{right:auto !important;width:298px !important;height:228px !important;min-height:0px !important;max-height:228px !important;transform:translateY(-20px) !important;box-sizing:border-box !important;overflow:hidden !important;}\n"
+        // SIN transform, por lo mismo que .sct-live-zona-cliente (ver arriba). Ademas aqui era mas
+        // grave: acomodarColumnaDerecha() mide ESTA caja para colocar Boleta y los metodos de pago,
+        // asi que los 20px de mas se propagaban a la columna derecha entera y Boleta acababa
+        // pisando la tarjeta de pestanas.
+        + "#TotalsPanel{right:auto !important;width:298px !important;height:228px !important;min-height:0px !important;max-height:228px !important;box-sizing:border-box !important;overflow:hidden !important;}\n"
         + "#TotalsPanel .fields.row{width:100% !important;height:188px !important;min-height:188px !important;max-height:188px !important;}\n"
         + "#TotalsPanel .panel-footer{width:100% !important;height:40px !important;min-height:40px !important;max-height:40px !important;}\n"
         // Reparto vertical de la columna derecha (medido en vivo, ventana 1024x768):

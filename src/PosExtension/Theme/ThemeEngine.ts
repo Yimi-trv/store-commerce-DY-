@@ -7,7 +7,7 @@ import { construirCss, TEMA_ACTIVO, CLASE_AMBITO, CLASE_AMPLIO, CLASE_COMPACTO }
  * layout amplio (1920) y layout compacto (1024) según el ancho de la ventana.
  *
  * ---------------------------------------------------------------------------------------------
- * DOS REGLAS QUE HAY QUE RESPETAR AL TOCAR ESTE FICHERO
+ * CUATRO REGLAS QUE HAY QUE RESPETAR AL TOCAR ESTE FICHERO
  * ---------------------------------------------------------------------------------------------
  *
  * 1) NUNCA escribir una clase o un estilo de forma incondicional.
@@ -20,6 +20,36 @@ import { construirCss, TEMA_ACTIVO, CLASE_AMBITO, CLASE_AMPLIO, CLASE_COMPACTO }
  * 2) El umbral amplio/compacto vive en DOS sitios y tienen que coincidir:
  *    aqui en esCompacto() y en las @media de ThemeAssets.ts (max-width:1366 / min-width:1367).
  *    Si se cambia uno, se cambia el otro en el mismo commit.
+ *
+ * 3) LA GEOMETRIA VERTICAL NO SE ESCRIBE EN EL CSS. Se mide y se calcula aqui.
+ *    Es la leccion cara de este proyecto. El tema nacio con las verticales clavadas en pixeles
+ *    (#TabControl top:48/height:400, #CustomControl1 top:460, #ButtonGrid4 top:565, translateY de
+ *    -20px en las cajas de cliente y de importes). Todas eran medidas tomadas en UAT. En master y
+ *    en produccion HQ sirve las zonas en otro sitio —el carrito arranca en y=92 y no en y=108— y
+ *    la columna derecha, clavada, se descolgaba de la izquierda, que la coloca el POS. De ahi
+ *    salieron el numpad recortado, Boleta encima de las pestañas, NIUBIZ fuera de pantalla y los
+ *    botones de CLIENTE saliendose de su caja. Cada arreglo con un numero nuevo aguantaba hasta el
+ *    siguiente entorno.
+ *    Quien manda ahora, y donde tocar si algo no cuadra en vertical:
+ *      anclarZonaPestanas()     el arranque de la tarjeta de pestañas  -> al carrito
+ *      ajustarNumpad()          su alto y el tamano de tecla           -> al carrito
+ *      acomodarColumnaDerecha() Boleta y la fila de metodos de pago    -> a #TotalsPanel
+ *    Los pixeles que quedan en ThemeAssets.ts son SEMILLA (primer pintado) y referencia, no la
+ *    posicion final. NO recalibrarlos mirando una pantalla concreta.
+ *
+ * 4) NUNCA MEDIR UN ELEMENTO QUE NO SE VE. Si no se puede medir, no se toca.
+ *    En el DOM del POS "estar" no es "verse", y hay DOS formas distintas de invisible, con dos
+ *    trampas distintas:
+ *      - display:none. Los CUATRO paneles de la tarjeta de pestañas (NumberPad, ButtonGrid1, 2 y 3)
+ *        estan SIEMPRE en el DOM; el POS oculta los inactivos, no los borra. Todo lo que hay
+ *        dentro mide 0x0. Deducir filas y columnas de eso da "una fila y una columna" y escribe
+ *        geometria basura que, ademas, se auto-alimenta: la pasada siguiente mide lo que acabamos
+ *        de escribir y confirma el error. Es el bug de "los botones se salieron de su caja" y el
+ *        del teclado recortado a una fila. Guardas puestos en repartirPanel() y en ajustarNumpad().
+ *      - Nodos colapsados con texto vacio (9-10px), que el POS deja al vaciar el panel de cliente.
+ *        Ahi height>0 NO basta; ver nodoVivo(), que exige alto Y texto.
+ *    Antes de meter una medida nueva en una funcion, preguntarse: puede esto correr con el
+ *    elemento oculto? Si la respuesta es si, guarda primero.
  *
  * ---------------------------------------------------------------------------------------------
  * CAMBIOS DE ESTA TANDA (v1.2.0 desplegada + endurecimiento posterior)
@@ -74,6 +104,7 @@ export class ThemeEngine {
     private static eventosRegistrados: boolean = false;
     private static estiloNumpad: HTMLStyleElement | null = null;
     private static estiloAlineacion: HTMLStyleElement | null = null;
+    private static estiloZona: HTMLStyleElement | null = null;
     private static teclaNativa: number = 0;
     private static sondaEstilos: HTMLElement | null = null;
     private static estilosNormalizados: { [clave: string]: string } = {};
@@ -535,20 +566,51 @@ export class ThemeEngine {
     //   - Se acota al ancho UTIL de la tarjeta, no al de la zona: la zona es mas ancha y la ultima
     //     columna se salia por la derecha.
     private static repartirPanel(idControl: string, proporcion: number): void {
-        var zona = ThemeEngine.q("#" + idControl.replace("Control", ""));
         var control = ThemeEngine.q("#" + idControl);
         var tarjeta = ThemeEngine.q("#TabControl .tabContent");
-        if (!zona || !control || !tarjeta) return;
+        if (!control || !tarjeta) return;
 
         var botones: HTMLElement[] = ThemeEngine.todos("#" + idControl + " .buttonGridButton");
         if (botones.length === 0) return;
+
+        // ¡¡NO QUITAR ESTE GUARDA!! Es lo que impide que esta funcion se envenene a si misma.
+        //
+        // BUG CORREGIDO — "en CLIENTE los botones se salieron de su caja" (master, 1024x768).
+        //
+        // Habia un comentario en las dos llamadas que decia que solo el panel de la pestaña activa
+        // esta en el DOM. ES FALSO, y medido: los CUATRO paneles estan en el DOM a la vez y el POS
+        // oculta los inactivos con display:none. Comprobado en vivo con la pestaña BOLETEO abierta:
+        //   <div id=NumberPad     class=layoutControl>  0x0  display:none
+        //   <div id=ButtonGrid1   class=layoutControl>  0x0  display:none
+        //   <div id=ButtonGrid2   class=layoutControl>  0x0  display:none
+        //   <div id=ButtonGrid3   class=layoutControl>  252x352  display:block
+        //
+        // Y un elemento con display:none mide 0x0. Como el reparto de abajo deduce las filas y las
+        // columnas de la POSICION REAL de cada boton, sobre un panel oculto los tres botones de
+        // CLIENTE median (0,0): salia UNA fila y UNA columna, y se les escribia inline
+        // left:0 top:0 width:316 height:310 a los tres. Apilados y desbordando su zona de 252.
+        //
+        // Y no se recuperaba solo: al abrir la pestaña, la siguiente pasada medi­a esas posiciones
+        // ya envenenadas —todas identicas— volvia a deducir 1x1 y reescribia lo mismo. Bucle
+        // estable en el estado roto. Por eso "se arreglaba" y volvia a romperse sin patron.
+        //
+        // Sobre un panel VISIBLE la funcion si es idempotente: escribe left/top distintos por
+        // columna y por fila, asi que la pasada siguiente vuelve a deducir la misma rejilla.
+        // El problema era unicamente medir lo que no se ve.
+        if (control.offsetParent === null) return;
+        var rControl = control.getBoundingClientRect();
+        if (rControl.width < 1 || rControl.height < 1) return;
+        var rPrimero = botones[0].getBoundingClientRect();
+        if (rPrimero.width < 1 || rPrimero.height < 1) return;
 
         var estilosTarjeta = getComputedStyle(tarjeta);
         var rTarjeta = tarjeta.getBoundingClientRect();
         var anchoUtil: number = Math.round(rTarjeta.width - (parseFloat(estilosTarjeta.paddingLeft) || 0) - (parseFloat(estilosTarjeta.paddingRight) || 0));
         var altoUtil: number = Math.round(rTarjeta.height - (parseFloat(estilosTarjeta.paddingTop) || 0) - (parseFloat(estilosTarjeta.paddingBottom) || 0));
-        var anchoZona: number = Math.round(zona.getBoundingClientRect().width);
-        var ancho: number = Math.min(anchoZona, anchoUtil);
+        // La referencia es el ancho UTIL DE LA TARJETA, no el de la zona. El de la zona no sirve en
+        // ninguno de los dos sentidos: en transacciones era MAS ancho que la tarjeta y la ultima
+        // columna se salia; en cliente es mas ESTRECHO (252 frente a 316) y dejaba 64px sin usar.
+        var ancho: number = anchoUtil;
         if (ancho < 100 || altoUtil < 80) return;
 
         var HUECO: number = 8;
@@ -647,7 +709,83 @@ export class ThemeEngine {
 
     // ---------------------------------------------------------------- numpad adaptativo
 
-    // Dimensiona la ZONA del numpad midiendo la pantalla real, en vez de fijar pixeles.
+    // Ancla el ARRANQUE de la zona de pestañas (#TabControl) al arranque del carrito.
+    //
+    // POR QUE EXISTE (bug de master, 1024x768). El CSS compacto clava #TabControl{top:48px}, que
+    // pintaba en y=108 porque en UAT el carrito arranca ahi. En master arranca en y=92: la tarjeta
+    // de pestañas quedaba 16px por debajo de la columna izquierda, se pasaba de largo por abajo
+    // (acababa en 508 con el carrito en 492) y de rebote la tarjeta de Boleta —que se ancla a
+    // #TotalsPanel, o sea a la columna IZQUIERDA— se le montaba encima. Todos los desajustes que
+    // veniamos persiguiendo salian de ahi: la columna derecha estaba pegada a numeros de UAT y la
+    // izquierda la coloca el POS, asi que en cada entorno bailaban una respecto a la otra.
+    // Anclando las dos, el desfase desaparece de raiz sea cual sea el layout que sirva HQ.
+    //
+    // POR QUE ES UN PASO APARTE Y NO PARTE DE ajustarNumpad(). Porque ajustarNumpad se rinde si no
+    // encuentra teclas, y las teclas SOLO estan en el DOM cuando la pestaña abierta es el numpad:
+    // con CLIENTE, TRANSACCIONES o BOLETEO abiertos no hay ninguna. Si el anclaje viviera alli, al
+    // entrar en esas pestañas la tarjeta se quedaba sin colocar y los botones se salian de la caja.
+    //
+    // SOLO EN COMPACTO. En amplio la zona se ancla unicamente por abajo, que es como venia
+    // funcionando y esta aprobado a 1920. Si algun dia se quiere alli tambien, se quita la
+    // condicion de CLASE_COMPACTO y se valida a 1920 ANTES de subirlo.
+    //
+    // Es estable a proposito: el `top` se calcula a partir del `top` YA aplicado, asi que una vez
+    // colocada la zona el ajuste da cero, sale el mismo CSS y no se escribe nada. Mismo patron que
+    // acomodarColumnaDerecha() — no cambiarlo por una medida absoluta o vuelve el parpadeo.
+    //
+    // REPARTO DE RESPONSABILIDADES. Esta funcion es la duenya de la GEOMETRIA DE LA ZONA (top y
+    // alto). ajustarNumpad() solo se ocupa de lo que hay DENTRO (input y teclas).
+    //
+    // No es cosmetico que esten separadas: ajustarNumpad() se rinde cuando no puede medir las
+    // teclas, y eso pasa siempre que la pestaña abierta no es el numpad. Si la geometria de la zona
+    // viviera alli, al entrar en CLIENTE, TRANSACCIONES o BOLETEO la tarjeta se quedaba sin
+    // colocar. Aqui corre siempre, con cualquier pestaña abierta.
+    //
+    // El TOP solo se toca en compacto. En amplio la zona se ancla unicamente por abajo, que es como
+    // venia funcionando y esta aprobado a 1920. Si algun dia se quiere alli tambien, se quita la
+    // condicion de CLASE_COMPACTO y se valida a 1920 ANTES de subirlo.
+    private static anclarZonaPestanas(): void {
+        var zona: HTMLElement | null = ThemeEngine.q("#TabControl");
+        var carrito: HTMLElement | null = ThemeEngine.q("#TransactionGrid");
+        if (!zona || !carrito) return;
+
+        var rZona = zona.getBoundingClientRect();
+        var rCarrito = carrito.getBoundingClientRect();
+        if (rZona.height < 100 || rCarrito.height < 100) return;
+
+        // El top solo se puede mover si la zona esta posicionada; sin eso, escribirlo no pinta nada
+        // y topActual() tampoco da un numero de partida fiable.
+        var anclarTop: boolean = document.body.classList.contains(CLASE_COMPACTO)
+            && getComputedStyle(zona).position === "absolute";
+
+        var topZona: number = 0;
+        var altoZona: number = 0;
+        if (anclarTop) {
+            topZona = Math.round(ThemeEngine.topActual(zona) + (rCarrito.top - rZona.top));
+            // Ojo: una vez anclado el top, "hasta donde acaba el carrito" ES el alto del carrito.
+            // No se puede usar rZona.top aqui porque todavia es el de ANTES de mover la zona.
+            altoZona = Math.round(rCarrito.height);
+        } else {
+            altoZona = Math.round(rCarrito.bottom - rZona.top);
+        }
+        if (altoZona < 160) return;
+
+        var css: string = "body." + CLASE_AMBITO + " #TabControl{"
+            + (anclarTop ? "top:" + topZona + "px !important;" : "")
+            + "height:" + altoZona + "px !important;max-height:" + altoZona + "px !important;overflow:visible !important;}\n";
+
+        if (!ThemeEngine.estiloZona) {
+            ThemeEngine.estiloZona = document.createElement("style");
+            ThemeEngine.estiloZona.setAttribute("id", "sct-zona");
+            document.head.appendChild(ThemeEngine.estiloZona);
+        }
+        if (ThemeEngine.estiloZona.textContent !== css) {
+            ThemeEngine.estiloZona.textContent = css;
+        }
+    }
+
+    // Dimensiona el CONTENIDO del numpad (input y teclas) midiendo la pantalla real, en vez de
+    // fijar pixeles. La zona que lo contiene la coloca y la dimensiona anclarZonaPestanas().
     //
     // POR QUE EXISTE ESTO. El CSS clavaba el alto del control de pestañas en 468px, medido contra
     // la zona de UAT (490). En master HQ da una zona de 360, y como la zona trae overflow:hidden,
@@ -656,8 +794,9 @@ export class ThemeEngine {
     // entorno, porque la geometria de las zonas la decide el layout de HQ y cambia por entorno.
     //
     // COMO LO RESUELVE:
-    //   1. La zona crece hasta donde acaba la caja de lineas (#TransactionGrid). Asi el numpad
-    //      queda alineado con los productos, que es el criterio visual que se aprobo.
+    //   1. Parte del alto de la zona, que llega hasta donde acaba la caja de lineas
+    //      (#TransactionGrid). Asi el numpad queda alineado con los productos, que es el criterio
+    //      visual que se aprobo.
     //   2. Con el espacio resultante calcula el alto de tecla que cabe, sin pasar NUNCA del tamano
     //      nativo: si sobra sitio no las agranda, solo evita que se corten.
     //   3. El input baja a 34px (fuente 22), que es de donde sale la mayor parte del espacio que
@@ -675,10 +814,24 @@ export class ThemeEngine {
         var teclas: HTMLElement[] = ThemeEngine.todos("#TabControl .numpad-control-buttons button");
         if (teclas.length === 0) return;
 
+        // ¡¡NO QUITAR ESTE GUARDA!! (mismo bug que el de repartirPanel, ver alli el detalle largo).
+        //
+        // El panel del numpad NO se borra del DOM al cambiar de pestaña: el POS lo deja con
+        // display:none, y entonces TODAS las teclas miden 0x0. Sin este guarda, con CLIENTE,
+        // TRANSACCIONES o BOLETEO abiertos el reparto de filas de abajo veia todas las teclas en
+        // y=0, deducia UNA sola fila y escribia
+        //     .numpad-control-buttons{height:~54px; max-height:~54px}
+        // es decir, el teclado recortado a una fila. Al volver a la pestaña del numpad se veia roto
+        // hasta que otra mutacion disparaba una pasada nueva.
+        // Si no se puede medir, no se toca: la hoja conserva el ultimo valor bueno.
+        if (teclas[0].offsetParent === null) return;
+        var rTecla = teclas[0].getBoundingClientRect();
+        if (rTecla.width < 1 || rTecla.height < 1) return;
+
         // El alto nativo se toma UNA vez, antes de que esta funcion escriba nada. Si se volviera a
         // medir despues, se encogeria en cascada en cada pasada.
         if (!ThemeEngine.teclaNativa) {
-            ThemeEngine.teclaNativa = Math.round(teclas[0].getBoundingClientRect().height) || 54;
+            ThemeEngine.teclaNativa = Math.round(rTecla.height) || 54;
         }
 
         var filasY: number[] = [];
@@ -693,6 +846,9 @@ export class ThemeEngine {
         var HUECO: number = 8;
         var ALTO_INPUT: number = 34;
 
+        // La zona (top y alto) ya la dejo colocada anclarZonaPestanas(), que corre justo antes.
+        // Aqui solo se MIDE, para repartir lo que hay dentro. En compacto zona.top == carrito.top,
+        // asi que esto da el alto del carrito.
         var altoZona: number = Math.round(carrito.getBoundingClientRect().bottom - zona.getBoundingClientRect().top);
         if (altoZona < 160) return;
 
@@ -708,8 +864,9 @@ export class ThemeEngine {
         var altoTeclado: number = filas * altoTecla + (filas - 1) * SEP;
 
         var raiz: string = "body." + CLASE_AMBITO + " ";
-        var css: string = raiz + "#TabControl{height:" + altoZona + "px !important;max-height:" + altoZona + "px !important;overflow:visible !important;}\n"
-            + raiz + "#TabControl .numpad-control-input-wrapper{height:" + ALTO_INPUT + "px !important;min-height:" + ALTO_INPUT + "px !important;max-height:" + ALTO_INPUT + "px !important;}\n"
+        // El alto de #TabControl NO se escribe aqui: es de anclarZonaPestanas(). Esta hoja solo
+        // manda sobre lo de DENTRO, que es lo unico que depende de poder medir las teclas.
+        var css: string = raiz + "#TabControl .numpad-control-input-wrapper{height:" + ALTO_INPUT + "px !important;min-height:" + ALTO_INPUT + "px !important;max-height:" + ALTO_INPUT + "px !important;}\n"
             + raiz + "#TabControl .numpad-control-input{height:" + ALTO_INPUT + "px !important;min-height:" + ALTO_INPUT + "px !important;max-height:" + ALTO_INPUT + "px !important;line-height:" + ALTO_INPUT + "px !important;font-size:22px !important;}\n"
             + raiz + "#TabControl .numpad-control-buttons{height:" + altoTeclado + "px !important;max-height:" + altoTeclado + "px !important;min-height:0 !important;margin:" + HUECO + "px auto 0 auto !important;}\n"
             + raiz + "#TabControl .numpad-control-buttons button," + raiz + "#TabControl .numpad-control-buttons .enter{height:" + altoTecla + "px !important;min-height:" + altoTecla + "px !important;max-height:" + altoTecla + "px !important;}\n";
@@ -871,7 +1028,88 @@ export class ThemeEngine {
     // Rotulo real del boton de pago. El atributo `title` suele traer el nombre del metodo; cuando
     // HQ mete ahi una instruccion larga (pasa en dos de ellos) se cae al texto del propio boton,
     // descartando el sufijo de accesibilidad ("... 3 of 6 selected").
+    // Nombre que HQ tiene definido para un boton de una cuadricula (su DisplayText), o "" si no se
+    // puede averiguar.
+    //
+    // POR QUE HACE FALTA — bug de master, 2026-08-24: "se perdieron el texto y el icono del cuarto
+    // boton de pago".
+    //
+    // El POS pone el TOOLTIP del boton en los atributos title y aria-label. Y el tooltip es texto
+    // libre que el negocio edita cuando quiere. Ese dia le pusieron a "A Cuenta de Terceros" el
+    // tooltip "Empleado con RUC, puede hacer boleta o factura. Verificar que el grupo de cliente
+    // sea EMPLEADOS/Recibo por Honorarios...". Como rotuloPago() acababa cayendo en el title,
+    // el rotulo pasó a ser esa parrafada, /terceros/i dejo de casar, el boton se quedo sin clase
+    // y —como el CSS le oculta el contenido nativo para repintarlo— quedo una caja vacia.
+    //
+    // Y el de "Empleado en planilla" se salvo POR CASUALIDAD: su tooltip empieza por "Solo para
+    // empleado en planilla, ...", asi que casaba con /planilla/i sin querer. O sea que el tema
+    // estaba emparejando metodos de pago contra texto de ayuda editable. En una caja que cobra,
+    // pegarle a un metodo el icono de otro no es un fallo estetico.
+    //
+    // La solucion es preguntarle a HQ el nombre de verdad. El encadenado es:
+    //   #ButtonGrid4Control  ->  zona TransactionScreen4  ->  ButtonGridZones  ->  ButtonGridId
+    //   ->  _allButtonGrids  ->  Buttons[indice].DisplayText
+    // El indice sale de la clase posicional del POS (button0, button1, ...). Comprobado en vivo:
+    // los 6 botones del DOM calzan 1:1 y en orden con los 6 de la cuadricula 230 de HQ.
+    //
+    // OJO: esto NO es volver a emparejar por posicion. La posicion solo sirve para PREGUNTARLE a
+    // HQ como se llama ESE boton; el emparejamiento sigue siendo por nombre. La diferencia con el
+    // bug antiguo es que alli la posicion decidia QUE icono se ponia.
+    //
+    // Todo va en try/catch y son APIs internas del POS (con guion bajo): si un dia cambian, esto
+    // devuelve "" y rotuloPago() sigue funcionando como antes. Nunca debe tirar.
+    //
+    // NO CACHEAR EL RESULTADO. Tienta, porque esto corre en cada pasada del motor. Pero HQ sirve un
+    // layout DISTINTO segun el ancho de la ventana, y al redimensionar cruzando el umbral cambian
+    // las cuadriculas: una cache se quedaria con las del tamano anterior. Es barato de todos modos:
+    // no lee geometria ni escribe nada, asi que no provoca reflow ni mutaciones.
+    private static rotuloDeHQ(boton: HTMLElement): string {
+        try {
+            var coincide: RegExpExecArray | null = /(?:^|\s)button(\d+)(?:\s|$)/.exec(boton.className || "");
+            if (!coincide) return "";
+            var indice: number = parseInt(coincide[1], 10);
+
+            var zona: HTMLElement | null = boton.parentElement;
+            while (zona && !/^ButtonGrid\d+$/.test(zona.id || "")) zona = zona.parentElement;
+            if (!zona) return "";
+            var numero: string = (zona.id || "").replace("ButtonGrid", "");
+
+            var contexto: any = (window as any).Commerce;
+            var proxy: any = contexto
+                && contexto.ApplicationContext
+                && contexto.ApplicationContext.Instance
+                && contexto.ApplicationContext.Instance._tillLayoutProxy;
+            if (!proxy || !proxy._tillLayoutResponse || !proxy._allButtonGrids) return "";
+
+            var zonas: any[] = proxy._tillLayoutResponse.ButtonGridZones || [];
+            var idCuadricula: string = "";
+            for (var i: number = 0; i < zonas.length; i++) {
+                if (zonas[i].ZoneId === "TransactionScreen" + numero) {
+                    idCuadricula = String(zonas[i].ButtonGridId);
+                    break;
+                }
+            }
+            if (!idCuadricula) return "";
+
+            var cuadriculas: any[] = proxy._allButtonGrids || [];
+            for (var j: number = 0; j < cuadriculas.length; j++) {
+                var c: any = cuadriculas[j];
+                var idC: string = String(c.ButtonGridId !== undefined ? c.ButtonGridId : c.Id);
+                if (idC !== idCuadricula) continue;
+                var lista: any[] = c.Buttons || [];
+                if (indice < 0 || indice >= lista.length) return "";
+                return String(lista[indice].DisplayText || "").trim();
+            }
+        } catch (e) { }
+        return "";
+    }
+
+    // Nombre con el que se reconoce un boton de pago. El de HQ manda; el DOM es la red de
+    // seguridad. Ver rotuloDeHQ() para el por que — el title del POS es el TOOLTIP, texto libre.
     private static rotuloPago(boton: HTMLElement): string {
+        var deHQ: string = ThemeEngine.rotuloDeHQ(boton);
+        if (deHQ.length > 0) return deHQ;
+
         var titulo: string = (boton.getAttribute("title") || "").trim();
         if (titulo.length > 0 && titulo.length <= 40) return titulo;
         for (var i: number = 0; i < boton.children.length; i++) {
@@ -899,6 +1137,11 @@ export class ThemeEngine {
     //      PROPIO nombre, asi que por construccion no puede ser el de otro metodo.
     //   3. Si NO se reconoce, se queda con su texto y su imagen nativos y solo recibe el fondo del
     //      tema. Mejor un boton sin icono que un boton con el icono de otro.
+    //
+    // DE DONDE SALE EL NOMBRE: de HQ (DisplayText), no del DOM. Ver rotuloDeHQ(). El title que
+    // pone el POS es el TOOLTIP —texto libre que el negocio edita— y ya rompio este emparejamiento
+    // una vez. Las expresiones de abajo se comparan contra el nombre de la cuadricula de HQ, que es
+    // exactamente lo que se ve en el disenador.
     private static prepararBotones(): void {
         var botones: HTMLElement[] = ThemeEngine.todos("#ButtonGrid4Control .buttonGridButton");
         if (botones.length === 0) return;
@@ -1041,9 +1284,14 @@ export class ThemeEngine {
             }
         }
         
+        // ORDEN IMPORTANTE: primero se ANCLA la zona de pestañas al carrito y luego se mide. Al
+        // reves, ajustarNumpad y repartirPanel medirian la tarjeta en su sitio viejo.
+        ThemeEngine.anclarZonaPestanas();
         ThemeEngine.ajustarNumpad();
         ThemeEngine.acomodarColumnaDerecha();
-        // Solo actua sobre el panel de la pestaña activa; los otros no estan en el DOM.
+        // Se llama a los tres, pero repartirPanel() solo actua sobre el panel VISIBLE. Los otros SI
+        // estan en el DOM (el POS los oculta con display:none, no los borra) y medirlos escribia
+        // geometria basura — ver el guarda al principio de repartirPanel().
         ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
         ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
         ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
@@ -1105,9 +1353,13 @@ export class ThemeEngine {
         
         // Estilos para los botones de pago (las clases sct-p0..sct-p4 ya fueron asignadas en prepararBotones, posiciones manejadas por CSS)
 
+        // ORDEN IMPORTANTE: primero se coloca la zona de pestañas y luego se mide lo de dentro.
+        ThemeEngine.anclarZonaPestanas();
         ThemeEngine.ajustarNumpad();
         ThemeEngine.acomodarColumnaDerecha();
-        // Solo actua sobre el panel de la pestaña activa; los otros no estan en el DOM.
+        // Se llama a los tres, pero repartirPanel() solo actua sobre el panel VISIBLE. Los otros SI
+        // estan en el DOM (el POS los oculta con display:none, no los borra) y medirlos escribia
+        // geometria basura — ver el guarda al principio de repartirPanel().
         ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
         ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
         ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
