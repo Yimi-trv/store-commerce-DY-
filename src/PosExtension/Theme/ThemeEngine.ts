@@ -371,17 +371,30 @@ export class ThemeEngine {
         if (!montos) return;
         var derecha: HTMLElement | null = montos.querySelector(".right") as HTMLElement | null;
         if (!derecha) return;
+        // La fila del total se buscaba comparando el texto EXACTO con "Monto total". En master ese
+        // rotulo es "Importe total", asi que no casaba, la fila no recibia .sct-mt y se quedaba con
+        // los 20px genericos: su tipografia es mas grande y el importe salia cortado. Es el mismo
+        // error de detectar por texto literal que ya aparecio en el panel de cliente y en el bot.
+        //
+        // Ahora: expresion que acepta las dos formas y, si aun asi no encuentra nada, se toma la
+        // ULTIMA fila — que es donde va el total siempre, se llame como se llame y este en el
+        // idioma que este.
         var etiqueta: HTMLElement | null = null;
         var nodos: NodeListOf<Element> = derecha.querySelectorAll("*");
         for (var i: number = 0; i < nodos.length; i++) {
             var nodo: HTMLElement = nodos[i] as HTMLElement;
-            if (nodo.children.length === 0 && (nodo.textContent || "").trim() === "Monto total") {
+            if (nodo.children.length === 0 && /(monto|importe)\s+total/i.test((nodo.textContent || "").trim())) {
                 etiqueta = nodo; break;
             }
         }
-        if (!etiqueta) return;
-        var fila: HTMLElement | null = etiqueta;
-        while (fila && fila.parentElement !== derecha) fila = fila.parentElement;
+        var fila: HTMLElement | null = null;
+        if (etiqueta) {
+            fila = etiqueta;
+            while (fila && fila.parentElement !== derecha) fila = fila.parentElement;
+        }
+        if (!fila && derecha.children.length > 0) {
+            fila = derecha.children[derecha.children.length - 1] as HTMLElement;
+        }
         if (!fila) return;
         fila.classList.add("sct-mt");
         var valores: NodeListOf<Element> = fila.querySelectorAll("*");
@@ -444,45 +457,54 @@ export class ThemeEngine {
 
     // ---------------------------------------------------------------- alineacion de la columna
 
-    // Desplazamiento vertical actual de un elemento, leido de su matriz de transformacion.
-    private static desplazamientoY(elemento: HTMLElement): number {
-        var matriz: string = getComputedStyle(elemento).transform;
-        if (!matriz || matriz === "none") return 0;
-        var partes: RegExpMatchArray | null = matriz.match(/matrix\(([^)]+)\)/);
-        if (!partes) return 0;
-        return parseFloat(partes[1].split(",")[5]) || 0;
+    // Valor actual de `top` de un elemento posicionado, en pixeles.
+    private static topActual(elemento: HTMLElement): number {
+        return parseFloat(getComputedStyle(elemento).top) || 0;
     }
 
-    // Alinea la columna derecha (tarjeta de Boleta y metodos de pago) con la caja de importes.
+    // Acomoda la columna derecha (tarjeta de Boleta y metodos de pago) contra la caja de importes,
+    // y reparte el espacio resultante entre los botones de pago.
     //
-    // Antes esto eran dos numeros fijos en el CSS: translateY(108px) para Boleta y translateY(114px)
-    // para pagos, medidos contra el layout de UAT. En master las zonas caen en otro sitio y los dos
-    // bloques quedaban descolgados: Boleta empezaba 28px por debajo de los importes y NIUBIZ se
-    // pasaba del borde inferior.
+    // POR QUE NO HAY NUMEROS FIJOS AQUI. Antes esto eran valores clavados en el CSS —
+    // translateY(108px) y translateY(114px) en amplio, top:460 y top:565 en compacto, alturas de
+    // 94 y 127— todos medidos contra el layout de UAT. En master las zonas caen en otro sitio y con
+    // otros tamanos: Boleta quedaba descolgada de los importes y NIUBIZ se salia por abajo (25px a
+    // 1024, 6px a 1920). Cualquier constante aqui vuelve a romperse en el siguiente entorno.
     //
-    // Ahora se calcula: Boleta arranca donde arranca #TotalsPanel, y la fila de pagos ACABA donde
-    // acaba #TotalsPanel. Las dos referencias son de la propia pantalla, asi que se adapta a
-    // cualquier layout sin recalibrar.
+    // QUE HACE, en orden:
+    //   1. Boleta arranca donde arranca #TotalsPanel.
+    //   2. La zona de pagos va justo debajo, con un hueco fijo, y ACABA donde acaba #TotalsPanel.
+    //      Asi las dos columnas cierran a la misma altura.
+    //   3. El alto que quede se reparte entre las filas de botones, y el ancho entre sus columnas.
+    //      Las filas y columnas se deducen de la posicion REAL de los botones, no de su orden: el
+    //      "Efectivo" duplicado de master comparte celda con el original y asi cae en su sitio en
+    //      vez de desplazar a los demas.
     //
-    // Es estable: se suma el desplazamiento YA aplicado, asi que cuando esta alineado el calculo da
-    // cero, sale el mismo CSS y no se escribe nada (ver la regla del vigilante en la cabecera).
-    private static alinearColumnaDerecha(): void {
-        var montos: HTMLElement | null = ThemeEngine.q("#TotalsPanel");
-        var boleta: HTMLElement | null = ThemeEngine.q("#CustomControl1");
-        var pagos: HTMLElement | null = ThemeEngine.q("#ButtonGrid4");
+    // Es estable: se parte del `top` ya aplicado, asi que una vez acomodado el calculo da cero,
+    // sale el mismo CSS y no se escribe nada (ver la regla del vigilante en la cabecera).
+    private static acomodarColumnaDerecha(): void {
+        var montos = ThemeEngine.q("#TotalsPanel");
+        var boleta = ThemeEngine.q("#CustomControl1");
+        var pagos = ThemeEngine.q("#ButtonGrid4");
         if (!montos || !boleta || !pagos) return;
 
-        var rMontos: ClientRect = montos.getBoundingClientRect();
-        var rBoleta: ClientRect = boleta.getBoundingClientRect();
-        var rPagos: ClientRect = pagos.getBoundingClientRect();
+        var rMontos = montos.getBoundingClientRect();
+        var rBoleta = boleta.getBoundingClientRect();
+        var rPagos = pagos.getBoundingClientRect();
         if (rMontos.height < 40 || rBoleta.height < 20 || rPagos.height < 20) return;
 
-        var nuevoBoleta: number = Math.round(ThemeEngine.desplazamientoY(boleta) + (rMontos.top - rBoleta.top));
-        var nuevoPagos: number = Math.round(ThemeEngine.desplazamientoY(pagos) + ((rMontos.bottom - rPagos.height) - rPagos.top));
+        var HUECO: number = 8;
+        var topBoleta: number = Math.round(ThemeEngine.topActual(boleta) + (rMontos.top - rBoleta.top));
+        var yPagos: number = rMontos.top + rBoleta.height + HUECO;
+        var topPagos: number = Math.round(ThemeEngine.topActual(pagos) + (yPagos - rPagos.top));
+        var altoPagos: number = Math.round(rMontos.bottom - yPagos);
+        if (altoPagos < 60) return;
 
-        var raiz: string = "body." + CLASE_AMBITO + "." + CLASE_AMPLIO + " ";
-        var css: string = raiz + "#CustomControl1{transform:translateY(" + nuevoBoleta + "px) !important;}\n"
-            + raiz + "#ButtonGrid4{transform:translateY(" + nuevoPagos + "px) !important;}\n";
+        var raiz: string = "body." + CLASE_AMBITO + " ";
+        var css: string = raiz + "#CustomControl1{top:" + topBoleta + "px !important;}\n"
+            + raiz + "#ButtonGrid4{top:" + topPagos + "px !important;}\n"
+            + raiz + "#ButtonGrid4," + raiz + "#ButtonGrid4Control," + raiz + "#ButtonGrid4Control .buttonsContainer"
+            + "{height:" + altoPagos + "px !important;min-height:" + altoPagos + "px !important;max-height:" + altoPagos + "px !important;}\n";
 
         if (!ThemeEngine.estiloAlineacion) {
             ThemeEngine.estiloAlineacion = document.createElement("style");
@@ -491,6 +513,135 @@ export class ThemeEngine {
         }
         if (ThemeEngine.estiloAlineacion.textContent !== css) {
             ThemeEngine.estiloAlineacion.textContent = css;
+        }
+
+        ThemeEngine.repartirBotonesPago(altoPagos, HUECO);
+    }
+
+    // Reparte los botones de un panel del control de pestañas (cliente, transacciones, boleteo)
+    // dentro de su tarjeta.
+    //
+    // POR QUE HACE FALTA. El POS dimensiona el CONTENEDOR de estos paneles al contenido, no a la
+    // zona: medido en master, 232x152 dentro de una tarjeta de 316x310. Si el tema no lo estira,
+    // los botones se quedan pequeños en una esquina. En los pagos no pasa porque alli la zona y el
+    // contenedor son el mismo elemento.
+    //
+    // COMO REPARTE:
+    //   - El ancho se divide entre las columnas reales de la rejilla.
+    //   - Con VARIAS columnas (tiles) el alto sale del ancho por proporcion, no estirando: llenar
+    //     toda la tarjeta daba tiles de 100x151, demasiado altos. La proporcion 1.27 reproduce los
+    //     96x122 que estaban aprobados, pero calculada.
+    //   - Con UNA sola columna (barras de cliente y boleteo) si se reparte todo el alto.
+    //   - Se acota al ancho UTIL de la tarjeta, no al de la zona: la zona es mas ancha y la ultima
+    //     columna se salia por la derecha.
+    private static repartirPanel(idControl: string, proporcion: number): void {
+        var zona = ThemeEngine.q("#" + idControl.replace("Control", ""));
+        var control = ThemeEngine.q("#" + idControl);
+        var tarjeta = ThemeEngine.q("#TabControl .tabContent");
+        if (!zona || !control || !tarjeta) return;
+
+        var botones: HTMLElement[] = ThemeEngine.todos("#" + idControl + " .buttonGridButton");
+        if (botones.length === 0) return;
+
+        var estilosTarjeta = getComputedStyle(tarjeta);
+        var rTarjeta = tarjeta.getBoundingClientRect();
+        var anchoUtil: number = Math.round(rTarjeta.width - (parseFloat(estilosTarjeta.paddingLeft) || 0) - (parseFloat(estilosTarjeta.paddingRight) || 0));
+        var altoUtil: number = Math.round(rTarjeta.height - (parseFloat(estilosTarjeta.paddingTop) || 0) - (parseFloat(estilosTarjeta.paddingBottom) || 0));
+        var anchoZona: number = Math.round(zona.getBoundingClientRect().width);
+        var ancho: number = Math.min(anchoZona, anchoUtil);
+        if (ancho < 100 || altoUtil < 80) return;
+
+        var HUECO: number = 8;
+        var filas: number[] = [];
+        var columnas: number[] = [];
+        var i: number = 0;
+        for (i = 0; i < botones.length; i++) {
+            var r = botones[i].getBoundingClientRect();
+            var y: number = Math.round(r.top);
+            var x: number = Math.round(r.left);
+            if (filas.indexOf(y) < 0) filas.push(y);
+            if (columnas.indexOf(x) < 0) columnas.push(x);
+        }
+        filas.sort(function (a: number, b: number): number { return a - b; });
+        columnas.sort(function (a: number, b: number): number { return a - b; });
+        if (filas.length === 0 || columnas.length === 0) return;
+
+        var anchoBoton: number = Math.floor((ancho - (columnas.length - 1) * HUECO) / columnas.length);
+        var altoMaximo: number = Math.floor((altoUtil - (filas.length - 1) * HUECO) / filas.length);
+        var altoBoton: number = columnas.length > 1 ? Math.round(anchoBoton * proporcion) : altoMaximo;
+        if (altoBoton > altoMaximo) altoBoton = altoMaximo;
+        if (altoBoton < 30) return;
+        var altoTotal: number = filas.length * altoBoton + (filas.length - 1) * HUECO;
+
+        ThemeEngine.establecer("#" + idControl + ", #" + idControl + " .buttonsContainer", {
+            "width": ancho + "px",
+            "height": altoTotal + "px"
+        });
+
+        for (i = 0; i < botones.length; i++) {
+            var rect = botones[i].getBoundingClientRect();
+            var fila: number = filas.indexOf(Math.round(rect.top));
+            var columna: number = columnas.indexOf(Math.round(rect.left));
+            if (fila < 0) fila = 0;
+            if (columna < 0) columna = 0;
+            ThemeEngine.estilo(botones[i], {
+                "position": "absolute",
+                "left": (columna * (anchoBoton + HUECO)) + "px",
+                "top": (fila * (altoBoton + HUECO)) + "px",
+                "width": anchoBoton + "px",
+                "height": altoBoton + "px",
+                "min-height": altoBoton + "px",
+                "max-height": altoBoton + "px"
+            });
+        }
+    }
+
+    // Reparte los botones de pago dentro de su zona: las filas se llevan el alto y las columnas el
+    // ancho. Filas y columnas salen de la posicion real de cada boton, no de su indice.
+    private static repartirBotonesPago(altoZona: number, hueco: number): void {
+        var contenedor = ThemeEngine.q("#ButtonGrid4Control .buttonsContainer") || ThemeEngine.q("#ButtonGrid4Control");
+        if (!contenedor) return;
+        var botones: HTMLElement[] = ThemeEngine.todos("#ButtonGrid4Control .buttonGridButton");
+        if (botones.length === 0) return;
+
+        var ancho: number = Math.round(contenedor.getBoundingClientRect().width);
+        if (ancho < 80) return;
+
+        var filas: number[] = [];
+        var i: number = 0;
+        for (i = 0; i < botones.length; i++) {
+            var y: number = Math.round(botones[i].getBoundingClientRect().top);
+            if (filas.indexOf(y) < 0) filas.push(y);
+        }
+        filas.sort(function (a: number, b: number): number { return a - b; });
+        if (filas.length === 0) return;
+
+        var altoBoton: number = Math.floor((altoZona - (filas.length - 1) * hueco) / filas.length);
+        if (altoBoton < 24) return;
+
+        for (var f: number = 0; f < filas.length; f++) {
+            var deLaFila: HTMLElement[] = [];
+            var columnas: number[] = [];
+            for (i = 0; i < botones.length; i++) {
+                if (Math.round(botones[i].getBoundingClientRect().top) !== filas[f]) continue;
+                deLaFila.push(botones[i]);
+                var x: number = Math.round(botones[i].getBoundingClientRect().left);
+                if (columnas.indexOf(x) < 0) columnas.push(x);
+            }
+            columnas.sort(function (a: number, b: number): number { return a - b; });
+            var anchoBoton: number = Math.floor((ancho - (columnas.length - 1) * hueco) / columnas.length);
+            for (i = 0; i < deLaFila.length; i++) {
+                var col: number = columnas.indexOf(Math.round(deLaFila[i].getBoundingClientRect().left));
+                if (col < 0) col = 0;
+                ThemeEngine.estilo(deLaFila[i], {
+                    "top": (f * (altoBoton + hueco)) + "px",
+                    "left": (col * (anchoBoton + hueco)) + "px",
+                    "width": anchoBoton + "px",
+                    "height": altoBoton + "px",
+                    "min-height": altoBoton + "px",
+                    "max-height": altoBoton + "px"
+                });
+            }
         }
     }
 
@@ -891,6 +1042,11 @@ export class ThemeEngine {
         }
         
         ThemeEngine.ajustarNumpad();
+        ThemeEngine.acomodarColumnaDerecha();
+        // Solo actua sobre el panel de la pestaña activa; los otros no estan en el DOM.
+        ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
+        ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
+        ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
         ThemeEngine.solicitarRecalculoPestanas();
     }
 
@@ -950,7 +1106,11 @@ export class ThemeEngine {
         // Estilos para los botones de pago (las clases sct-p0..sct-p4 ya fueron asignadas en prepararBotones, posiciones manejadas por CSS)
 
         ThemeEngine.ajustarNumpad();
-        ThemeEngine.alinearColumnaDerecha();
+        ThemeEngine.acomodarColumnaDerecha();
+        // Solo actua sobre el panel de la pestaña activa; los otros no estan en el DOM.
+        ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
+        ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
+        ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
     }
 
     // ---------------------------------------------------------------- ciclo

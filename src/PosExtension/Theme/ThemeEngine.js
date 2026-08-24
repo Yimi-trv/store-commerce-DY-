@@ -260,16 +260,20 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     var nodos = derecha.querySelectorAll("*");
                     for (var i = 0; i < nodos.length; i++) {
                         var nodo = nodos[i];
-                        if (nodo.children.length === 0 && (nodo.textContent || "").trim() === "Monto total") {
+                        if (nodo.children.length === 0 && /(monto|importe)\s+total/i.test((nodo.textContent || "").trim())) {
                             etiqueta = nodo;
                             break;
                         }
                     }
-                    if (!etiqueta)
-                        return;
-                    var fila = etiqueta;
-                    while (fila && fila.parentElement !== derecha)
-                        fila = fila.parentElement;
+                    var fila = null;
+                    if (etiqueta) {
+                        fila = etiqueta;
+                        while (fila && fila.parentElement !== derecha)
+                            fila = fila.parentElement;
+                    }
+                    if (!fila && derecha.children.length > 0) {
+                        fila = derecha.children[derecha.children.length - 1];
+                    }
                     if (!fila)
                         return;
                     fila.classList.add("sct-mt");
@@ -311,16 +315,10 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             marcados[i].classList.remove(clase);
                     }
                 };
-                ThemeEngine.desplazamientoY = function (elemento) {
-                    var matriz = getComputedStyle(elemento).transform;
-                    if (!matriz || matriz === "none")
-                        return 0;
-                    var partes = matriz.match(/matrix\(([^)]+)\)/);
-                    if (!partes)
-                        return 0;
-                    return parseFloat(partes[1].split(",")[5]) || 0;
+                ThemeEngine.topActual = function (elemento) {
+                    return parseFloat(getComputedStyle(elemento).top) || 0;
                 };
-                ThemeEngine.alinearColumnaDerecha = function () {
+                ThemeEngine.acomodarColumnaDerecha = function () {
                     var montos = ThemeEngine.q("#TotalsPanel");
                     var boleta = ThemeEngine.q("#CustomControl1");
                     var pagos = ThemeEngine.q("#ButtonGrid4");
@@ -331,11 +329,18 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     var rPagos = pagos.getBoundingClientRect();
                     if (rMontos.height < 40 || rBoleta.height < 20 || rPagos.height < 20)
                         return;
-                    var nuevoBoleta = Math.round(ThemeEngine.desplazamientoY(boleta) + (rMontos.top - rBoleta.top));
-                    var nuevoPagos = Math.round(ThemeEngine.desplazamientoY(pagos) + ((rMontos.bottom - rPagos.height) - rPagos.top));
-                    var raiz = "body." + ThemeAssets_1.CLASE_AMBITO + "." + ThemeAssets_1.CLASE_AMPLIO + " ";
-                    var css = raiz + "#CustomControl1{transform:translateY(" + nuevoBoleta + "px) !important;}\n"
-                        + raiz + "#ButtonGrid4{transform:translateY(" + nuevoPagos + "px) !important;}\n";
+                    var HUECO = 8;
+                    var topBoleta = Math.round(ThemeEngine.topActual(boleta) + (rMontos.top - rBoleta.top));
+                    var yPagos = rMontos.top + rBoleta.height + HUECO;
+                    var topPagos = Math.round(ThemeEngine.topActual(pagos) + (yPagos - rPagos.top));
+                    var altoPagos = Math.round(rMontos.bottom - yPagos);
+                    if (altoPagos < 60)
+                        return;
+                    var raiz = "body." + ThemeAssets_1.CLASE_AMBITO + " ";
+                    var css = raiz + "#CustomControl1{top:" + topBoleta + "px !important;}\n"
+                        + raiz + "#ButtonGrid4{top:" + topPagos + "px !important;}\n"
+                        + raiz + "#ButtonGrid4," + raiz + "#ButtonGrid4Control," + raiz + "#ButtonGrid4Control .buttonsContainer"
+                        + "{height:" + altoPagos + "px !important;min-height:" + altoPagos + "px !important;max-height:" + altoPagos + "px !important;}\n";
                     if (!ThemeEngine.estiloAlineacion) {
                         ThemeEngine.estiloAlineacion = document.createElement("style");
                         ThemeEngine.estiloAlineacion.setAttribute("id", "sct-alineacion");
@@ -343,6 +348,123 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     }
                     if (ThemeEngine.estiloAlineacion.textContent !== css) {
                         ThemeEngine.estiloAlineacion.textContent = css;
+                    }
+                    ThemeEngine.repartirBotonesPago(altoPagos, HUECO);
+                };
+                ThemeEngine.repartirPanel = function (idControl, proporcion) {
+                    var zona = ThemeEngine.q("#" + idControl.replace("Control", ""));
+                    var control = ThemeEngine.q("#" + idControl);
+                    var tarjeta = ThemeEngine.q("#TabControl .tabContent");
+                    if (!zona || !control || !tarjeta)
+                        return;
+                    var botones = ThemeEngine.todos("#" + idControl + " .buttonGridButton");
+                    if (botones.length === 0)
+                        return;
+                    var estilosTarjeta = getComputedStyle(tarjeta);
+                    var rTarjeta = tarjeta.getBoundingClientRect();
+                    var anchoUtil = Math.round(rTarjeta.width - (parseFloat(estilosTarjeta.paddingLeft) || 0) - (parseFloat(estilosTarjeta.paddingRight) || 0));
+                    var altoUtil = Math.round(rTarjeta.height - (parseFloat(estilosTarjeta.paddingTop) || 0) - (parseFloat(estilosTarjeta.paddingBottom) || 0));
+                    var anchoZona = Math.round(zona.getBoundingClientRect().width);
+                    var ancho = Math.min(anchoZona, anchoUtil);
+                    if (ancho < 100 || altoUtil < 80)
+                        return;
+                    var HUECO = 8;
+                    var filas = [];
+                    var columnas = [];
+                    var i = 0;
+                    for (i = 0; i < botones.length; i++) {
+                        var r = botones[i].getBoundingClientRect();
+                        var y = Math.round(r.top);
+                        var x = Math.round(r.left);
+                        if (filas.indexOf(y) < 0)
+                            filas.push(y);
+                        if (columnas.indexOf(x) < 0)
+                            columnas.push(x);
+                    }
+                    filas.sort(function (a, b) { return a - b; });
+                    columnas.sort(function (a, b) { return a - b; });
+                    if (filas.length === 0 || columnas.length === 0)
+                        return;
+                    var anchoBoton = Math.floor((ancho - (columnas.length - 1) * HUECO) / columnas.length);
+                    var altoMaximo = Math.floor((altoUtil - (filas.length - 1) * HUECO) / filas.length);
+                    var altoBoton = columnas.length > 1 ? Math.round(anchoBoton * proporcion) : altoMaximo;
+                    if (altoBoton > altoMaximo)
+                        altoBoton = altoMaximo;
+                    if (altoBoton < 30)
+                        return;
+                    var altoTotal = filas.length * altoBoton + (filas.length - 1) * HUECO;
+                    ThemeEngine.establecer("#" + idControl + ", #" + idControl + " .buttonsContainer", {
+                        "width": ancho + "px",
+                        "height": altoTotal + "px"
+                    });
+                    for (i = 0; i < botones.length; i++) {
+                        var rect = botones[i].getBoundingClientRect();
+                        var fila = filas.indexOf(Math.round(rect.top));
+                        var columna = columnas.indexOf(Math.round(rect.left));
+                        if (fila < 0)
+                            fila = 0;
+                        if (columna < 0)
+                            columna = 0;
+                        ThemeEngine.estilo(botones[i], {
+                            "position": "absolute",
+                            "left": (columna * (anchoBoton + HUECO)) + "px",
+                            "top": (fila * (altoBoton + HUECO)) + "px",
+                            "width": anchoBoton + "px",
+                            "height": altoBoton + "px",
+                            "min-height": altoBoton + "px",
+                            "max-height": altoBoton + "px"
+                        });
+                    }
+                };
+                ThemeEngine.repartirBotonesPago = function (altoZona, hueco) {
+                    var contenedor = ThemeEngine.q("#ButtonGrid4Control .buttonsContainer") || ThemeEngine.q("#ButtonGrid4Control");
+                    if (!contenedor)
+                        return;
+                    var botones = ThemeEngine.todos("#ButtonGrid4Control .buttonGridButton");
+                    if (botones.length === 0)
+                        return;
+                    var ancho = Math.round(contenedor.getBoundingClientRect().width);
+                    if (ancho < 80)
+                        return;
+                    var filas = [];
+                    var i = 0;
+                    for (i = 0; i < botones.length; i++) {
+                        var y = Math.round(botones[i].getBoundingClientRect().top);
+                        if (filas.indexOf(y) < 0)
+                            filas.push(y);
+                    }
+                    filas.sort(function (a, b) { return a - b; });
+                    if (filas.length === 0)
+                        return;
+                    var altoBoton = Math.floor((altoZona - (filas.length - 1) * hueco) / filas.length);
+                    if (altoBoton < 24)
+                        return;
+                    for (var f = 0; f < filas.length; f++) {
+                        var deLaFila = [];
+                        var columnas = [];
+                        for (i = 0; i < botones.length; i++) {
+                            if (Math.round(botones[i].getBoundingClientRect().top) !== filas[f])
+                                continue;
+                            deLaFila.push(botones[i]);
+                            var x = Math.round(botones[i].getBoundingClientRect().left);
+                            if (columnas.indexOf(x) < 0)
+                                columnas.push(x);
+                        }
+                        columnas.sort(function (a, b) { return a - b; });
+                        var anchoBoton = Math.floor((ancho - (columnas.length - 1) * hueco) / columnas.length);
+                        for (i = 0; i < deLaFila.length; i++) {
+                            var col = columnas.indexOf(Math.round(deLaFila[i].getBoundingClientRect().left));
+                            if (col < 0)
+                                col = 0;
+                            ThemeEngine.estilo(deLaFila[i], {
+                                "top": (f * (altoBoton + hueco)) + "px",
+                                "left": (col * (anchoBoton + hueco)) + "px",
+                                "width": anchoBoton + "px",
+                                "height": altoBoton + "px",
+                                "min-height": altoBoton + "px",
+                                "max-height": altoBoton + "px"
+                            });
+                        }
                     }
                 };
                 ThemeEngine.ajustarNumpad = function () {
@@ -605,6 +727,10 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         }
                     }
                     ThemeEngine.ajustarNumpad();
+                    ThemeEngine.acomodarColumnaDerecha();
+                    ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
+                    ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
+                    ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
                     ThemeEngine.solicitarRecalculoPestanas();
                 };
                 ThemeEngine.aplicarLayoutAmplio = function () {
@@ -658,7 +784,10 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     }
                     ThemeEngine.decorarBoleto(ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton"));
                     ThemeEngine.ajustarNumpad();
-                    ThemeEngine.alinearColumnaDerecha();
+                    ThemeEngine.acomodarColumnaDerecha();
+                    ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
+                    ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
+                    ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
                 };
                 ThemeEngine.aplicarTodo = function () {
                     if (!ThemeAssets_1.TEMA_ACTIVO)
