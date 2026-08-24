@@ -3,6 +3,7 @@ import { GetCurrentCartClientRequest, GetCurrentCartClientResponse } from "PosAp
 import { GetCustomerClientRequest, GetCustomerClientResponse } from "PosApi/Consume/Customer";
 import { ShowMessageDialogClientRequest, ShowMessageDialogClientResponse } from "PosApi/Consume/Dialogs";
 import SunatCustomerService from "./SunatCustomerService";
+import { GetCustomerGroupsRequest, GetCustomerGroupsResponse } from "../DataService/CustomerGroupsRequest";
 
 /**
  * REGLA FISCAL: EL COMPROBANTE DEBE CORRESPONDER AL DOCUMENTO DEL CLIENTE
@@ -30,6 +31,12 @@ import SunatCustomerService from "./SunatCustomerService";
  * cliente. El paquete DP es código cerrado que no se modifica (regla de oro del proyecto),
  * así que la validación vive aquí.
  */
+/** Lo que hace falta saber del cliente para decidir el comprobante. */
+interface IDatosFiscales {
+    documento: string;
+    grupo: string;
+}
+
 export class DocumentTypeRule {
 
     /** Valores literales que usa el control de DP. */
@@ -43,7 +50,25 @@ export class DocumentTypeRule {
      * (al pagar y al cerrar): sin caché eran dos lecturas idénticas seguidas. Vive en memoria
      * y se pierde al recargar el POS, que es lo correcto — no se persisten datos de clientes.
      */
-    private static _documentCache: { [accountNumber: string]: string } = {};
+    private static _documentCache: { [accountNumber: string]: IDatosFiscales } = {};
+
+    /**
+     * Numeros de los grupos de cliente que son "Recibo por Honorarios", resueltos del canal.
+     *
+     * No se escribe el numero a mano (hoy es el 70) porque es configuracion del canal y puede
+     * cambiar en HQ sin avisar. Se busca por NOMBRE, que es como lo nombra el negocio en la
+     * instruccion que dio origen a esta excepcion. null = todavia no se consulto.
+     */
+    private static _gruposDeHonorarios: string[] | null = null;
+
+    /**
+     * Medio de pago "cuenta de cliente", aprendido en el primer cobro a cuenta de la sesion.
+     *
+     * Al cerrar la transaccion ya no hay `tenderType` que mirar, solo las lineas de pago del
+     * carrito, y estas identifican el medio por su id de canal. Se aprende en vez de escribirse
+     * a mano por lo mismo que los grupos: la numeracion es configuracion, no una constante.
+     */
+    private static _medioDeCuentaDeCliente: string = "";
 
     /**
      * Evalúa la venta. Resuelve el motivo del bloqueo, o cadena vacía si es válida.
@@ -55,7 +80,7 @@ export class DocumentTypeRule {
      * NUNCA lanza: ante cualquier fallo de lectura devuelve "" y la venta sigue. Es el mismo
      * criterio de todo el proyecto — un problema técnico no detiene una caja.
      */
-    public static evaluateCart(context: any, cartFromTrigger: any): Promise<string> {
+    public static evaluateCart(context: any, cartFromTrigger: any, esPagoACuentaDeCliente: boolean): Promise<string> {
         const correlationId: string = context.logger.getNewCorrelationId();
 
         const cartPromise: Promise<any> = cartFromTrigger
@@ -87,26 +112,30 @@ export class DocumentTypeRule {
                         : "");
                 }
 
-                // El documento ya conocido evita releer el cliente en el segundo punto de
-                // control: al cobrar y al cerrar se preguntaba lo mismo dos veces.
-                const cached: string = DocumentTypeRule._documentCache[accountNumber];
+                const cached: IDatosFiscales = DocumentTypeRule._documentCache[accountNumber];
 
-                if (typeof cached === "string") {
-                    return Promise.resolve(
-                        DocumentTypeRule._evaluateDocument(document, cached, accountNumber, context));
+                // Lo ya conocido evita releer el cliente en el segundo punto de control: al
+                // cobrar y al cerrar se preguntaba lo mismo dos veces.
+                if (cached) {
+                    return DocumentTypeRule._evaluateDocument(
+                        document, cached, accountNumber, context, esPagoACuentaDeCliente);
                 }
 
                 return context.runtime
                     .executeAsync(new GetCustomerClientRequest<GetCustomerClientResponse>(accountNumber, correlationId))
-                    .then((customerResponse: any): string => {
+                    .then((customerResponse: any): Promise<string> => {
                         const customer: ProxyEntities.Customer =
                             customerResponse && customerResponse.data && customerResponse.data.result;
                         const service: SunatCustomerService = new SunatCustomerService();
-                        const documentNumber: string = customer ? service.getDocumentNumber(customer) : "";
+                        const datos: IDatosFiscales = {
+                            documento: customer ? service.getDocumentNumber(customer) : "",
+                            grupo: (customer && (customer as any).CustomerGroup) || ""
+                        };
 
-                        DocumentTypeRule._documentCache[accountNumber] = documentNumber;
+                        DocumentTypeRule._documentCache[accountNumber] = datos;
 
-                        return DocumentTypeRule._evaluateDocument(document, documentNumber, accountNumber, context);
+                        return DocumentTypeRule._evaluateDocument(
+                            document, datos, accountNumber, context, esPagoACuentaDeCliente);
                     });
             })
             .catch((reason: any): string => {
@@ -121,8 +150,15 @@ export class DocumentTypeRule {
      * Decide con el documento fiscal del cliente, NO con su CustomerTypeValue: un RUC 10 es
      * persona natural y sí lleva factura.
      */
-    private static _evaluateDocument(document: string, documentNumber: string, accountNumber: string, context: any): string {
+    private static _evaluateDocument(
+        document: string,
+        datos: IDatosFiscales,
+        accountNumber: string,
+        context: any,
+        esPagoACuentaDeCliente: boolean): Promise<string> {
+
         const service: SunatCustomerService = new SunatCustomerService();
+        const documentNumber: string = datos.documento;
         const documentType: string | null = service.getDocumentType(documentNumber);
         const hasRuc: boolean = documentType === "RUC";
 
@@ -130,22 +166,148 @@ export class DocumentTypeRule {
             "DocumentTypeRule: comprobante=" + document
             + " | cuenta=" + accountNumber
             + " | documento=" + (documentNumber || "(sin documento)")
-            + " | tipo=" + (documentType || "(ninguno)"));
+            + " | tipo=" + (documentType || "(ninguno)")
+            + " | grupo=" + (datos.grupo || "(sin grupo)")
+            + " | a cuenta de cliente=" + esPagoACuentaDeCliente);
 
         if (document === DocumentTypeRule.BOLETA && hasRuc) {
-            return "El cliente " + accountNumber + " tiene RUC " + documentNumber + "."
+            const bloqueo: string = "El cliente " + accountNumber + " tiene RUC " + documentNumber + "."
                 + "\n\nA un cliente con RUC se le emite FACTURA, no boleta."
                 + "\n\nCambie el comprobante a Factura, o asigne a la venta un cliente sin RUC.";
+
+            // EXCEPCION DEL NEGOCIO, SOLO EN EL COBRO A CUENTA DE CLIENTE:
+            // "Empleado con RUC puede hacer boleta o factura. Verificar que el grupo de cliente
+            // sea EMPLEADOS/Recibo por Honorarios."
+            //
+            // Es un trabajador que factura por recibo por honorarios: tiene RUC porque emite
+            // recibos, no porque sea una empresa. Cobrarle a su cuenta con boleta es correcto.
+            // La excepcion NO se extiende a la venta normal: alli la regla sigue estricta.
+            if (!esPagoACuentaDeCliente) {
+                return Promise.resolve(bloqueo);
+            }
+
+            return DocumentTypeRule._esEmpleadoPorHonorarios(context, datos.grupo)
+                .then((esEmpleado: boolean): string => {
+                    if (!esEmpleado) {
+                        return bloqueo;
+                    }
+
+                    context.logger.logInformational(
+                        "DocumentTypeRule: " + accountNumber + " es empleado por Recibo por Honorarios"
+                        + " (grupo " + datos.grupo + ") y se cobra a su cuenta: la boleta con RUC se admite.");
+                    return "";
+                });
         }
 
         if (document === DocumentTypeRule.FACTURA && !hasRuc) {
-            return "El cliente " + accountNumber
+            return Promise.resolve("El cliente " + accountNumber
                 + (documentNumber ? " tiene el documento " + documentNumber + ", que no es un RUC." : " no tiene RUC registrado.")
                 + "\n\nLa FACTURA exige un cliente con RUC."
-                + "\n\nCambie el comprobante a Boleta, o asigne a la venta un cliente con RUC.";
+                + "\n\nCambie el comprobante a Boleta, o asigne a la venta un cliente con RUC.");
         }
 
-        return "";
+        return Promise.resolve("");
+    }
+
+    /** ¿El grupo del cliente es uno de los de "Recibo por Honorarios" del canal? */
+    private static _esEmpleadoPorHonorarios(context: any, grupo: string): Promise<boolean> {
+        if (!grupo) {
+            return Promise.resolve(false);
+        }
+
+        return DocumentTypeRule._cargarGruposDeHonorarios(context)
+            .then((grupos: string[]): boolean => grupos.indexOf(grupo.toString()) >= 0);
+    }
+
+    /**
+     * Resuelve del canal que grupos son "Recibo por Honorarios", una vez por sesion.
+     *
+     * Ante un fallo NO se cachea la respuesta vacia: un error de red pasajero dejaria la
+     * excepcion apagada el resto del turno, y el cajero no tendria forma de saber por que.
+     */
+    private static _cargarGruposDeHonorarios(context: any): Promise<string[]> {
+        if (DocumentTypeRule._gruposDeHonorarios) {
+            return Promise.resolve(DocumentTypeRule._gruposDeHonorarios);
+        }
+
+        return context.runtime
+            .executeAsync(new GetCustomerGroupsRequest<GetCustomerGroupsResponse>())
+            .then((response: any): string[] => {
+                const grupos: any[] = (response && response.data && response.data.result) || [];
+                const encontrados: string[] = [];
+
+                for (let i: number = 0; i < grupos.length; i++) {
+                    const nombre: string = DocumentTypeRule._sinAcentos(grupos[i].CustomerGroupName || "");
+
+                    if (nombre.indexOf("HONORARIO") >= 0) {
+                        encontrados.push((grupos[i].CustomerGroupNumber || "").toString());
+                    }
+                }
+
+                DocumentTypeRule._gruposDeHonorarios = encontrados;
+                context.logger.logInformational(
+                    "DocumentTypeRule: grupos de Recibo por Honorarios del canal: "
+                    + (encontrados.join(", ") || "(ninguno)"));
+                return encontrados;
+            })
+            .catch((reason: any): string[] => {
+                context.logger.logError(
+                    "DocumentTypeRule: no se pudieron leer los grupos de cliente; la excepcion de"
+                    + " empleados no se aplica esta vez: " + String(reason));
+                return [];
+            });
+    }
+
+    /** Mayusculas sin acentos, para comparar nombres escritos de cualquier forma. */
+    private static _sinAcentos(texto: string): string {
+        const con: string = "ÁÀÄÂÉÈËÊÍÌÏÎÓÒÖÔÚÙÜÛÑáàäâéèëêíìïîóòöôúùüûñ";
+        const sin: string = "AAAAEEEEIIIIOOOOUUUUNAAAAEEEEIIIIOOOOUUUUN";
+        let salida: string = "";
+
+        for (let i: number = 0; i < texto.length; i++) {
+            const pos: number = con.indexOf(texto.charAt(i));
+            salida += pos >= 0 ? sin.charAt(pos) : texto.charAt(i);
+        }
+
+        return salida.toUpperCase();
+    }
+
+    /** Se aprende del primer cobro a cuenta; ver _medioDeCuentaDeCliente. */
+    public static recordarMedioDeCuentaDeCliente(tenderTypeId: string): void {
+        if (tenderTypeId) {
+            DocumentTypeRule._medioDeCuentaDeCliente = tenderTypeId.toString();
+        }
+    }
+
+    /**
+     * ¿Este carrito se cobro a cuenta de cliente?
+     *
+     * Se pregunta al cerrar la transaccion, cuando ya no hay `tenderType`. Dos señales, y basta
+     * con una: el medio aprendido en el cobro, o una linea de pago que lleve cuenta de cliente
+     * —solo el pago a cuenta la lleva—. La segunda sobrevive a un recargo del POS a mitad de la
+     * venta, que dejaria la primera en blanco y bloquearia el cierre de una venta ya cobrada.
+     */
+    public static carritoPagaACuentaDeCliente(cart: any): boolean {
+        const lineas: any[] = (cart && cart.TenderLines) || [];
+
+        for (let i: number = 0; i < lineas.length; i++) {
+            const linea: any = lineas[i];
+
+            if (!linea || linea.IsVoided) {
+                continue;
+            }
+
+            if (DocumentTypeRule._medioDeCuentaDeCliente
+                && (linea.TenderTypeId || "").toString() === DocumentTypeRule._medioDeCuentaDeCliente) {
+                return true;
+            }
+
+            if (linea.CustomerId) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

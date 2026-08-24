@@ -34,7 +34,13 @@ System.register(["PosApi/Extend/Triggers/PaymentTriggers", "../Services/Document
                 }
                 PrePaymentDocumentTypeTrigger.prototype.execute = function (options) {
                     var _this = this;
-                    return DocumentTypeRule_1.default.evaluateCart(this.context, options ? options.cart : null)
+                    var medio = options ? options.tenderType : null;
+                    var esPagoACuenta = !!(medio
+                        && medio.OperationId === PrePaymentDocumentTypeTrigger.PAY_CUSTOMER_ACCOUNT_OPERATION_ID);
+                    if (esPagoACuenta) {
+                        DocumentTypeRule_1.default.recordarMedioDeCuentaDeCliente(medio.TenderTypeId || "");
+                    }
+                    return DocumentTypeRule_1.default.evaluateCart(this.context, options ? options.cart : null, esPagoACuenta)
                         .then(function (reason) {
                         if (!reason) {
                             return Promise.resolve({ canceled: false });
@@ -46,6 +52,7 @@ System.register(["PosApi/Extend/Triggers/PaymentTriggers", "../Services/Document
                         });
                     });
                 };
+                PrePaymentDocumentTypeTrigger.PAY_CUSTOMER_ACCOUNT_OPERATION_ID = 202;
                 return PrePaymentDocumentTypeTrigger;
             }(PaymentTriggers_1.PrePaymentTrigger));
             exports_1("default", PrePaymentDocumentTypeTrigger);

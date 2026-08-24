@@ -16,9 +16,22 @@ import DocumentTypeRule from "../Services/DocumentTypeRule";
  */
 export default class PrePaymentDocumentTypeTrigger extends PrePaymentTrigger {
 
+    /** Operacion 202 = "Pay customer account". Es la que hay detras de "A cuenta de terceros". */
+    private static readonly PAY_CUSTOMER_ACCOUNT_OPERATION_ID: number = 202;
+
     public execute(options: IPrePaymentTriggerOptions): Promise<ClientEntities.ICancelable> {
+        // Se identifica por la OPERACION del medio de pago, no por su id de canal: la operacion
+        // es estandar del POS y el id es configuracion que HQ puede cambiar.
+        const medio: any = options ? (options as any).tenderType : null;
+        const esPagoACuenta: boolean = !!(medio
+            && medio.OperationId === PrePaymentDocumentTypeTrigger.PAY_CUSTOMER_ACCOUNT_OPERATION_ID);
+
+        if (esPagoACuenta) {
+            DocumentTypeRule.recordarMedioDeCuentaDeCliente(medio.TenderTypeId || "");
+        }
+
         // options.cart ya trae el carrito: pedirlo otra vez era una ida y vuelta por cobro.
-        return DocumentTypeRule.evaluateCart(this.context, options ? options.cart : null)
+        return DocumentTypeRule.evaluateCart(this.context, options ? options.cart : null, esPagoACuenta)
             .then((reason: string): Promise<ClientEntities.ICancelable> => {
                 if (!reason) {
                     return Promise.resolve({ canceled: false });

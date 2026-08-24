@@ -17,7 +17,11 @@ export default class PreEndTransactionDocumentTypeTrigger extends PreEndTransact
 
     public execute(options: IPreEndTransactionTriggerOptions): Promise<ClientEntities.ICancelable> {
         // options.cart ya trae el carrito: pedirlo otra vez era una ida y vuelta por cierre.
-        return DocumentTypeRule.evaluateCart(this.context, options ? options.cart : null)
+        // Aqui ya no hay medio de pago que mirar, asi que se deduce de las lineas del carrito.
+        const cart: any = options ? options.cart : null;
+
+        return DocumentTypeRule.evaluateCart(
+            this.context, cart, DocumentTypeRule.carritoPagaACuentaDeCliente(cart))
             .then((reason: string): Promise<ClientEntities.ICancelable> => {
                 if (!reason) {
                     return Promise.resolve({ canceled: false });
