@@ -181,7 +181,57 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         actual = document.createElement("i");
                         boton.insertBefore(actual, boton.firstChild);
                     }
-                    actual.className = "sct-ic " + clase;
+                    var nueva = "sct-ic " + clase;
+                    if (actual.className !== nueva)
+                        actual.className = nueva;
+                };
+                ThemeEngine.cuadriculaContenedora = function (desde) {
+                    var actual = desde;
+                    while (actual) {
+                        if (/^ButtonGrid\d+Control$/.test(actual.id || ""))
+                            return actual;
+                        actual = actual.parentElement;
+                    }
+                    return null;
+                };
+                ThemeEngine.alBajarPuntero = function (evento) {
+                    try {
+                        if (evento.pointerType === "mouse")
+                            return;
+                        var destino = evento.target;
+                        if (!destino || destino.nodeType !== 1)
+                            return;
+                        if (!ThemeEngine.cuadriculaContenedora(destino))
+                            return;
+                        var ahora = evento.timeStamp || 0;
+                        if (ThemeEngine.punteroActivo >= 0
+                            && (ahora - ThemeEngine.marcaPuntero) > ThemeEngine.MS_SUELTA_PUNTERO) {
+                            ThemeEngine.punteroActivo = -1;
+                        }
+                        if (ThemeEngine.punteroActivo < 0) {
+                            ThemeEngine.punteroActivo = evento.pointerId;
+                            ThemeEngine.marcaPuntero = ahora;
+                            return;
+                        }
+                        if (ThemeEngine.punteroActivo === evento.pointerId)
+                            return;
+                        evento.preventDefault();
+                        evento.stopPropagation();
+                    }
+                    catch (e) { }
+                };
+                ThemeEngine.alSoltarPuntero = function (evento) {
+                    try {
+                        if (ThemeEngine.punteroActivo === evento.pointerId)
+                            ThemeEngine.punteroActivo = -1;
+                    }
+                    catch (e) { }
+                };
+                ThemeEngine.vigilarToquesMultiples = function () {
+                    document.addEventListener("pointerdown", ThemeEngine.alBajarPuntero, true);
+                    document.addEventListener("pointerup", ThemeEngine.alSoltarPuntero, true);
+                    document.addEventListener("pointercancel", ThemeEngine.alSoltarPuntero, true);
+                    window.addEventListener("blur", function () { ThemeEngine.punteroActivo = -1; });
                 };
                 ThemeEngine.ancestroTarjeta = function (desde) {
                     var actual = desde;
@@ -351,6 +401,51 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     }
                     ThemeEngine.repartirBotonesPago(altoPagos, HUECO);
                 };
+                ThemeEngine.repartirPorHQ = function (idControl, botones, celdas, ancho, altoUtil, proporcion, hueco) {
+                    var columnas = 1;
+                    var filas = 1;
+                    var i = 0;
+                    for (i = 0; i < celdas.length; i++) {
+                        var fin = celdas[i].columna + celdas[i].ancho - 1;
+                        if (fin > columnas)
+                            columnas = fin;
+                        if (celdas[i].fila > filas)
+                            filas = celdas[i].fila;
+                    }
+                    var barras = true;
+                    for (i = 0; i < celdas.length; i++) {
+                        if (celdas[i].ancho < columnas) {
+                            barras = false;
+                            break;
+                        }
+                    }
+                    var anchoColumna = Math.floor((ancho - (columnas - 1) * hueco) / columnas);
+                    var altoMaximo = Math.floor((altoUtil - (filas - 1) * hueco) / filas);
+                    if (anchoColumna < 24 || altoMaximo < 30)
+                        return false;
+                    var altoBoton = barras ? altoMaximo : Math.round(anchoColumna * proporcion);
+                    if (altoBoton > altoMaximo)
+                        altoBoton = altoMaximo;
+                    if (altoBoton < 30)
+                        return false;
+                    ThemeEngine.establecer("#" + idControl + ", #" + idControl + " .buttonsContainer", {
+                        "width": ancho + "px",
+                        "height": (filas * altoBoton + (filas - 1) * hueco) + "px"
+                    });
+                    for (i = 0; i < botones.length; i++) {
+                        var celda = celdas[i];
+                        ThemeEngine.estilo(botones[i], {
+                            "position": "absolute",
+                            "left": ((celda.columna - 1) * (anchoColumna + hueco)) + "px",
+                            "top": ((celda.fila - 1) * (altoBoton + hueco)) + "px",
+                            "width": (celda.ancho * anchoColumna + (celda.ancho - 1) * hueco) + "px",
+                            "height": altoBoton + "px",
+                            "min-height": altoBoton + "px",
+                            "max-height": altoBoton + "px"
+                        });
+                    }
+                    return true;
+                };
                 ThemeEngine.repartirPanel = function (idControl, proporcion) {
                     var control = ThemeEngine.q("#" + idControl);
                     var tarjeta = ThemeEngine.q("#TabControl .tabContent");
@@ -375,6 +470,9 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     if (ancho < 100 || altoUtil < 80)
                         return;
                     var HUECO = 8;
+                    var celdas = ThemeEngine.celdasDeHQ(botones);
+                    if (celdas && ThemeEngine.repartirPorHQ(idControl, botones, celdas, ancho, altoUtil, proporcion, HUECO))
+                        return;
                     var filas = [];
                     var columnas = [];
                     var i = 0;
@@ -422,6 +520,37 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         });
                     }
                 };
+                ThemeEngine.colocarPagosPorHQ = function (botones, celdas, ancho, altoZona, hueco) {
+                    var columnas = 1;
+                    var filas = 1;
+                    var i = 0;
+                    for (i = 0; i < celdas.length; i++) {
+                        var fin = celdas[i].columna + celdas[i].ancho - 1;
+                        if (fin > columnas)
+                            columnas = fin;
+                        if (celdas[i].fila > filas)
+                            filas = celdas[i].fila;
+                    }
+                    var altoBoton = Math.floor((altoZona - (filas - 1) * hueco) / filas);
+                    var anchoColumna = Math.floor((ancho - (columnas - 1) * hueco) / columnas);
+                    if (altoBoton < 24 || anchoColumna < 20)
+                        return false;
+                    for (i = 0; i < botones.length; i++) {
+                        var celda = celdas[i];
+                        var reconocido = /sct-p\d/.test(botones[i].className || "");
+                        ThemeEngine.estilo(botones[i], {
+                            "position": "absolute",
+                            "z-index": reconocido ? "2" : "1",
+                            "top": ((celda.fila - 1) * (altoBoton + hueco)) + "px",
+                            "left": ((celda.columna - 1) * (anchoColumna + hueco)) + "px",
+                            "width": (celda.ancho * anchoColumna + (celda.ancho - 1) * hueco) + "px",
+                            "height": altoBoton + "px",
+                            "min-height": altoBoton + "px",
+                            "max-height": altoBoton + "px"
+                        });
+                    }
+                    return true;
+                };
                 ThemeEngine.repartirBotonesPago = function (altoZona, hueco) {
                     var contenedor = ThemeEngine.q("#ButtonGrid4Control .buttonsContainer") || ThemeEngine.q("#ButtonGrid4Control");
                     if (!contenedor)
@@ -431,6 +560,9 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         return;
                     var ancho = Math.round(contenedor.getBoundingClientRect().width);
                     if (ancho < 80)
+                        return;
+                    var celdas = ThemeEngine.celdasDeHQ(botones);
+                    if (celdas && ThemeEngine.colocarPagosPorHQ(botones, celdas, ancho, altoZona, hueco))
                         return;
                     var filas = [];
                     var i = 0;
@@ -667,15 +799,22 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                 };
                 ThemeEngine.rotuloDeHQ = function (boton) {
                     try {
-                        var coincide = /(?:^|\s)button(\d+)(?:\s|$)/.exec(boton.className || "");
-                        if (!coincide)
+                        var lista = ThemeEngine.cuadriculaDeHQ(boton);
+                        var indice = ThemeEngine.indiceDeBoton(boton);
+                        if (!lista || indice < 0 || indice >= lista.length)
                             return "";
-                        var indice = parseInt(coincide[1], 10);
-                        var zona = boton.parentElement;
+                        return String(lista[indice].DisplayText || "").trim();
+                    }
+                    catch (e) { }
+                    return "";
+                };
+                ThemeEngine.cuadriculaDeHQ = function (nodo) {
+                    try {
+                        var zona = nodo;
                         while (zona && !/^ButtonGrid\d+$/.test(zona.id || ""))
                             zona = zona.parentElement;
                         if (!zona)
-                            return "";
+                            return null;
                         var numero = (zona.id || "").replace("ButtonGrid", "");
                         var contexto = window.Commerce;
                         var proxy = contexto
@@ -683,7 +822,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             && contexto.ApplicationContext.Instance
                             && contexto.ApplicationContext.Instance._tillLayoutProxy;
                         if (!proxy || !proxy._tillLayoutResponse || !proxy._allButtonGrids)
-                            return "";
+                            return null;
                         var zonas = proxy._tillLayoutResponse.ButtonGridZones || [];
                         var idCuadricula = "";
                         for (var i = 0; i < zonas.length; i++) {
@@ -693,21 +832,44 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             }
                         }
                         if (!idCuadricula)
-                            return "";
+                            return null;
                         var cuadriculas = proxy._allButtonGrids || [];
                         for (var j = 0; j < cuadriculas.length; j++) {
                             var c = cuadriculas[j];
                             var idC = String(c.ButtonGridId !== undefined ? c.ButtonGridId : c.Id);
-                            if (idC !== idCuadricula)
-                                continue;
-                            var lista = c.Buttons || [];
-                            if (indice < 0 || indice >= lista.length)
-                                return "";
-                            return String(lista[indice].DisplayText || "").trim();
+                            if (idC === idCuadricula)
+                                return c.Buttons || null;
                         }
                     }
                     catch (e) { }
-                    return "";
+                    return null;
+                };
+                ThemeEngine.indiceDeBoton = function (boton) {
+                    var coincide = /(?:^|\s)button(\d+)(?:\s|$)/.exec(boton.className || "");
+                    return coincide ? parseInt(coincide[1], 10) : -1;
+                };
+                ThemeEngine.celdasDeHQ = function (botones) {
+                    if (botones.length === 0)
+                        return null;
+                    var lista = ThemeEngine.cuadriculaDeHQ(botones[0]);
+                    if (!lista)
+                        return null;
+                    var celdas = [];
+                    for (var i = 0; i < botones.length; i++) {
+                        var indice = ThemeEngine.indiceDeBoton(botones[i]);
+                        if (indice < 0 || indice >= lista.length)
+                            return null;
+                        var b = lista[indice];
+                        var fila = parseInt(b.Row, 10);
+                        var columna = parseInt(b.Column, 10);
+                        var ancho = parseInt(b.ColumnSpan, 10);
+                        if (!(fila > 0) || !(columna > 0))
+                            return null;
+                        if (!(ancho > 0))
+                            ancho = 1;
+                        celdas.push({ fila: fila, columna: columna, ancho: ancho });
+                    }
+                    return celdas;
                 };
                 ThemeEngine.rotuloPago = function (boton) {
                     var deHQ = ThemeEngine.rotuloDeHQ(boton);
@@ -757,10 +919,9 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         if (!def)
                             continue;
                         ThemeEngine.estilo(boton, { "background-image": "none" });
-                        if (!boton.classList.contains(def.clase)) {
+                        if (!boton.classList.contains(def.clase))
                             boton.classList.add(def.clase);
-                            ThemeEngine.icono(boton, "sct-ic-" + def.clase.substring(4));
-                        }
+                        ThemeEngine.icono(boton, "sct-ic-" + def.clase.substring(4));
                         for (var k = 0; k < boton.children.length; k++) {
                             var hijo = boton.children[k];
                             if (hijo.tagName === "DIV" && hijo.style.getPropertyValue("display") !== "none") {
@@ -1024,6 +1185,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             ThemeEngine.pasada();
                             ThemeEngine.programarRepasoFinal(60);
                         });
+                        ThemeEngine.vigilarToquesMultiples();
                         ThemeEngine.eventosRegistrados = true;
                     }
                     ThemeEngine.pasada();
@@ -1039,6 +1201,9 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                 ThemeEngine.estiloNumpad = null;
                 ThemeEngine.estiloAlineacion = null;
                 ThemeEngine.estiloZona = null;
+                ThemeEngine.punteroActivo = -1;
+                ThemeEngine.marcaPuntero = 0;
+                ThemeEngine.MS_SUELTA_PUNTERO = 1500;
                 ThemeEngine.teclaNativa = 0;
                 ThemeEngine.sondaEstilos = null;
                 ThemeEngine.estilosNormalizados = {};

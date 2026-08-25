@@ -105,6 +105,11 @@ export class ThemeEngine {
     private static estiloNumpad: HTMLStyleElement | null = null;
     private static estiloAlineacion: HTMLStyleElement | null = null;
     private static estiloZona: HTMLStyleElement | null = null;
+
+    // Un solo dedo a la vez sobre las cuadriculas de botones. Ver vigilarToquesMultiples().
+    private static punteroActivo: number = -1;
+    private static marcaPuntero: number = 0;
+    private static readonly MS_SUELTA_PUNTERO: number = 1500;
     private static teclaNativa: number = 0;
     private static sondaEstilos: HTMLElement | null = null;
     private static estilosNormalizados: { [clave: string]: string } = {};
@@ -311,7 +316,86 @@ export class ThemeEngine {
             actual = document.createElement("i");
             boton.insertBefore(actual, boton.firstChild);
         }
-        actual.className = "sct-ic " + clase;
+        // Solo se escribe si cambia: es la regla 1 de la cabecera. Escribir siempre relanza al
+        // vigilante y vuelve el bucle de mutaciones.
+        var nueva: string = "sct-ic " + clase;
+        if (actual.className !== nueva) actual.className = nueva;
+    }
+
+    // ---------------------------------------------------------------- un dedo a la vez
+
+    // Cuadricula de botones a la que pertenece un nodo, o null si no esta en ninguna.
+    // Se sube a mano en vez de usar closest() para no salirnos del es5 del resto del fichero.
+    private static cuadriculaContenedora(desde: HTMLElement): HTMLElement | null {
+        var actual: HTMLElement | null = desde;
+        while (actual) {
+            if (/^ButtonGrid\d+Control$/.test(actual.id || "")) return actual;
+            actual = actual.parentElement;
+        }
+        return null;
+    }
+
+    // Ignora el SEGUNDO dedo simultaneo sobre una cuadricula de botones.
+    //
+    // POR QUE — bug encontrado al pasar a pantallas TACTILES: "cuando pone el dedo sobre los
+    // botones se rompen todas las estructuras de los botones y sus iconos". Un dedo es ancho y cae
+    // entre dos botones; con multitactil el POS recibe DOS pulsaciones a la vez y arranca dos
+    // acciones. Con raton no podia pasar —solo hay un cursor— y por eso el fallo aparece ahora.
+    // El usuario lo pidio explicitamente: "es mejor no confiar en el usuario y validar".
+    //
+    // DISENADO PARA FALLAR ABIERTO. Esto corre en una caja que cobra: bloquear de mas es peor que
+    // el bug. Por eso:
+    //   - Solo actua dentro de #ButtonGrid<N>Control. Fuera de ahi ni se entera.
+    //   - El raton se deja pasar siempre: no puede hacer dos pulsaciones a la vez.
+    //   - Solo se ignora un puntero DISTINTO del que ya esta trabajando; el mismo dedo, nunca.
+    //   - Suelta de seguridad a los 1500 ms: si se pierde un pointerup (una palma apoyada, un
+    //     pointercancel que no llega), el siguiente dedo toma el relevo en vez de quedarse la
+    //     caja muerta. Esto NO es opcional: sin ello un evento perdido deja la caja sin responder.
+    //   - Se suelta ademas en pointerup, pointercancel y al perder el foco la ventana.
+    //   - Todo en try/catch: si algo falla, el toque pasa.
+    //
+    // OJO: esto SI toca comportamiento, no solo aspecto. Es la unica excepcion a la regla de "solo
+    // estilos" en todo el tema, y esta pedida a proposito. Si algun dia hay que quitarla, se quita
+    // entera (esta funcion y su llamada en iniciar) sin tocar nada mas.
+    private static alBajarPuntero(evento: PointerEvent): void {
+        try {
+            if (evento.pointerType === "mouse") return;
+            var destino: HTMLElement = evento.target as HTMLElement;
+            if (!destino || destino.nodeType !== 1) return;
+            if (!ThemeEngine.cuadriculaContenedora(destino)) return;
+
+            var ahora: number = evento.timeStamp || 0;
+
+            // Suelta de seguridad antes de decidir nada.
+            if (ThemeEngine.punteroActivo >= 0
+                && (ahora - ThemeEngine.marcaPuntero) > ThemeEngine.MS_SUELTA_PUNTERO) {
+                ThemeEngine.punteroActivo = -1;
+            }
+
+            if (ThemeEngine.punteroActivo < 0) {
+                ThemeEngine.punteroActivo = evento.pointerId;
+                ThemeEngine.marcaPuntero = ahora;
+                return;
+            }
+            if (ThemeEngine.punteroActivo === evento.pointerId) return;
+
+            // Ya hay un dedo trabajando: este segundo no cuenta.
+            evento.preventDefault();
+            evento.stopPropagation();
+        } catch (e) { }
+    }
+
+    private static alSoltarPuntero(evento: PointerEvent): void {
+        try {
+            if (ThemeEngine.punteroActivo === evento.pointerId) ThemeEngine.punteroActivo = -1;
+        } catch (e) { }
+    }
+
+    private static vigilarToquesMultiples(): void {
+        document.addEventListener("pointerdown", ThemeEngine.alBajarPuntero as EventListener, true);
+        document.addEventListener("pointerup", ThemeEngine.alSoltarPuntero as EventListener, true);
+        document.addEventListener("pointercancel", ThemeEngine.alSoltarPuntero as EventListener, true);
+        window.addEventListener("blur", function (): void { ThemeEngine.punteroActivo = -1; });
     }
 
     private static ancestroTarjeta(desde: HTMLElement): HTMLElement | null {
@@ -549,8 +633,89 @@ export class ThemeEngine {
         ThemeEngine.repartirBotonesPago(altoPagos, HUECO);
     }
 
+    // Coloca los botones de un panel usando la rejilla que HQ ya tiene definida. Devuelve false si
+    // no se puede (y entonces repartirPanel cae a su reparto por medicion de siempre).
+    //
+    // POR QUE EXISTE — bug de master en pantalla TACTIL: "al tocar en el hueco entre dos botones se
+    // pierde la posicion de los botones, se desordena todo".
+    //
+    // El reparto por medicion deduce cuantas filas y cuantas columnas hay agrupando el top y el
+    // left REDONDEADOS de cada boton, y despues escribe posiciones a partir de esa deduccion. Es
+    // fragil por construccion: cualquier cosa que altere una posicion medida —un desplazamiento de
+    // 1px, un :hover que en tactil se queda pegado, un borde que aparece al pulsar, una transicion
+    // a medias, un redondeo que cae al otro lado— produce un numero de filas o de columnas que no
+    // existe, y con eso la geometria escrita es basura. Y como la pasada siguiente mide lo que
+    // acabamos de escribir, el error se confirma a si mismo y no se recupera solo.
+    // Es la misma familia de los otros dos bugs de esta tanda (paneles ocultos y numpad oculto),
+    // que se taparon con guardas. Esto no lo tapa: le quita la causa.
+    //
+    // HQ ya sabe donde va cada boton (Row, Column, ColumnSpan) y ese dato no depende de lo que
+    // haya pintado en pantalla, ni del dedo, ni de lo que el tema escribiera antes. Ademas el
+    // resultado es identico al aprobado: el reparto sale de las mismas cuentas, solo cambia de
+    // donde salen las filas y las columnas.
+    //
+    // Reproduce las dos formas que ya estaban aprobadas:
+    //   - Botones que ocupan TODAS las columnas (cliente y boleteo, ColumnSpan = ancho de la
+    //     rejilla): barras a lo ancho, y se reparten todo el alto disponible.
+    //   - Botones de una sola columna (transacciones): tiles, y el alto sale del ancho por
+    //     proporcion, nunca estirando hasta llenar la tarjeta.
+    //
+    // NOTA: repartirBotonesPago() (los metodos de pago) sigue deduciendo las filas por medicion y
+    // tiene exactamente la misma fragilidad. Se deja para la tanda siguiente a proposito: es la
+    // zona mas calibrada de la pantalla y el usuario acaba de dar por buena su apariencia. Cuando
+    // se toque, se convierte igual que esta.
+    private static repartirPorHQ(idControl: string, botones: HTMLElement[], celdas: any[],
+        ancho: number, altoUtil: number, proporcion: number, hueco: number): boolean {
+
+        var columnas: number = 1;
+        var filas: number = 1;
+        var i: number = 0;
+        for (i = 0; i < celdas.length; i++) {
+            var fin: number = celdas[i].columna + celdas[i].ancho - 1;
+            if (fin > columnas) columnas = fin;
+            if (celdas[i].fila > filas) filas = celdas[i].fila;
+        }
+
+        // Si TODOS ocupan la rejilla entera son barras; si alguno no, son tiles.
+        var barras: boolean = true;
+        for (i = 0; i < celdas.length; i++) {
+            if (celdas[i].ancho < columnas) { barras = false; break; }
+        }
+
+        var anchoColumna: number = Math.floor((ancho - (columnas - 1) * hueco) / columnas);
+        var altoMaximo: number = Math.floor((altoUtil - (filas - 1) * hueco) / filas);
+        if (anchoColumna < 24 || altoMaximo < 30) return false;
+
+        var altoBoton: number = barras ? altoMaximo : Math.round(anchoColumna * proporcion);
+        if (altoBoton > altoMaximo) altoBoton = altoMaximo;
+        if (altoBoton < 30) return false;
+
+        ThemeEngine.establecer("#" + idControl + ", #" + idControl + " .buttonsContainer", {
+            "width": ancho + "px",
+            "height": (filas * altoBoton + (filas - 1) * hueco) + "px"
+        });
+
+        for (i = 0; i < botones.length; i++) {
+            var celda: any = celdas[i];
+            ThemeEngine.estilo(botones[i], {
+                "position": "absolute",
+                "left": ((celda.columna - 1) * (anchoColumna + hueco)) + "px",
+                "top": ((celda.fila - 1) * (altoBoton + hueco)) + "px",
+                "width": (celda.ancho * anchoColumna + (celda.ancho - 1) * hueco) + "px",
+                "height": altoBoton + "px",
+                "min-height": altoBoton + "px",
+                "max-height": altoBoton + "px"
+            });
+        }
+        return true;
+    }
+
     // Reparte los botones de un panel del control de pestañas (cliente, transacciones, boleteo)
     // dentro de su tarjeta.
+    //
+    // DE DONDE SALE LA REJILLA: de HQ (Row/Column/ColumnSpan), via repartirPorHQ(). Solo si eso
+    // falla se deduce midiendo, que es el camino antiguo y el que se desordenaba al tocar entre
+    // dos botones en pantalla tactil. Ver el comentario largo de repartirPorHQ().
     //
     // POR QUE HACE FALTA. El POS dimensiona el CONTENEDOR de estos paneles al contenido, no a la
     // zona: medido en master, 232x152 dentro de una tarjeta de 316x310. Si el tema no lo estira,
@@ -597,6 +762,10 @@ export class ThemeEngine {
         // Sobre un panel VISIBLE la funcion si es idempotente: escribe left/top distintos por
         // columna y por fila, asi que la pasada siguiente vuelve a deducir la misma rejilla.
         // El problema era unicamente medir lo que no se ve.
+        //
+        // El guarda SIGUE HACIENDO FALTA aunque la rejilla venga ahora de HQ: mas abajo se mide la
+        // TARJETA para saber cuanto sitio hay, y no tiene sentido colocar un panel que nadie ve.
+        // Cuando se abre su pestaña, la mutacion dispara una pasada y se coloca al momento.
         if (control.offsetParent === null) return;
         var rControl = control.getBoundingClientRect();
         if (rControl.width < 1 || rControl.height < 1) return;
@@ -614,6 +783,11 @@ export class ThemeEngine {
         if (ancho < 100 || altoUtil < 80) return;
 
         var HUECO: number = 8;
+
+        // La rejilla la manda HQ. Solo si no se puede leer se deduce midiendo, que es lo de abajo.
+        var celdas: any[] | null = ThemeEngine.celdasDeHQ(botones);
+        if (celdas && ThemeEngine.repartirPorHQ(idControl, botones, celdas, ancho, altoUtil, proporcion, HUECO)) return;
+
         var filas: number[] = [];
         var columnas: number[] = [];
         var i: number = 0;
@@ -658,8 +832,67 @@ export class ThemeEngine {
         }
     }
 
+    // Coloca los botones de pago con la rejilla de HQ. false si no se puede.
+    // El alto lo manda la ZONA (lo calcula acomodarColumnaDerecha contra la caja de importes), no
+    // una proporcion: aqui la fila de pagos tiene que cerrar exactamente con #TotalsPanel.
+    private static colocarPagosPorHQ(botones: HTMLElement[], celdas: any[],
+        ancho: number, altoZona: number, hueco: number): boolean {
+
+        var columnas: number = 1;
+        var filas: number = 1;
+        var i: number = 0;
+        for (i = 0; i < celdas.length; i++) {
+            var fin: number = celdas[i].columna + celdas[i].ancho - 1;
+            if (fin > columnas) columnas = fin;
+            if (celdas[i].fila > filas) filas = celdas[i].fila;
+        }
+
+        var altoBoton: number = Math.floor((altoZona - (filas - 1) * hueco) / filas);
+        var anchoColumna: number = Math.floor((ancho - (columnas - 1) * hueco) / columnas);
+        if (altoBoton < 24 || anchoColumna < 20) return false;
+
+        for (i = 0; i < botones.length; i++) {
+            var celda: any = celdas[i];
+            // BOTONES APILADOS EN LA MISMA CELDA. La cuadricula 230 de HQ tiene el "Efectivo"
+            // DUPLICADO: dos botones en fila 1 columna 1, con la misma accion (200/1). Colocados
+            // segun HQ caen uno encima del otro, y el que pinta arriba es el ultimo del DOM — que
+            // resulta ser el duplicado, el que prepararBotones() no reconoce (su nombre ya estaba
+            // usado) y por tanto no lleva ni icono ni rotulo: taparia al bueno con una caja vacia.
+            // Se adelanta el que SI esta reconocido. No se oculta nada ni se quita ninguna accion:
+            // solo se decide cual se ve delante.
+            // Lo correcto es borrar el duplicado en HQ; esto es la red de seguridad para mientras.
+            var reconocido: boolean = /sct-p\d/.test(botones[i].className || "");
+            ThemeEngine.estilo(botones[i], {
+                "position": "absolute",
+                "z-index": reconocido ? "2" : "1",
+                "top": ((celda.fila - 1) * (altoBoton + hueco)) + "px",
+                "left": ((celda.columna - 1) * (anchoColumna + hueco)) + "px",
+                "width": (celda.ancho * anchoColumna + (celda.ancho - 1) * hueco) + "px",
+                "height": altoBoton + "px",
+                "min-height": altoBoton + "px",
+                "max-height": altoBoton + "px"
+            });
+        }
+        return true;
+    }
+
     // Reparte los botones de pago dentro de su zona: las filas se llevan el alto y las columnas el
-    // ancho. Filas y columnas salen de la posicion real de cada boton, no de su indice.
+    // ancho.
+    //
+    // La rejilla la manda HQ (Row / Column / ColumnSpan), igual que en repartirPanel(). Solo si no
+    // se puede leer se deduce midiendo, que es el camino de abajo.
+    //
+    // POR QUE SE CONVIRTIO — bug en pantalla TACTIL: al tocar el hueco entre dos botones de pago,
+    // la fila se desordenaba, los iconos y los rotulos se montaban unos sobre otros y algunas cajas
+    // quedaban vacias. Ver el comentario largo de repartirPorHQ(): deducir la rejilla midiendo lo
+    // que uno mismo escribio es fragil, y el error se confirma a si mismo en la pasada siguiente.
+    // Esta funcion se habia dejado fuera de la primera conversion por ser la zona mas calibrada de
+    // la pantalla — y resulto ser precisamente donde el usuario veia el fallo.
+    //
+    // El resultado es el MISMO que ya estaba aprobado, comprobado con la cuadricula 230 real
+    // (340px de ancho, hueco 8): 4 columnas de 79px en la fila 1, y NIUBIZ con ColumnSpan 4
+    // ocupando 4*79 + 3*8 = 340. Que es lo que salia antes al deducir "una sola columna" en su
+    // fila. Cambia de donde sale la rejilla, no la geometria.
     private static repartirBotonesPago(altoZona: number, hueco: number): void {
         var contenedor = ThemeEngine.q("#ButtonGrid4Control .buttonsContainer") || ThemeEngine.q("#ButtonGrid4Control");
         if (!contenedor) return;
@@ -668,6 +901,9 @@ export class ThemeEngine {
 
         var ancho: number = Math.round(contenedor.getBoundingClientRect().width);
         if (ancho < 80) return;
+
+        var celdas: any[] | null = ThemeEngine.celdasDeHQ(botones);
+        if (celdas && ThemeEngine.colocarPagosPorHQ(botones, celdas, ancho, altoZona, hueco)) return;
 
         var filas: number[] = [];
         var i: number = 0;
@@ -1065,13 +1301,31 @@ export class ThemeEngine {
     // no lee geometria ni escribe nada, asi que no provoca reflow ni mutaciones.
     private static rotuloDeHQ(boton: HTMLElement): string {
         try {
-            var coincide: RegExpExecArray | null = /(?:^|\s)button(\d+)(?:\s|$)/.exec(boton.className || "");
-            if (!coincide) return "";
-            var indice: number = parseInt(coincide[1], 10);
+            var lista: any[] | null = ThemeEngine.cuadriculaDeHQ(boton);
+            var indice: number = ThemeEngine.indiceDeBoton(boton);
+            if (!lista || indice < 0 || indice >= lista.length) return "";
+            return String(lista[indice].DisplayText || "").trim();
+        } catch (e) { }
+        return "";
+    }
 
-            var zona: HTMLElement | null = boton.parentElement;
+    // Lista de botones que HQ define para la cuadricula a la que pertenece este nodo del DOM, o
+    // null si no se puede averiguar. Cada elemento trae DisplayText, Row, Column, ColumnSpan,
+    // Action y ActionProperty.
+    //
+    // El encadenado:
+    //   nodo -> se sube hasta la ZONA #ButtonGrid<N>
+    //        -> zona "TransactionScreen<N>" en _tillLayoutResponse.ButtonGridZones
+    //        -> ButtonGridId
+    //        -> la cuadricula en _tillLayoutProxy._allButtonGrids
+    //
+    // Son APIs internas del POS (con guion bajo). Todo va en try/catch y ante cualquier duda
+    // devuelve null, para que quien llame se quede con su camino de siempre. NUNCA debe tirar.
+    private static cuadriculaDeHQ(nodo: HTMLElement): any[] | null {
+        try {
+            var zona: HTMLElement | null = nodo;
             while (zona && !/^ButtonGrid\d+$/.test(zona.id || "")) zona = zona.parentElement;
-            if (!zona) return "";
+            if (!zona) return null;
             var numero: string = (zona.id || "").replace("ButtonGrid", "");
 
             var contexto: any = (window as any).Commerce;
@@ -1079,7 +1333,7 @@ export class ThemeEngine {
                 && contexto.ApplicationContext
                 && contexto.ApplicationContext.Instance
                 && contexto.ApplicationContext.Instance._tillLayoutProxy;
-            if (!proxy || !proxy._tillLayoutResponse || !proxy._allButtonGrids) return "";
+            if (!proxy || !proxy._tillLayoutResponse || !proxy._allButtonGrids) return null;
 
             var zonas: any[] = proxy._tillLayoutResponse.ButtonGridZones || [];
             var idCuadricula: string = "";
@@ -1089,19 +1343,46 @@ export class ThemeEngine {
                     break;
                 }
             }
-            if (!idCuadricula) return "";
+            if (!idCuadricula) return null;
 
             var cuadriculas: any[] = proxy._allButtonGrids || [];
             for (var j: number = 0; j < cuadriculas.length; j++) {
                 var c: any = cuadriculas[j];
                 var idC: string = String(c.ButtonGridId !== undefined ? c.ButtonGridId : c.Id);
-                if (idC !== idCuadricula) continue;
-                var lista: any[] = c.Buttons || [];
-                if (indice < 0 || indice >= lista.length) return "";
-                return String(lista[indice].DisplayText || "").trim();
+                if (idC === idCuadricula) return c.Buttons || null;
             }
         } catch (e) { }
-        return "";
+        return null;
+    }
+
+    // Posicion del boton dentro de su cuadricula, sacada de la clase posicional del POS
+    // (button0, button1, ...). -1 si no la trae.
+    private static indiceDeBoton(boton: HTMLElement): number {
+        var coincide: RegExpExecArray | null = /(?:^|\s)button(\d+)(?:\s|$)/.exec(boton.className || "");
+        return coincide ? parseInt(coincide[1], 10) : -1;
+    }
+
+    // Celda (fila, columna, ancho en columnas) que HQ le da a cada boton, en el mismo orden que la
+    // lista de botones recibida. null si falta un dato: entonces se cae al reparto por medicion.
+    // Filas y columnas de HQ son 1-based.
+    private static celdasDeHQ(botones: HTMLElement[]): any[] | null {
+        if (botones.length === 0) return null;
+        var lista: any[] | null = ThemeEngine.cuadriculaDeHQ(botones[0]);
+        if (!lista) return null;
+
+        var celdas: any[] = [];
+        for (var i: number = 0; i < botones.length; i++) {
+            var indice: number = ThemeEngine.indiceDeBoton(botones[i]);
+            if (indice < 0 || indice >= lista.length) return null;
+            var b: any = lista[indice];
+            var fila: number = parseInt(b.Row, 10);
+            var columna: number = parseInt(b.Column, 10);
+            var ancho: number = parseInt(b.ColumnSpan, 10);
+            if (!(fila > 0) || !(columna > 0)) return null;
+            if (!(ancho > 0)) ancho = 1;
+            celdas.push({ fila: fila, columna: columna, ancho: ancho });
+        }
+        return celdas;
     }
 
     // Nombre con el que se reconoce un boton de pago. El de HQ manda; el DOM es la red de
@@ -1180,10 +1461,18 @@ export class ThemeEngine {
             if (!def) continue;
 
             ThemeEngine.estilo(boton, { "background-image": "none" });
-            if (!boton.classList.contains(def.clase)) {
-                boton.classList.add(def.clase);
-                ThemeEngine.icono(boton, "sct-ic-" + def.clase.substring(4));
-            }
+            if (!boton.classList.contains(def.clase)) boton.classList.add(def.clase);
+            // El icono se REPONE en cada pasada, no solo al asignar la clase.
+            //
+            // BUG CORREGIDO — "se rompen los botones y sus iconos" (master, pantalla tactil).
+            // Antes esta llamada vivia DENTRO del if de arriba, asi que el icono solo se inyectaba
+            // la primera vez. Si el POS repinta el contenido del boton (al pulsarlo, al refrescar
+            // el metodo de pago) se lleva por delante nuestro <i class="sct-ic">, pero la clase
+            // sct-pN sigue puesta: el if no entraba y el icono no volvia NUNCA. Y como el CSS
+            // oculta el contenido nativo del boton para repintarlo, quedaba una caja vacia.
+            // icono() es idempotente y solo escribe si cambia, asi que llamarla siempre es barato
+            // y no genera mutaciones.
+            ThemeEngine.icono(boton, "sct-ic-" + def.clase.substring(4));
             for (var k: number = 0; k < boton.children.length; k++) {
                 var hijo: HTMLElement = boton.children[k] as HTMLElement;
                 if (hijo.tagName === "DIV" && hijo.style.getPropertyValue("display") !== "none") {
@@ -1536,6 +1825,7 @@ export class ThemeEngine {
                 ThemeEngine.pasada();
                 ThemeEngine.programarRepasoFinal(60);
             });
+            ThemeEngine.vigilarToquesMultiples();
             ThemeEngine.eventosRegistrados = true;
         }
 

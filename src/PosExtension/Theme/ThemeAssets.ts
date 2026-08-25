@@ -135,6 +135,16 @@ export function construirCss(): string {
         + ".sct-ghost .fields.row,.sct-ghost .fields.row *,.sct-ghost .panel-footer,.sct-ghost .panel-footer *{pointer-events:auto !important;}\n"
         + ".dark .commerceTabControl.righttabs > .tabContent,.dark .transactionLinesPane,.sct-cli-card,.sct-dom-card,.fields.row,.panel-footer,#ButtonGrid4Control{background-color:" + FONDO_TARJETA + " !important;background-image:none !important;}\n"
         + ".sct-tbtn::before,.sct-bbtn::before,.sct-pbtn::before{content:none !important;}\n"
+        // PANTALLAS TACTILES. Las cajas pasaron de raton a tactil y salieron fallos que antes no
+        // podian darse. Esto es la parte de estilos; la de comportamiento (ignorar el segundo dedo
+        // simultaneo) esta en ThemeEngine.vigilarToquesMultiples().
+        //   touch-action:manipulation  quita el retardo de 300ms y el zoom por doble toque, que en
+        //                              una caja no sirven para nada y provocan pulsaciones raras.
+        //   tap-highlight transparente quita el recuadro gris de Chromium al tocar, que tapaba el
+        //                              icono un instante y parecia que el boton se rompia.
+        //   user-select:none           evita que un toque mantenido seleccione el texto del boton
+        //                              y saque el menu de copiar.
+        + ".buttonGridButton{touch-action:manipulation !important;-webkit-tap-highlight-color:rgba(0,0,0,0) !important;user-select:none !important;-webkit-user-select:none !important;}\n"
         + ".sct-tbtn > *:not(i.sct-ic),#ButtonGrid4Control .sct-pbtn > *:not(i.sct-ic){display:none !important;}\n"
         + ".sct-ic{position:absolute;background-repeat:no-repeat;background-position:center;background-size:contain;pointer-events:none;}\n"
         + ".sct-cbtn .sct-ic{left:28px;top:50%;transform:translateY(-50%);width:46px;height:46px;}\n"
