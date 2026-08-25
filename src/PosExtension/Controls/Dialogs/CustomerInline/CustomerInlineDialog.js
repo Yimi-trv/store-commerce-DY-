@@ -69,6 +69,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 __extends(CustomerInlineDialog, _super);
                 function CustomerInlineDialog() {
                     var _this = _super.call(this) || this;
+                    _this._direccionAMediasAceptada = false;
                     _this._searchTop = 25;
                     _this._searchSkip = 0;
                     _this._searchInFlight = false;
@@ -90,6 +91,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                     this._currentCustomer = customer || null;
                     this._initialSearchText = initialSearchText || "";
+                    this._direccionAMediasAceptada = false;
                     return new Promise(function (resolve) {
                         _this._resolve = resolve;
                         var dialogOptions = {
@@ -1058,10 +1060,21 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     }
                     var esEmpresa = this._sunatService.isOrganizationDocument(documentNumber);
                     var avisoDireccion = this._validateAddress(element, esEmpresa);
-                    if (avisoDireccion) {
+                    if (avisoDireccion && avisoDireccion.bloquea) {
                         return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Entendido", "")
                             .then(function () {
                             _this._showMessage(element, avisoDireccion.pie);
+                        });
+                    }
+                    if (avisoDireccion && !this._direccionAMediasAceptada) {
+                        return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Crear sin dirección", "Volver")
+                            .then(function (seguir) {
+                            if (!seguir) {
+                                _this._showMessage(element, avisoDireccion.pie);
+                                return Promise.resolve();
+                            }
+                            _this._direccionAMediasAceptada = true;
+                            return _this._executeCreate(element);
                         });
                     }
                     this._showMessage(element, "Verificando la situación del documento en SUNAT...");
@@ -1567,10 +1580,15 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 CustomerInlineDialog.prototype._updateCustomer = function (element) {
                     var _this = this;
                     var avisoDireccion = this._validateAddress(element, false);
-                    if (avisoDireccion) {
-                        return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Entendido", "")
-                            .then(function () {
-                            _this._showMessage(element, avisoDireccion.pie);
+                    if (avisoDireccion && !this._direccionAMediasAceptada) {
+                        return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Guardar sin dirección", "Volver")
+                            .then(function (seguir) {
+                            if (!seguir) {
+                                _this._showMessage(element, avisoDireccion.pie);
+                                return Promise.resolve();
+                            }
+                            _this._direccionAMediasAceptada = true;
+                            return _this._updateCustomer(element);
                         });
                     }
                     return this._loadCustomerForEdit(element)
@@ -1725,7 +1743,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                                 + "\n\nUna empresa se registra con su dirección fiscal, que es la que sale"
                                 + " impresa en la factura."
                                 + "\n\nComplete Calle, Departamento, Provincia y Distrito.",
-                            pie: "La dirección fiscal es obligatoria para una empresa."
+                            pie: "La dirección fiscal es obligatoria para una empresa.",
+                            bloquea: true
                         };
                     }
                     var faltan = [];
@@ -1744,17 +1763,26 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (faltan.length === 0) {
                         return null;
                     }
+                    if (direccionObligatoria) {
+                        return {
+                            titulo: "Dirección incompleta",
+                            motivo: "Para registrar la dirección falta completar:\n\n"
+                                + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
+                                + "Complete esos campos: una empresa no se registra sin dirección fiscal.",
+                            pie: "Complete la dirección para continuar.",
+                            bloquea: true
+                        };
+                    }
                     return {
-                        titulo: "Dirección incompleta",
-                        motivo: "Para registrar la dirección falta completar:\n\n"
+                        titulo: "La dirección quedará sin guardar",
+                        motivo: "Falta completar:\n\n"
                             + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
-                            + (direccionObligatoria
-                                ? "Complete esos campos: una empresa no se registra sin dirección fiscal."
-                                : "Complete esos campos, o borre los datos de dirección si este cliente no va a"
-                                    + " tener una: una dirección a medias no se guarda."),
-                        pie: direccionObligatoria
-                            ? "Complete la dirección para continuar."
-                            : "Complete la dirección o déjela vacía para continuar."
+                            + "D365 no guarda una dirección con el ubigeo incompleto, así que este cliente"
+                            + " se creará SIN dirección."
+                            + "\n\nPuede completar esos campos ahora, o crearlo así y agregarle la"
+                            + " dirección más adelante.",
+                        pie: "Complete el ubigeo si quiere que la dirección se guarde.",
+                        bloquea: false
                     };
                 };
                 CustomerInlineDialog.prototype._buildAddressFromForm = function (element, recordId) {

@@ -112,6 +112,14 @@ interface IAvisoDeDireccion {
     motivo: string;
     /** Línea corta que queda en el pie del modal despues de cerrar la alerta. */
     pie: string;
+    /**
+     * true detiene el alta; false solo advierte y deja seguir.
+     *
+     * A una EMPRESA se le exige dirección fiscal, asi que ahi detiene. A una persona natural
+     * no: puede quedar registrada sin dirección, y si escribió uma a medias lo unico que hace
+     * falta es avisarle de que no se guardara, no impedirle crear el cliente.
+     */
+    bloquea: boolean;
 }
 
 export interface ICustomerInlineDialogResult {
@@ -127,6 +135,15 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _resolve: ((result: ICustomerInlineDialogResult | null) => void) | null;
     private _currentCustomer: ProxyEntities.Customer | null;
     private _initialSearchText: string;
+
+    /**
+     * El cajero ya asumió que la dirección a medias no se guardará.
+     *
+     * Se reinicia en cada apertura del modal: si no, la primera vez que alguien aceptara
+     * quedaría aceptado para todos los clientes que se crearan después, y la advertencia
+     * dejaría de aparecer justo cuando hace falta.
+     */
+    private _direccionAMediasAceptada: boolean = false;
     private readonly _sunatService: SunatCustomerService;
     private _lastSunatData: ISunatCustomerData | null;
 
@@ -191,6 +208,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         
         this._currentCustomer = customer || null;
         this._initialSearchText = initialSearchText || "";
+        this._direccionAMediasAceptada = false;
 
         return new Promise((resolve: (result: ICustomerInlineDialogResult | null) => void) => {
             this._resolve = resolve;
@@ -1674,10 +1692,27 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         const esEmpresa: boolean = this._sunatService.isOrganizationDocument(documentNumber);
         const avisoDireccion: IAvisoDeDireccion | null = this._validateAddress(element, esEmpresa);
 
-        if (avisoDireccion) {
+        if (avisoDireccion && avisoDireccion.bloquea) {
             return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Entendido", "")
                 .then((): void => {
                     this._showMessage(element, avisoDireccion.pie);
+                });
+        }
+
+        if (avisoDireccion && !this._direccionAMediasAceptada) {
+            // Se pregunta UNA vez. Al aceptar se vuelve a entrar aquí con el aviso ya asumido,
+            // en vez de partir en dos este método: el formulario no cambió y las validaciones
+            // que ya pasaron vuelven a pasar igual.
+            return this._showAlert(
+                element, avisoDireccion.titulo, avisoDireccion.motivo, "Crear sin dirección", "Volver")
+                .then((seguir: boolean): Promise<void> => {
+                    if (!seguir) {
+                        this._showMessage(element, avisoDireccion.pie);
+                        return Promise.resolve();
+                    }
+
+                    this._direccionAMediasAceptada = true;
+                    return this._executeCreate(element);
                 });
         }
 
@@ -2482,10 +2517,17 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         // una dirección, vaya entera.
         const avisoDireccion: IAvisoDeDireccion | null = this._validateAddress(element, false);
 
-        if (avisoDireccion) {
-            return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Entendido", "")
-                .then((): void => {
-                    this._showMessage(element, avisoDireccion.pie);
+        if (avisoDireccion && !this._direccionAMediasAceptada) {
+            return this._showAlert(
+                element, avisoDireccion.titulo, avisoDireccion.motivo, "Guardar sin dirección", "Volver")
+                .then((seguir: boolean): Promise<void> => {
+                    if (!seguir) {
+                        this._showMessage(element, avisoDireccion.pie);
+                        return Promise.resolve();
+                    }
+
+                    this._direccionAMediasAceptada = true;
+                    return this._updateCustomer(element);
                 });
         }
 
@@ -2702,10 +2744,16 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      *    Repetir aqui la comprobacion del prefijo habria sido una segunda copia de la regla,
      *    lista para divergir de la primera.
      *
-     * 2. SI SE PONE, VA ENTERA. Esto vale para los dos. D365 valida el ubigeo contra sus
-     *    maestros y descarta EN SILENCIO una dirección sin State/County/City: el cliente se
-     *    creaba "con dirección" y en la ficha aparecía vacía, sin que nadie se enterara hasta
-     *    emitir el comprobante. El caso real es olvidar el último desplegable.
+     * 2. SI SE PONE, VA ENTERA — PERO ESO NO DETIENE A UNA PERSONA. D365 valida el ubigeo
+     *    contra sus maestros y descarta EN SILENCIO una dirección sin State/County/City: el
+     *    cliente se creaba "con dirección" y en la ficha aparecía vacía, sin que nadie se
+     *    enterara hasta emitir el comprobante. Por eso hay que decirlo.
+     *
+     *    Pero decirlo no es lo mismo que impedirlo. Al consultar un RUC 10 en SUNAT la calle
+     *    llega rellenada y el ubigeo no siempre se resuelve solo; exigir entonces los tres
+     *    desplegables convertia una direccion OPCIONAL en obligatoria por la puerta de atras.
+     *    A una persona se le avisa y decide; a una empresa se le sigue exigiendo, porque su
+     *    direccion fiscal no es opcional.
      */
     private _validateAddress(element: HTMLElement, direccionObligatoria: boolean): IAvisoDeDireccion | null {
         const street: string = this._getValue(element, "customerInlineCreateAddress");
@@ -2729,7 +2777,8 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                     + "\n\nUna empresa se registra con su dirección fiscal, que es la que sale"
                     + " impresa en la factura."
                     + "\n\nComplete Calle, Departamento, Provincia y Distrito.",
-                pie: "La dirección fiscal es obligatoria para una empresa."
+                pie: "La dirección fiscal es obligatoria para una empresa.",
+                bloquea: true
             };
         }
 
@@ -2743,18 +2792,28 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return null;
         }
 
-        // Se empezó a escribir una dirección: va entera, con RUC o con DNI.
+        // Hay dirección a medias. A la empresa se la detiene; a la persona se la avisa.
+        if (direccionObligatoria) {
+            return {
+                titulo: "Dirección incompleta",
+                motivo: "Para registrar la dirección falta completar:\n\n"
+                    + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
+                    + "Complete esos campos: una empresa no se registra sin dirección fiscal.",
+                pie: "Complete la dirección para continuar.",
+                bloquea: true
+            };
+        }
+
         return {
-            titulo: "Dirección incompleta",
-            motivo: "Para registrar la dirección falta completar:\n\n"
+            titulo: "La dirección quedará sin guardar",
+            motivo: "Falta completar:\n\n"
                 + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
-                + (direccionObligatoria
-                    ? "Complete esos campos: una empresa no se registra sin dirección fiscal."
-                    : "Complete esos campos, o borre los datos de dirección si este cliente no va a"
-                      + " tener una: una dirección a medias no se guarda."),
-            pie: direccionObligatoria
-                ? "Complete la dirección para continuar."
-                : "Complete la dirección o déjela vacía para continuar."
+                + "D365 no guarda una dirección con el ubigeo incompleto, así que este cliente"
+                + " se creará SIN dirección."
+                + "\n\nPuede completar esos campos ahora, o crearlo así y agregarle la"
+                + " dirección más adelante.",
+            pie: "Complete el ubigeo si quiere que la dirección se guarde.",
+            bloquea: false
         };
     }
 
