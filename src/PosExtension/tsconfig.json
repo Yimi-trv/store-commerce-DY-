@@ -1,7 +1,16 @@
 ﻿{
   "extends": "./devDependencies/pos-tsconfig-base.json",
+  "compilerOptions": {
+    // Los tipos de esta extension vienen de devDependencies/typings/*.d.ts.
+    // La lista vacia impide que TypeScript incluya SOLO, ademas, cualquier @types que
+    // aparezca en node_modules: un `npm install` en la raiz del repo (baileys, agosto
+    // 2026) arrastro @types/node y dejo el build del POS sin compilar, con errores de
+    // undici-types que no tienen nada que ver con este proyecto.
+    "types": []
+  },
   "exclude": [
     "obj",
-    "bin"
+    "bin",
+    "node_modules"
   ]
 }
