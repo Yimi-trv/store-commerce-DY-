@@ -1669,9 +1669,10 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return Promise.resolve();
         }
 
-        // Con RUC la dirección fiscal es obligatoria; con DNI es opcional.
-        const esRuc: boolean = this._sunatService.getDocumentType(documentNumber) === "RUC";
-        const avisoDireccion: IAvisoDeDireccion | null = this._validateAddress(element, esRuc);
+        // Solo las EMPRESAS necesitan dirección fiscal. Una persona natural con RUC (10, 15, 17)
+        // se registra igual que una con DNI: sin dirección si no la tiene.
+        const esEmpresa: boolean = this._sunatService.isOrganizationDocument(documentNumber);
+        const avisoDireccion: IAvisoDeDireccion | null = this._validateAddress(element, esEmpresa);
 
         if (avisoDireccion) {
             return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Entendido", "")
@@ -2691,9 +2692,15 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      *
      * DOS REGLAS DISTINTAS, Y CONVIENE NO CONFUNDIRLAS:
      *
-     * 1. ¿HACE FALTA DIRECCIÓN? Con RUC sí: es la dirección fiscal que sale impresa en la
-     *    factura, y un contribuyente sin ella no se registra completo. Con DNI no: un
-     *    consumidor final puede quedar registrado solo con su documento y su nombre.
+     * 1. ¿HACE FALTA DIRECCIÓN? Solo si el cliente es una EMPRESA. Un RUC no basta para
+     *    decidirlo: segun el criterio funcional de Terranova solo el RUC que empieza en 20 es
+     *    organizacion, y los que empiezan en 10, 15 o 17 son PERSONAS naturales con RUC. A una
+     *    persona se le puede registrar sin direccion, igual que a una con DNI; a una empresa no,
+     *    porque su direccion fiscal es la que sale impresa en la factura.
+     *
+     *    Quien decide eso es `isOrganizationDocument`, que ya existia con ese mismo criterio.
+     *    Repetir aqui la comprobacion del prefijo habria sido una segunda copia de la regla,
+     *    lista para divergir de la primera.
      *
      * 2. SI SE PONE, VA ENTERA. Esto vale para los dos. D365 valida el ubigeo contra sus
      *    maestros y descarta EN SILENCIO una dirección sin State/County/City: el cliente se
@@ -2718,11 +2725,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
             return {
                 titulo: "Falta la dirección fiscal",
-                motivo: "Este cliente tiene RUC, y un cliente con RUC se registra con su"
-                    + " dirección fiscal: es la que sale impresa en la factura."
-                    + "\n\nComplete Calle, Departamento, Provincia y Distrito."
-                    + "\n\nSi lo que necesita es un cliente sin dirección, regístrelo con DNI.",
-                pie: "La dirección fiscal es obligatoria para un cliente con RUC."
+                motivo: "Este cliente es una empresa: su RUC empieza en 20."
+                    + "\n\nUna empresa se registra con su dirección fiscal, que es la que sale"
+                    + " impresa en la factura."
+                    + "\n\nComplete Calle, Departamento, Provincia y Distrito.",
+                pie: "La dirección fiscal es obligatoria para una empresa."
             };
         }
 
@@ -2742,7 +2749,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             motivo: "Para registrar la dirección falta completar:\n\n"
                 + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
                 + (direccionObligatoria
-                    ? "Complete esos campos: una dirección a medias no se guarda."
+                    ? "Complete esos campos: una empresa no se registra sin dirección fiscal."
                     : "Complete esos campos, o borre los datos de dirección si este cliente no va a"
                       + " tener una: una dirección a medias no se guarda."),
             pie: direccionObligatoria

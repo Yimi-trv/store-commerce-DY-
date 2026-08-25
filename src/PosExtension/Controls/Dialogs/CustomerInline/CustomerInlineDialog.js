@@ -1056,8 +1056,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         this._showMessage(element, "El nombre/razón social es obligatorio.");
                         return Promise.resolve();
                     }
-                    var esRuc = this._sunatService.getDocumentType(documentNumber) === "RUC";
-                    var avisoDireccion = this._validateAddress(element, esRuc);
+                    var esEmpresa = this._sunatService.isOrganizationDocument(documentNumber);
+                    var avisoDireccion = this._validateAddress(element, esEmpresa);
                     if (avisoDireccion) {
                         return this._showAlert(element, avisoDireccion.titulo, avisoDireccion.motivo, "Entendido", "")
                             .then(function () {
@@ -1721,11 +1721,11 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         }
                         return {
                             titulo: "Falta la dirección fiscal",
-                            motivo: "Este cliente tiene RUC, y un cliente con RUC se registra con su"
-                                + " dirección fiscal: es la que sale impresa en la factura."
-                                + "\n\nComplete Calle, Departamento, Provincia y Distrito."
-                                + "\n\nSi lo que necesita es un cliente sin dirección, regístrelo con DNI.",
-                            pie: "La dirección fiscal es obligatoria para un cliente con RUC."
+                            motivo: "Este cliente es una empresa: su RUC empieza en 20."
+                                + "\n\nUna empresa se registra con su dirección fiscal, que es la que sale"
+                                + " impresa en la factura."
+                                + "\n\nComplete Calle, Departamento, Provincia y Distrito.",
+                            pie: "La dirección fiscal es obligatoria para una empresa."
                         };
                     }
                     var faltan = [];
@@ -1749,7 +1749,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         motivo: "Para registrar la dirección falta completar:\n\n"
                             + "\u2022 " + faltan.join("\n\u2022 ") + "\n\n"
                             + (direccionObligatoria
-                                ? "Complete esos campos: una dirección a medias no se guarda."
+                                ? "Complete esos campos: una empresa no se registra sin dirección fiscal."
                                 : "Complete esos campos, o borre los datos de dirección si este cliente no va a"
                                     + " tener una: una dirección a medias no se guarda."),
                         pie: direccionObligatoria
