@@ -34,8 +34,7 @@ System.register(["PosApi/Extend/Triggers/TransactionTriggers", "../Services/Docu
                 }
                 PreEndTransactionDocumentTypeTrigger.prototype.execute = function (options) {
                     var _this = this;
-                    var cart = options ? options.cart : null;
-                    return DocumentTypeRule_1.default.evaluateCart(this.context, cart, DocumentTypeRule_1.default.carritoPagaACuentaDeCliente(cart))
+                    return DocumentTypeRule_1.default.evaluateCart(this.context, options ? options.cart : null)
                         .then(function (reason) {
                         if (!reason) {
                             return Promise.resolve({ canceled: false });

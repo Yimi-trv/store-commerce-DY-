@@ -92,9 +92,9 @@ export default class CustomerPanelAddressTrigger extends ApplicationStartTrigger
         // no habia forma de saber cual estaba cargado: se depuro un problema ya resuelto
         // porque en la caja corria un paquete anterior. Esta linea dice de un vistazo que
         // reglas trae el que esta corriendo.
-        const marca: string = "RegenerateFE 1.3.4 activo | reglas: comprobante-vs-documento,"
+        const marca: string = "RegenerateFE 1.4.0 activo | reglas: comprobante-vs-documento,"
             + " veto-RUC-observado, cliente-descriptivo, direccion-obligatoria-solo-empresas,"
-            + " modal-en-toda-vista, cliente-antes-del-pago, empleado-honorarios-a-cuenta, mapa-de-clicks";
+            + " modal-en-toda-vista, cliente-antes-del-pago, boleta-solo-negada-a-empresas, mapa-de-clicks";
 
         this.context.logger.logInformational(marca);
 

@@ -1,6 +1,6 @@
-System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consume/Dialogs", "./SunatCustomerService", "../DataService/CustomerGroupsRequest"], function (exports_1, context_1) {
+System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consume/Dialogs", "./SunatCustomerService"], function (exports_1, context_1) {
     "use strict";
-    var Cart_1, Customer_1, Dialogs_1, SunatCustomerService_1, CustomerGroupsRequest_1, DocumentTypeRule;
+    var Cart_1, Customer_1, Dialogs_1, SunatCustomerService_1, DocumentTypeRule;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -15,16 +15,13 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
             },
             function (SunatCustomerService_1_1) {
                 SunatCustomerService_1 = SunatCustomerService_1_1;
-            },
-            function (CustomerGroupsRequest_1_1) {
-                CustomerGroupsRequest_1 = CustomerGroupsRequest_1_1;
             }
         ],
         execute: function () {
             DocumentTypeRule = (function () {
                 function DocumentTypeRule() {
                 }
-                DocumentTypeRule.evaluateCart = function (context, cartFromTrigger, esPagoACuentaDeCliente) {
+                DocumentTypeRule.evaluateCart = function (context, cartFromTrigger) {
                     var correlationId = context.logger.getNewCorrelationId();
                     var cartPromise = cartFromTrigger
                         ? Promise.resolve(cartFromTrigger)
@@ -47,20 +44,17 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
                                 : "");
                         }
                         var cached = DocumentTypeRule._documentCache[accountNumber];
-                        if (cached) {
-                            return DocumentTypeRule._evaluateDocument(document, cached, accountNumber, context, esPagoACuentaDeCliente);
+                        if (typeof cached === "string") {
+                            return Promise.resolve(DocumentTypeRule._evaluateDocument(document, cached, accountNumber, context));
                         }
                         return context.runtime
                             .executeAsync(new Customer_1.GetCustomerClientRequest(accountNumber, correlationId))
                             .then(function (customerResponse) {
                             var customer = customerResponse && customerResponse.data && customerResponse.data.result;
                             var service = new SunatCustomerService_1.default();
-                            var datos = {
-                                documento: customer ? service.getDocumentNumber(customer) : "",
-                                grupo: (customer && customer.CustomerGroup) || ""
-                            };
-                            DocumentTypeRule._documentCache[accountNumber] = datos;
-                            return DocumentTypeRule._evaluateDocument(document, datos, accountNumber, context, esPagoACuentaDeCliente);
+                            var documentNumber = customer ? service.getDocumentNumber(customer) : "";
+                            DocumentTypeRule._documentCache[accountNumber] = documentNumber;
+                            return DocumentTypeRule._evaluateDocument(document, documentNumber, accountNumber, context);
                         });
                     })
                         .catch(function (reason) {
@@ -75,111 +69,30 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
                         return "";
                     });
                 };
-                DocumentTypeRule._evaluateDocument = function (document, datos, accountNumber, context, esPagoACuentaDeCliente) {
+                DocumentTypeRule._evaluateDocument = function (document, documentNumber, accountNumber, context) {
                     var service = new SunatCustomerService_1.default();
-                    var documentNumber = datos.documento;
                     var documentType = service.getDocumentType(documentNumber);
                     var hasRuc = documentType === "RUC";
+                    var esEmpresa = service.isOrganizationDocument(documentNumber);
                     context.logger.logInformational("DocumentTypeRule: comprobante=" + document
                         + " | cuenta=" + accountNumber
                         + " | documento=" + (documentNumber || "(sin documento)")
                         + " | tipo=" + (documentType || "(ninguno)")
-                        + " | grupo=" + (datos.grupo || "(sin grupo)")
-                        + " | a cuenta de cliente=" + esPagoACuentaDeCliente);
-                    if (document === DocumentTypeRule.BOLETA && hasRuc) {
-                        var bloqueo_1 = "El cliente " + accountNumber + " tiene RUC " + documentNumber + "."
-                            + "\n\nA un cliente con RUC se le emite FACTURA, no boleta."
-                            + "\n\nCambie el comprobante a Factura, o asigne a la venta un cliente sin RUC.";
-                        if (!esPagoACuentaDeCliente) {
-                            return Promise.resolve(bloqueo_1);
-                        }
-                        return DocumentTypeRule._esEmpleadoPorHonorarios(context, datos.grupo)
-                            .then(function (esEmpleado) {
-                            if (!esEmpleado) {
-                                return bloqueo_1;
-                            }
-                            context.logger.logInformational("DocumentTypeRule: " + accountNumber + " es empleado por Recibo por Honorarios"
-                                + " (grupo " + datos.grupo + ") y se cobra a su cuenta: la boleta con RUC se admite.");
-                            return "";
-                        });
+                        + " | empresa=" + esEmpresa);
+                    if (document === DocumentTypeRule.BOLETA && esEmpresa) {
+                        return "El cliente " + accountNumber + " es una empresa: su RUC " + documentNumber
+                            + " empieza en 20."
+                            + "\n\nA una empresa se le emite FACTURA, no boleta."
+                            + "\n\nCambie el comprobante a Factura, o asigne a la venta un cliente que no sea"
+                            + " una empresa.";
                     }
                     if (document === DocumentTypeRule.FACTURA && !hasRuc) {
-                        return Promise.resolve("El cliente " + accountNumber
+                        return "El cliente " + accountNumber
                             + (documentNumber ? " tiene el documento " + documentNumber + ", que no es un RUC." : " no tiene RUC registrado.")
                             + "\n\nLa FACTURA exige un cliente con RUC."
-                            + "\n\nCambie el comprobante a Boleta, o asigne a la venta un cliente con RUC.");
+                            + "\n\nCambie el comprobante a Boleta, o asigne a la venta un cliente con RUC.";
                     }
-                    return Promise.resolve("");
-                };
-                DocumentTypeRule._esEmpleadoPorHonorarios = function (context, grupo) {
-                    if (!grupo) {
-                        return Promise.resolve(false);
-                    }
-                    return DocumentTypeRule._cargarGruposDeHonorarios(context)
-                        .then(function (grupos) { return grupos.indexOf(grupo.toString()) >= 0; });
-                };
-                DocumentTypeRule._cargarGruposDeHonorarios = function (context) {
-                    if (DocumentTypeRule._gruposDeHonorarios) {
-                        return Promise.resolve(DocumentTypeRule._gruposDeHonorarios);
-                    }
-                    return context.runtime
-                        .executeAsync(new CustomerGroupsRequest_1.GetCustomerGroupsRequest())
-                        .then(function (response) {
-                        var grupos = (response && response.data && response.data.result) || [];
-                        var encontrados = [];
-                        for (var i = 0; i < grupos.length; i++) {
-                            var nombre = DocumentTypeRule._sinAcentos(grupos[i].CustomerGroupName || "");
-                            if (nombre.indexOf("HONORARIO") >= 0) {
-                                encontrados.push((grupos[i].CustomerGroupNumber || "").toString());
-                            }
-                        }
-                        DocumentTypeRule._gruposDeHonorarios = encontrados;
-                        context.logger.logInformational("DocumentTypeRule: grupos de Recibo por Honorarios del canal: "
-                            + (encontrados.join(", ") || "(ninguno)"));
-                        return encontrados;
-                    })
-                        .catch(function (reason) {
-                        context.logger.logError("DocumentTypeRule: no se pudieron leer los grupos de cliente; la excepcion de"
-                            + " empleados no se aplica esta vez: " + String(reason));
-                        return [];
-                    });
-                };
-                DocumentTypeRule._sinAcentos = function (texto) {
-                    var con = "ÁÀÄÂÉÈËÊÍÌÏÎÓÒÖÔÚÙÜÛÑáàäâéèëêíìïîóòöôúùüûñ";
-                    var sin = "AAAAEEEEIIIIOOOOUUUUNAAAAEEEEIIIIOOOOUUUUN";
-                    var salida = "";
-                    for (var i = 0; i < texto.length; i++) {
-                        var pos = con.indexOf(texto.charAt(i));
-                        salida += pos >= 0 ? sin.charAt(pos) : texto.charAt(i);
-                    }
-                    return salida.toUpperCase();
-                };
-                DocumentTypeRule.recordarMedioDeCuentaDeCliente = function (tenderTypeId) {
-                    if (tenderTypeId) {
-                        DocumentTypeRule._medioDeCuentaDeCliente = tenderTypeId.toString();
-                    }
-                };
-                DocumentTypeRule.carritoPagaACuentaDeCliente = function (cart) {
-                    var lineas = (cart && cart.TenderLines) || [];
-                    var cobros = 0;
-                    for (var i = 0; i < lineas.length; i++) {
-                        var linea = lineas[i];
-                        if (!linea || linea.IsVoided || linea.IsChangeLine) {
-                            continue;
-                        }
-                        cobros++;
-                        if (!DocumentTypeRule._esLineaACuentaDeCliente(linea)) {
-                            return false;
-                        }
-                    }
-                    return cobros > 0;
-                };
-                DocumentTypeRule._esLineaACuentaDeCliente = function (linea) {
-                    if (DocumentTypeRule._medioDeCuentaDeCliente
-                        && (linea.TenderTypeId || "").toString() === DocumentTypeRule._medioDeCuentaDeCliente) {
-                        return true;
-                    }
-                    return !!linea.CustomerId;
+                    return "";
                 };
                 DocumentTypeRule.forget = function (accountNumber) {
                     if (accountNumber && DocumentTypeRule._documentCache.hasOwnProperty(accountNumber)) {
@@ -213,8 +126,6 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
                 DocumentTypeRule.BOLETA = "BOLETA";
                 DocumentTypeRule.FACTURA = "FACTURA";
                 DocumentTypeRule._documentCache = {};
-                DocumentTypeRule._gruposDeHonorarios = null;
-                DocumentTypeRule._medioDeCuentaDeCliente = "";
                 return DocumentTypeRule;
             }());
             exports_1("DocumentTypeRule", DocumentTypeRule);
