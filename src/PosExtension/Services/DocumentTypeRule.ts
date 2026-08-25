@@ -280,34 +280,55 @@ export class DocumentTypeRule {
     }
 
     /**
-     * ¿Este carrito se cobro a cuenta de cliente?
+     * ¿Esta venta se cobro ENTERA a cuenta de cliente?
      *
-     * Se pregunta al cerrar la transaccion, cuando ya no hay `tenderType`. Dos señales, y basta
-     * con una: el medio aprendido en el cobro, o una linea de pago que lleve cuenta de cliente
-     * —solo el pago a cuenta la lleva—. La segunda sobrevive a un recargo del POS a mitad de la
-     * venta, que dejaria la primera en blanco y bloquearia el cierre de una venta ya cobrada.
+     * Se pregunta al cerrar la transaccion, cuando ya no hay `tenderType` que mirar y solo
+     * quedan las lineas de pago del carrito.
+     *
+     * TIENEN QUE SERLO TODAS, NO BASTA UNA. La excepcion que permite boleta con RUC vale solo
+     * en el cobro a cuenta de terceros, y antes bastaba con que UNA linea lo fuera: una venta
+     * cobrada mitad en efectivo y mitad a cuenta se llevaba la excepcion entera, cuando el
+     * efectivo no la tiene. Al pagar, el cobro en efectivo ya se bloquea; esto cierra el mismo
+     * hueco en el cierre, que es la red de seguridad por si algun camino no pasa por alli.
+     *
+     * Cada linea se reconoce por dos señales, y basta una: el medio aprendido en el cobro, o
+     * que la linea lleve cuenta de cliente —solo el pago a cuenta la lleva—. La segunda
+     * sobrevive a un recargo del POS a mitad de venta, que dejaria la primera en blanco y
+     * bloquearia el cierre de una venta ya cobrada.
+     *
+     * No cuentan ni las lineas anuladas ni la del vuelto: el vuelto no es una forma de pago
+     * elegida por el cajero, es dinero que se devuelve.
      */
     public static carritoPagaACuentaDeCliente(cart: any): boolean {
         const lineas: any[] = (cart && cart.TenderLines) || [];
+        let cobros: number = 0;
 
         for (let i: number = 0; i < lineas.length; i++) {
             const linea: any = lineas[i];
 
-            if (!linea || linea.IsVoided) {
+            if (!linea || linea.IsVoided || linea.IsChangeLine) {
                 continue;
             }
 
-            if (DocumentTypeRule._medioDeCuentaDeCliente
-                && (linea.TenderTypeId || "").toString() === DocumentTypeRule._medioDeCuentaDeCliente) {
-                return true;
-            }
+            cobros++;
 
-            if (linea.CustomerId) {
-                return true;
+            if (!DocumentTypeRule._esLineaACuentaDeCliente(linea)) {
+                return false;
             }
         }
 
-        return false;
+        // Sin ningun cobro todavia no hay nada que afirmar.
+        return cobros > 0;
+    }
+
+    /** Una linea de pago cobrada a la cuenta del cliente. */
+    private static _esLineaACuentaDeCliente(linea: any): boolean {
+        if (DocumentTypeRule._medioDeCuentaDeCliente
+            && (linea.TenderTypeId || "").toString() === DocumentTypeRule._medioDeCuentaDeCliente) {
+            return true;
+        }
+
+        return !!linea.CustomerId;
     }
 
     /**

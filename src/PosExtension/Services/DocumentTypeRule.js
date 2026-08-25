@@ -161,20 +161,25 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
                 };
                 DocumentTypeRule.carritoPagaACuentaDeCliente = function (cart) {
                     var lineas = (cart && cart.TenderLines) || [];
+                    var cobros = 0;
                     for (var i = 0; i < lineas.length; i++) {
                         var linea = lineas[i];
-                        if (!linea || linea.IsVoided) {
+                        if (!linea || linea.IsVoided || linea.IsChangeLine) {
                             continue;
                         }
-                        if (DocumentTypeRule._medioDeCuentaDeCliente
-                            && (linea.TenderTypeId || "").toString() === DocumentTypeRule._medioDeCuentaDeCliente) {
-                            return true;
-                        }
-                        if (linea.CustomerId) {
-                            return true;
+                        cobros++;
+                        if (!DocumentTypeRule._esLineaACuentaDeCliente(linea)) {
+                            return false;
                         }
                     }
-                    return false;
+                    return cobros > 0;
+                };
+                DocumentTypeRule._esLineaACuentaDeCliente = function (linea) {
+                    if (DocumentTypeRule._medioDeCuentaDeCliente
+                        && (linea.TenderTypeId || "").toString() === DocumentTypeRule._medioDeCuentaDeCliente) {
+                        return true;
+                    }
+                    return !!linea.CustomerId;
                 };
                 DocumentTypeRule.forget = function (accountNumber) {
                     if (accountNumber && DocumentTypeRule._documentCache.hasOwnProperty(accountNumber)) {
