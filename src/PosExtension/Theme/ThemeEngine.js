@@ -185,6 +185,63 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     if (actual.className !== nueva)
                         actual.className = nueva;
                 };
+                ThemeEngine.encajarColumnasDeLineas = function () {
+                    var cabecera = ThemeEngine.q(".transactionLinesPane .listViewHeader")
+                        || ThemeEngine.q(".listViewHeader");
+                    if (!cabecera)
+                        return;
+                    var disponible = cabecera.clientWidth;
+                    if (disponible < 100)
+                        return;
+                    if (!ThemeEngine.anchosDeColumna) {
+                        var originales = {};
+                        var suma = 0;
+                        for (var c = 0; c < ThemeEngine.COLUMNAS_LINEAS.length; c++) {
+                            var campo = ThemeEngine.COLUMNAS_LINEAS[c];
+                            var celda = ThemeEngine.q(".transactionLinesPane .tillLayout-" + campo);
+                            if (!celda)
+                                return;
+                            var ancho = Math.round(celda.getBoundingClientRect().width);
+                            if (ancho <= 0)
+                                return;
+                            originales[campo] = ancho;
+                            suma += ancho;
+                        }
+                        ThemeEngine.anchosDeColumna = originales;
+                        ThemeEngine.sobranteDeColumnas = Math.max(0, cabecera.scrollWidth - suma);
+                    }
+                    var anchos = ThemeEngine.anchosDeColumna;
+                    var necesario = ThemeEngine.sobranteDeColumnas;
+                    for (var k = 0; k < ThemeEngine.COLUMNAS_LINEAS.length; k++) {
+                        necesario += anchos[ThemeEngine.COLUMNAS_LINEAS[k]];
+                    }
+                    var HOLGURA = 8;
+                    var falta = necesario - disponible + HOLGURA;
+                    var css = "";
+                    if (falta > 0) {
+                        var raiz = "body." + ThemeAssets_1.CLASE_AMBITO + " .transactionLinesPane ";
+                        for (var r = 0; r < ThemeEngine.RECORTE_COLUMNAS.length && falta > 0; r++) {
+                            var regla = ThemeEngine.RECORTE_COLUMNAS[r];
+                            var actual = anchos[regla.campo] || 0;
+                            var puede = actual - regla.minimo;
+                            if (puede <= 0)
+                                continue;
+                            var quita = puede < falta ? puede : falta;
+                            falta -= quita;
+                            var nuevo = actual - quita;
+                            css += raiz + ".tillLayout-" + regla.campo
+                                + "{width:" + nuevo + "px !important;min-width:0 !important;flex-basis:" + nuevo + "px !important;}\n";
+                        }
+                    }
+                    if (!ThemeEngine.estiloColumnas) {
+                        ThemeEngine.estiloColumnas = document.createElement("style");
+                        ThemeEngine.estiloColumnas.setAttribute("id", "sct-columnas");
+                        document.head.appendChild(ThemeEngine.estiloColumnas);
+                    }
+                    if (ThemeEngine.estiloColumnas.textContent !== css) {
+                        ThemeEngine.estiloColumnas.textContent = css;
+                    }
+                };
                 ThemeEngine.cuadriculaContenedora = function (desde) {
                     var actual = desde;
                     while (actual) {
@@ -984,6 +1041,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
                     ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
                     ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
+                    ThemeEngine.encajarColumnasDeLineas();
                     ThemeEngine.solicitarRecalculoPestanas();
                 };
                 ThemeEngine.aplicarLayoutAmplio = function () {
@@ -1042,6 +1100,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
                     ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
                     ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
+                    ThemeEngine.encajarColumnasDeLineas();
                 };
                 ThemeEngine.aplicarTodo = function () {
                     if (!ThemeAssets_1.TEMA_ACTIVO)
@@ -1201,6 +1260,9 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                 ThemeEngine.estiloNumpad = null;
                 ThemeEngine.estiloAlineacion = null;
                 ThemeEngine.estiloZona = null;
+                ThemeEngine.estiloColumnas = null;
+                ThemeEngine.anchosDeColumna = null;
+                ThemeEngine.sobranteDeColumnas = 0;
                 ThemeEngine.punteroActivo = -1;
                 ThemeEngine.marcaPuntero = 0;
                 ThemeEngine.MS_SUELTA_PUNTERO = 1500;
@@ -1216,6 +1278,15 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     "#ButtonGrid2Control", "#ButtonGrid2Control .buttonsContainer",
                     "#ButtonGrid3Control", "#ButtonGrid3Control .buttonsContainer",
                     "#ButtonGrid4", "#ButtonGrid4Control", "#ButtonGrid4Control .buttonsContainer"
+                ];
+                ThemeEngine.RECORTE_COLUMNAS = [
+                    { campo: "UnitOfMeasureField", minimo: 24 },
+                    { campo: "ItemIdField", minimo: 56 },
+                    { campo: "ProductNameField", minimo: 200 }
+                ];
+                ThemeEngine.COLUMNAS_LINEAS = [
+                    "ItemIdField", "ProductNameField", "QuantityField",
+                    "UnitOfMeasureField", "OriginalPriceField", "TotalWithTaxField"
                 ];
                 return ThemeEngine;
             }());

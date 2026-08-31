@@ -105,6 +105,13 @@ export class ThemeEngine {
     private static estiloNumpad: HTMLStyleElement | null = null;
     private static estiloAlineacion: HTMLStyleElement | null = null;
     private static estiloZona: HTMLStyleElement | null = null;
+    private static estiloColumnas: HTMLStyleElement | null = null;
+
+    // Anchos que trae la rejilla de lineas ANTES de que el tema toque nada, y el sobrante de
+    // relleno de las celdas. Ver encajarColumnasDeLineas(): sin esta foto original, el ajuste se
+    // recalcularia sobre lo que el mismo escribio y entraria en bucle.
+    private static anchosDeColumna: { [campo: string]: number } | null = null;
+    private static sobranteDeColumnas: number = 0;
 
     // Un solo dedo a la vez sobre las cuadriculas de botones. Ver vigilarToquesMultiples().
     private static punteroActivo: number = -1;
@@ -320,6 +327,118 @@ export class ThemeEngine {
         // vigilante y vuelve el bucle de mutaciones.
         var nueva: string = "sct-ic " + clase;
         if (actual.className !== nueva) actual.className = nueva;
+    }
+
+    // ---------------------------------------------------------------- columnas de la venta
+
+    /**
+     * Orden en que se recortan las columnas de la rejilla de lineas, y hasta donde.
+     * Primero la menos util; el minimo es lo que hace falta para que siga leyendose.
+     */
+    private static readonly RECORTE_COLUMNAS: Array<{ campo: string; minimo: number }> = [
+        { campo: "UnitOfMeasureField", minimo: 24 },   // muestra una letra ("U")
+        { campo: "ItemIdField", minimo: 56 },          // codigos de 6 cifras
+        { campo: "ProductNameField", minimo: 200 }     // el nombre, lo ultimo que se toca
+    ];
+
+    private static readonly COLUMNAS_LINEAS: string[] = [
+        "ItemIdField", "ProductNameField", "QuantityField",
+        "UnitOfMeasureField", "OriginalPriceField", "TotalWithTaxField"
+    ];
+
+    // Hace que quepan todas las columnas de la caja de lineas, incluida la del TOTAL.
+    //
+    // EL PROBLEMA (medido en master a 1024x768). HQ define seis columnas que suman 640px y, con
+    // el relleno de las celdas, el contenido pide 680. La caja de lineas da 624 utiles. Faltan
+    // 56px, y como la rejilla trae overflow-x:hidden, la ultima columna —"Total (con impuestos)",
+    // justo la que el cajero necesita— no es que se pueda arrastrar: es que no existe en pantalla.
+    // Todas las cabeceras salian ya cortadas con puntos suspensivos.
+    //
+    // POR QUE SE PUEDE ARREGLAR DESDE AQUI. Comprobado en vivo: los anchos los ponen CLASES
+    // (.tillLayout-ItemIdField y companeras), no un style inline. Un !important de hoja les gana.
+    // Si hubieran venido inline no habria forma limpia y habria que quitar columnas en HQ.
+    //
+    // COMO REPARTE. Se mide cuanto falta y se recorta de las columnas menos utiles, en orden y
+    // con un suelo cada una (ver RECORTE_COLUMNAS). El nombre del articulo es lo ultimo que se
+    // toca, y nunca baja de 200px.
+    //
+    // ¡¡OJO CON LA ESTABILIDAD!! Es la trampa de este fichero y aqui muerde fuerte. El deficit NO
+    // se puede medir en cada pasada: en cuanto se aplica el recorte, deja de faltar espacio, el
+    // calculo daria cero, se borraria la hoja, volverian los anchos originales y volveria a
+    // faltar. Bucle de parpadeo. Por eso los anchos ORIGINALES se fotografian UNA vez, antes de
+    // escribir nada, y todo se calcula siempre contra esa foto. Asi el resultado es el mismo en
+    // cada pasada y no se escribe nada en reposo.
+    //
+    // Se desactiva sola: si hay sitio de sobra (pantalla ancha), no sobra deficit y no emite
+    // ninguna regla. No hace falta distinguir amplio de compacto.
+    private static encajarColumnasDeLineas(): void {
+        var cabecera: HTMLElement | null = ThemeEngine.q(".transactionLinesPane .listViewHeader")
+            || ThemeEngine.q(".listViewHeader");
+        if (!cabecera) return;
+
+        var disponible: number = cabecera.clientWidth;
+        if (disponible < 100) return;
+
+        // Foto original, una sola vez y antes de tocar nada.
+        if (!ThemeEngine.anchosDeColumna) {
+            var originales: { [campo: string]: number } = {};
+            var suma: number = 0;
+
+            for (var c: number = 0; c < ThemeEngine.COLUMNAS_LINEAS.length; c++) {
+                var campo: string = ThemeEngine.COLUMNAS_LINEAS[c];
+                var celda: HTMLElement | null = ThemeEngine.q(".transactionLinesPane .tillLayout-" + campo);
+                // Si falta alguna, la rejilla aun no esta montada: se reintenta en la pasada
+                // siguiente. No se guarda una foto a medias.
+                if (!celda) return;
+                var ancho: number = Math.round(celda.getBoundingClientRect().width);
+                if (ancho <= 0) return;
+                originales[campo] = ancho;
+                suma += ancho;
+            }
+
+            ThemeEngine.anchosDeColumna = originales;
+            // Lo que ocupan los rellenos y margenes de las celdas, por encima de los anchos.
+            ThemeEngine.sobranteDeColumnas = Math.max(0, cabecera.scrollWidth - suma);
+        }
+
+        var anchos: { [campo: string]: number } = ThemeEngine.anchosDeColumna;
+        var necesario: number = ThemeEngine.sobranteDeColumnas;
+        for (var k: number = 0; k < ThemeEngine.COLUMNAS_LINEAS.length; k++) {
+            necesario += anchos[ThemeEngine.COLUMNAS_LINEAS[k]];
+        }
+
+        var HOLGURA: number = 8;
+        var falta: number = necesario - disponible + HOLGURA;
+        var css: string = "";
+
+        if (falta > 0) {
+            var raiz: string = "body." + CLASE_AMBITO + " .transactionLinesPane ";
+
+            for (var r: number = 0; r < ThemeEngine.RECORTE_COLUMNAS.length && falta > 0; r++) {
+                var regla = ThemeEngine.RECORTE_COLUMNAS[r];
+                var actual: number = anchos[regla.campo] || 0;
+                var puede: number = actual - regla.minimo;
+                if (puede <= 0) continue;
+
+                var quita: number = puede < falta ? puede : falta;
+                falta -= quita;
+                var nuevo: number = actual - quita;
+
+                // width y flex-basis a la vez: las celdas son items de un flex y, sin la base, el
+                // width no manda. min-width:0 es lo que les permite encoger.
+                css += raiz + ".tillLayout-" + regla.campo
+                    + "{width:" + nuevo + "px !important;min-width:0 !important;flex-basis:" + nuevo + "px !important;}\n";
+            }
+        }
+
+        if (!ThemeEngine.estiloColumnas) {
+            ThemeEngine.estiloColumnas = document.createElement("style");
+            ThemeEngine.estiloColumnas.setAttribute("id", "sct-columnas");
+            document.head.appendChild(ThemeEngine.estiloColumnas);
+        }
+        if (ThemeEngine.estiloColumnas.textContent !== css) {
+            ThemeEngine.estiloColumnas.textContent = css;
+        }
     }
 
     // ---------------------------------------------------------------- un dedo a la vez
@@ -1584,6 +1703,8 @@ export class ThemeEngine {
         ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
         ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
         ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
+        // Se desactiva sola si sobra ancho, asi que vale igual para 1024 y para 1920.
+        ThemeEngine.encajarColumnasDeLineas();
         ThemeEngine.solicitarRecalculoPestanas();
     }
 
@@ -1652,6 +1773,8 @@ export class ThemeEngine {
         ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
         ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
         ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
+        // Se desactiva sola si sobra ancho, asi que vale igual para 1024 y para 1920.
+        ThemeEngine.encajarColumnasDeLineas();
     }
 
     // ---------------------------------------------------------------- ciclo
