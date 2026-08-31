@@ -283,4 +283,101 @@
       }
   }
 
+  /**
+   * SunatCustomerResult entity class.
+   */
+  export class SunatCustomerResult {
+      public Id: number;
+	  public Found: boolean;
+	  public Message: string;
+	  public Provider: string;
+	  public DocumentNumber: string;
+	  public DocumentType: string;
+	  public Name: string;
+	  public FirstName: string;
+	  public LastName: string;
+	  public TaxpayerStatus: string;
+	  public TaxpayerCondition: string;
+	  public Address: string;
+	  public Department: string;
+	  public Province: string;
+	  public District: string;
+	  public UbigeoSunat: string;
+	  public PadronesText: string;
+	  public IsRetentionAgent: boolean;
+	  public IsPerceptionAgent: boolean;
+	  public IsGoodTaxpayer: boolean;
+	  public ExtensionProperties: ProxyEntities.CommerceProperty[];
+	  
+      // Navigation properties names
+      
+      /**
+       * Construct an object from odata response.
+       * @param {any} odataObject The odata result object.
+       */
+      constructor(odataObject?: any) {
+          odataObject = odataObject || {};
+          
+            this.Id = (odataObject.Id != null) ? parseInt(odataObject.Id, 10) : undefined;
+              
+            this.Found = odataObject.Found;
+              
+            this.Message = odataObject.Message;
+              
+            this.Provider = odataObject.Provider;
+              
+            this.DocumentNumber = odataObject.DocumentNumber;
+              
+            this.DocumentType = odataObject.DocumentType;
+              
+            this.Name = odataObject.Name;
+              
+            this.FirstName = odataObject.FirstName;
+              
+            this.LastName = odataObject.LastName;
+              
+            this.TaxpayerStatus = odataObject.TaxpayerStatus;
+              
+            this.TaxpayerCondition = odataObject.TaxpayerCondition;
+              
+            this.Address = odataObject.Address;
+              
+            this.Department = odataObject.Department;
+              
+            this.Province = odataObject.Province;
+              
+            this.District = odataObject.District;
+              
+            this.UbigeoSunat = odataObject.UbigeoSunat;
+              
+            this.PadronesText = odataObject.PadronesText;
+              
+            this.IsRetentionAgent = odataObject.IsRetentionAgent;
+              
+            this.IsPerceptionAgent = odataObject.IsPerceptionAgent;
+              
+            this.IsGoodTaxpayer = odataObject.IsGoodTaxpayer;
+              
+        this.ExtensionProperties = undefined;
+        if (odataObject.ExtensionProperties) {
+        this.ExtensionProperties = [];
+        for (var i = 0; i < odataObject.ExtensionProperties.length; i++) {
+        if (odataObject.ExtensionProperties[i] != null) {
+        if (odataObject.ExtensionProperties[i]['@odata.type'] != null) {
+        var className: string = odataObject.ExtensionProperties[i]['@odata.type'];
+        className = className.substr(className.lastIndexOf('.') + 1).concat("Class");
+        // @ts-ignore
+        this.ExtensionProperties[i] = new ProxyEntities[className](odataObject.ExtensionProperties[i])
+        } else {
+        this.ExtensionProperties[i] = new ProxyEntities.CommercePropertyClass(odataObject.ExtensionProperties[i]);
+        }
+                    } else {
+        this.ExtensionProperties[i] = undefined;
+        }
+        }
+        }
+      
+      }
+  }
+
 }

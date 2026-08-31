@@ -112,3 +112,29 @@ export namespace TRU_SalesTransactions {
   }
 
 }
+
+export namespace TRU_Sunat {
+  // Entity Set SunatCustomerResult
+  export class ConsultarDocumentoResponse extends DataServiceResponse {
+    public result: Entities.SunatCustomerResult[];
+  }
+
+  export class ConsultarDocumentoRequest<TResponse extends ConsultarDocumentoResponse> extends DataServiceRequest<TResponse> {
+    /**
+     * Constructor
+     */
+      public constructor(documento: string) {
+        super();
+
+        this._entitySet = "TRU_Sunat";
+        this._entityType = "SunatCustomerResult";
+        this._method = "ConsultarDocumento";
+        this._parameters = { documento: documento };
+        this._isAction = false;
+        this._returnType = Entities.SunatCustomerResult;
+        this._isReturnTypeCollection = true;
+        
+      }
+  }
+
+}

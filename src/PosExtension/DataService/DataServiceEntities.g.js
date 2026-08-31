@@ -144,6 +144,52 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     return SalesTransactionItem;
                 }());
                 Entities.SalesTransactionItem = SalesTransactionItem;
+                var SunatCustomerResult = (function () {
+                    function SunatCustomerResult(odataObject) {
+                        odataObject = odataObject || {};
+                        this.Id = (odataObject.Id != null) ? parseInt(odataObject.Id, 10) : undefined;
+                        this.Found = odataObject.Found;
+                        this.Message = odataObject.Message;
+                        this.Provider = odataObject.Provider;
+                        this.DocumentNumber = odataObject.DocumentNumber;
+                        this.DocumentType = odataObject.DocumentType;
+                        this.Name = odataObject.Name;
+                        this.FirstName = odataObject.FirstName;
+                        this.LastName = odataObject.LastName;
+                        this.TaxpayerStatus = odataObject.TaxpayerStatus;
+                        this.TaxpayerCondition = odataObject.TaxpayerCondition;
+                        this.Address = odataObject.Address;
+                        this.Department = odataObject.Department;
+                        this.Province = odataObject.Province;
+                        this.District = odataObject.District;
+                        this.UbigeoSunat = odataObject.UbigeoSunat;
+                        this.PadronesText = odataObject.PadronesText;
+                        this.IsRetentionAgent = odataObject.IsRetentionAgent;
+                        this.IsPerceptionAgent = odataObject.IsPerceptionAgent;
+                        this.IsGoodTaxpayer = odataObject.IsGoodTaxpayer;
+                        this.ExtensionProperties = undefined;
+                        if (odataObject.ExtensionProperties) {
+                            this.ExtensionProperties = [];
+                            for (var i = 0; i < odataObject.ExtensionProperties.length; i++) {
+                                if (odataObject.ExtensionProperties[i] != null) {
+                                    if (odataObject.ExtensionProperties[i]['@odata.type'] != null) {
+                                        var className = odataObject.ExtensionProperties[i]['@odata.type'];
+                                        className = className.substr(className.lastIndexOf('.') + 1).concat("Class");
+                                        this.ExtensionProperties[i] = new Entities_1.ProxyEntities[className](odataObject.ExtensionProperties[i]);
+                                    }
+                                    else {
+                                        this.ExtensionProperties[i] = new Entities_1.ProxyEntities.CommercePropertyClass(odataObject.ExtensionProperties[i]);
+                                    }
+                                }
+                                else {
+                                    this.ExtensionProperties[i] = undefined;
+                                }
+                            }
+                        }
+                    }
+                    return SunatCustomerResult;
+                }());
+                Entities.SunatCustomerResult = SunatCustomerResult;
             })(Entities || (exports_1("Entities", Entities = {})));
         }
     };

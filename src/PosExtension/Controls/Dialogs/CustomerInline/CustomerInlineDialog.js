@@ -79,7 +79,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     _this._resolve = null;
                     _this._currentCustomer = null;
                     _this._initialSearchText = "";
-                    _this._sunatService = new SunatCustomerService_1.default();
+                    _this._sunatService = new SunatCustomerService_1.default(_this.context);
                     _this._lastSunatData = null;
                     return _this;
                 }

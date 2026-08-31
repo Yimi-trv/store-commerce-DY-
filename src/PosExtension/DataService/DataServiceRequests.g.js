@@ -15,7 +15,7 @@ System.register(["PosApi/Entities", "./DataServiceEntities.g", "PosApi/Consume/D
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Entities_1, DataServiceEntities_g_1, DataService_1, TRU_Diagnostics, TRU_GeographicData, TRU_SalesTransactions;
+    var Entities_1, DataServiceEntities_g_1, DataService_1, TRU_Diagnostics, TRU_GeographicData, TRU_SalesTransactions, TRU_Sunat;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -134,6 +134,32 @@ System.register(["PosApi/Entities", "./DataServiceEntities.g", "PosApi/Consume/D
                 }(DataService_1.DataServiceRequest));
                 TRU_SalesTransactions.QueryRequest = QueryRequest;
             })(TRU_SalesTransactions || (exports_1("TRU_SalesTransactions", TRU_SalesTransactions = {})));
+            (function (TRU_Sunat) {
+                var ConsultarDocumentoResponse = (function (_super) {
+                    __extends(ConsultarDocumentoResponse, _super);
+                    function ConsultarDocumentoResponse() {
+                        return _super !== null && _super.apply(this, arguments) || this;
+                    }
+                    return ConsultarDocumentoResponse;
+                }(DataService_1.DataServiceResponse));
+                TRU_Sunat.ConsultarDocumentoResponse = ConsultarDocumentoResponse;
+                var ConsultarDocumentoRequest = (function (_super) {
+                    __extends(ConsultarDocumentoRequest, _super);
+                    function ConsultarDocumentoRequest(documento) {
+                        var _this = _super.call(this) || this;
+                        _this._entitySet = "TRU_Sunat";
+                        _this._entityType = "SunatCustomerResult";
+                        _this._method = "ConsultarDocumento";
+                        _this._parameters = { documento: documento };
+                        _this._isAction = false;
+                        _this._returnType = DataServiceEntities_g_1.Entities.SunatCustomerResult;
+                        _this._isReturnTypeCollection = true;
+                        return _this;
+                    }
+                    return ConsultarDocumentoRequest;
+                }(DataService_1.DataServiceRequest));
+                TRU_Sunat.ConsultarDocumentoRequest = ConsultarDocumentoRequest;
+            })(TRU_Sunat || (exports_1("TRU_Sunat", TRU_Sunat = {})));
         }
     };
 });

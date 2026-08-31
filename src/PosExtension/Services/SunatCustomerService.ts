@@ -29,6 +29,9 @@
  */
 
 import { ProxyEntities } from "PosApi/Entities";
+import {
+    ConsultarDocumentoSunatRequest, ConsultarDocumentoSunatResponse, SunatCustomerResultEntity
+} from "../DataService/SunatLookupRequest";
 
 export type SunatDocumentType = "DNI" | "RUC";
 
@@ -62,10 +65,18 @@ export interface ISunatCustomerData {
 }
 
 export default class SunatCustomerService {
-    private static readonly _apiKey: string = "cGVydWRldnMucHJvZHVjdGlvbi5maXRjb2RlcnMuNjgxY2IzYzE5ZmE0MTczZjYxMzIwYWVh";
 
-    /** Corte de espera antes de dar por caido al proveedor. */
-    private static readonly _timeoutMs: number = 8000;
+    /**
+     * Contexto del POS, necesario para llamar al Commerce Runtime.
+     *
+     * Es opcional porque hay usos que no consultan nada: DocumentTypeRule construye el servicio
+     * solo para clasificar un documento. Sin contexto, `lookup` avisa en vez de reventar.
+     */
+    private _context: any;
+
+    public constructor(context?: any) {
+        this._context = context;
+    }
 
     /**
      * Vigencia de una consulta en cache. Media hora es suficiente para cubrir un pico de caja
@@ -216,6 +227,16 @@ export default class SunatCustomerService {
         return null;
     }
 
+    /**
+     * Consulta el documento contra el endpoint propio del Commerce Runtime.
+     *
+     * LA CLAVE YA NO VIAJA A LA CAJA. Esto llamaba a api.perudevs.com desde el navegador con la
+     * clave escrita en este mismo archivo, legible con F12 en cualquier terminal. Ahora pregunta
+     * al CSU, que es quien decide entre Factiliza y su respaldo — y quien guarda las claves.
+     *
+     * LA CACHE SE QUEDA AQUI. Ahorra la ida y vuelta al servidor y, sobre todo, mantiene vivo el
+     * flujo durante una caida del proveedor para los documentos que ya pasaron por caja.
+     */
     public lookup(documentNumber: string): Promise<ISunatCustomerData> {
         const normalizedDocument: string = this.normalizeDocument(documentNumber);
         const documentType: SunatDocumentType | null = this.getDocumentType(normalizedDocument);
@@ -224,89 +245,91 @@ export default class SunatCustomerService {
             return Promise.reject(new Error("Ingrese un DNI de 8 digitos o RUC de 11 digitos."));
         }
 
-        // Un documento ya consultado no vuelve a salir a la red. Además de ahorrar llamadas,
-        // esto mantiene el flujo vivo durante una caída del proveedor para los documentos que
-        // ya pasaron por caja en el turno.
         const cached: ISunatCustomerData | null = SunatCustomerService._readCache(normalizedDocument);
+
         if (cached) {
             return Promise.resolve(cached);
         }
 
-        const url: string = documentType === "RUC"
-            ? "https://api.perudevs.com/api/v1/ruc?document=" + normalizedDocument + "&key=" + SunatCustomerService._apiKey
-            : "https://api.perudevs.com/api/v1/dni/complete?document=" + normalizedDocument + "&key=" + SunatCustomerService._apiKey;
+        // Sin contexto no hay forma de llamar al servidor. Pasa si alguien construye el servicio
+        // solo para las utilidades de documento (DocumentTypeRule lo hace) y luego pide consultar.
+        if (!this._context) {
+            return Promise.reject(new Error(
+                "La consulta no esta disponible aqui. Ingrese los datos manualmente."));
+        }
 
-        return this._fetchWithTimeout(url)
-            .then((response: Response): Promise<any> => {
-                // `response.json()` sobre un 502 intenta parsear la página de error del gateway
-                // y lanza un SyntaxError que no dice nada útil. El estado HTTP se revisa antes.
-                if (!response.ok) {
-                    throw new Error(SunatCustomerService._describeHttpFailure(response.status));
+        return this._context.runtime
+            .executeAsync(new ConsultarDocumentoSunatRequest<ConsultarDocumentoSunatResponse>(normalizedDocument))
+            .then((response: any): ISunatCustomerData => {
+                const lista: SunatCustomerResultEntity[] =
+                    (response && response.data && response.data.result) || [];
+                const resultado: SunatCustomerResultEntity = lista.length > 0 ? lista[0] : null;
+
+                if (!resultado || !resultado.Found) {
+                    throw new Error(
+                        (resultado && resultado.Message) || "No se encontro el documento en SUNAT.");
                 }
 
-                return response.json().then(
-                    (parsed: any): any => parsed,
-                    (): any => {
-                        throw new Error(
-                            "El servicio de consulta SUNAT respondio algo que no se pudo interpretar. "
-                            + "Ingrese los datos manualmente.");
-                    });
-            })
-            .then((apiData: any): ISunatCustomerData => {
-                if (apiData && apiData.estado === true && apiData.resultado) {
-                    const mapped: ISunatCustomerData =
-                        this._mapResult(apiData.resultado, documentType, normalizedDocument);
-                    SunatCustomerService._writeCache(normalizedDocument, mapped);
-                    return mapped;
-                }
-
-                throw new Error(apiData && apiData.mensaje ? apiData.mensaje : "No se encontro el documento en SUNAT.");
+                const mapped: ISunatCustomerData =
+                    this._desdeElServidor(resultado, documentType, normalizedDocument);
+                SunatCustomerService._writeCache(normalizedDocument, mapped);
+                return mapped;
+            }, (): ISunatCustomerData => {
+                // El detalle del fallo ya queda en el log del CSU; al cajero solo le sirve saber
+                // que puede seguir a mano. Mismo criterio de siempre: nunca se detiene una venta.
+                throw new Error(
+                    "No se pudo consultar el documento. Reintente o ingrese los datos manualmente.");
             });
     }
 
     /**
-     * `fetch` no tiene timeout propio: si el proveedor deja la conexion abierta, el cajero se
-     * queda esperando sin saber por que. La carrera contra un temporizador acota esa espera.
+     * Lo que respondio el proveedor -> lo que el modal necesita.
+     *
+     * EL SERVIDOR MANDA SOLO LO QUE DIJO EL PROVEEDOR; lo que se DEDUCE de ahi se calcula aqui,
+     * donde ya vive `isOrganizationDocument`. Copiar esa deduccion al C# dejaria dos
+     * definiciones de "empresa" —una decide el comprobante y la direccion, la otra el tipo de
+     * cliente— y en este proyecto las reglas duplicadas ya divergieron tres veces.
      */
-    private _fetchWithTimeout(url: string): Promise<Response> {
-        const timeoutPromise: Promise<Response> = new Promise((_resolve: any, reject: (reason: any) => void): void => {
-            setTimeout((): void => {
-                reject(new Error(
-                    "El servicio de consulta SUNAT no respondio en "
-                    + (SunatCustomerService._timeoutMs / 1000) + " segundos. "
-                    + "Reintente o ingrese los datos manualmente."));
-            }, SunatCustomerService._timeoutMs);
-        });
+    private _desdeElServidor(
+        resultado: SunatCustomerResultEntity,
+        documentType: SunatDocumentType,
+        documentNumber: string): ISunatCustomerData {
 
-        const networkPromise: Promise<Response> = fetch(url, { method: "GET" })
-            .then(
-                (response: Response): Response => response,
-                (): Response => {
-                    // Un fallo de fetch no trae detalle util: puede ser DNS, CORS o falta de red.
-                    throw new Error(
-                        "No se pudo contactar el servicio de consulta SUNAT. "
-                        + "Verifique la conexion o ingrese los datos manualmente.");
-                });
+        const esRuc: boolean = documentType === "RUC";
+        const isOrganization: boolean = this.isOrganizationDocument(documentNumber);
 
-        return Promise.race([networkPromise, timeoutPromise]);
-    }
-
-    /** Traduce el estado HTTP a algo que un cajero pueda entender y accionar. */
-    private static _describeHttpFailure(status: number): string {
-        if (status === 401 || status === 403) {
-            return "La clave del servicio de consulta SUNAT fue rechazada (HTTP " + status
-                + "). Avise a sistemas; ingrese los datos manualmente.";
-        }
-        if (status === 429) {
-            return "Se alcanzo el limite de consultas del servicio SUNAT. "
-                + "Espere unos minutos o ingrese los datos manualmente.";
-        }
-        if (status >= 500) {
-            return "El servicio de consulta SUNAT no esta disponible en este momento (HTTP " + status
-                + "). No es un problema de la caja: ingrese los datos manualmente y continue la venta.";
-        }
-        return "El servicio de consulta SUNAT rechazo la consulta (HTTP " + status
-            + "). Verifique el documento o ingrese los datos manualmente.";
+        return {
+            documentNumber: documentNumber,
+            documentType: documentType,
+            documentTypeCode: esRuc ? "6" : "1",
+            customerTypeValue: isOrganization ? 2 : 1,
+            name: resultado.Name || "",
+            firstName: resultado.FirstName || "",
+            // LOS DOS APELLIDOS VAN JUNTOS EN LastName. D365 compone el nombre de una persona
+            // como FirstName + MiddleName + LastName; el materno en MiddleName sacaba los
+            // apellidos al reves en el comprobante. MiddleName es un segundo NOMBRE.
+            lastName: resultado.LastName || "",
+            middleName: "",
+            padronesText: resultado.PadronesText || "",
+            taxpayerStatus: resultado.TaxpayerStatus || "",
+            taxpayerCondition: resultado.TaxpayerCondition || "",
+            isRetentionAgent: !!resultado.IsRetentionAgent,
+            isPerceptionAgent: !!resultado.IsPerceptionAgent,
+            // Ningun proveedor los distingue de forma fiable; quedan a criterio del cajero, que
+            // los edita en el modal antes de guardar.
+            isPublicSector: false,
+            isEmergencyZone: false,
+            isExoneratedPerception: false,
+            // Criterio funcional de Terranova: una persona natural es consumidor final.
+            isFinalConsumer: !esRuc,
+            isOthers: false,
+            isNotDomiciled: false,
+            department: resultado.Department || "",
+            province: resultado.Province || "",
+            district: resultado.District || "",
+            address: resultado.Address || "",
+            raw: resultado
+        };
     }
 
     private static _readCache(documentNumber: string): ISunatCustomerData | null {
@@ -446,78 +469,6 @@ export default class SunatCustomerService {
         return differences;
     }
 
-    private _mapResult(result: any, documentType: SunatDocumentType, documentNumber: string): ISunatCustomerData {
-        const padronesText: string = this._padronesToText(result && result.padrones);
-        const lowerPadrones: string = padronesText.toLowerCase();
-        const lowerTipo: string = ((result && result.tipo) || "").toString().toLowerCase();
-
-        if (documentType === "RUC") {
-            const razonSocial: string = (result && result.razon_social) || "";
-            const isOrganization: boolean = this.isOrganizationDocument(documentNumber);
-
-            // En un RUC de persona natural (10/15/17) la razón social viene con apellidos y
-            // nombres concatenados; D365 los necesita separados o rechaza el alta.
-            const split: { firstName: string; lastName: string } = isOrganization
-                ? { firstName: "", lastName: "" }
-                : this.splitPersonName(razonSocial);
-
-            return {
-                documentNumber: documentNumber,
-                documentType: documentType,
-                documentTypeCode: "6",
-                customerTypeValue: isOrganization ? 2 : 1,
-                name: razonSocial,
-                firstName: split.firstName,
-                lastName: split.lastName,
-                padronesText: padronesText,
-                taxpayerStatus: ((result && result.estado) || "").toString(),
-                taxpayerCondition: ((result && result.condicion) || "").toString(),
-                isRetentionAgent: lowerPadrones.indexOf("retencion") >= 0 || lowerPadrones.indexOf("retenci\u00f3n") >= 0,
-                isPerceptionAgent: lowerPadrones.indexOf("percepcion") >= 0 || lowerPadrones.indexOf("percepci\u00f3n") >= 0,
-                isPublicSector: lowerTipo.indexOf("publica") >= 0 || lowerTipo.indexOf("p\u00fablica") >= 0,
-                isEmergencyZone: false,
-                isExoneratedPerception: false,
-                isFinalConsumer: false,
-                isOthers: false,
-                isNotDomiciled: false,
-                department: (result && result.departamento) || "",
-                province: (result && result.provincia) || "",
-                district: (result && result.distrito) || "",
-                address: (result && result.direccion) || "",
-                raw: result
-            };
-        }
-
-        return {
-            documentNumber: documentNumber,
-            documentType: documentType,
-            documentTypeCode: "1",
-            customerTypeValue: 1,
-            name: (result && result.nombre_completo) || this._joinName(result && result.nombres, result && result.apellido_paterno, result && result.apellido_materno),
-            firstName: (result && result.nombres) || "",
-            // LOS DOS APELLIDOS VAN JUNTOS EN LastName.
-            // La API los entrega separados y el materno se copiaba a MiddleName, así que en el
-            // formulario "Apellidos" salía solo el paterno. Peor: D365 compone el nombre de una
-            // persona como FirstName + MiddleName + LastName, o sea "DANILO LEONARDO MELGAREJO
-            // MARCHENA" — los apellidos al revés en el comprobante. MiddleName es un segundo
-            // NOMBRE, no el apellido materno; se deja vacío.
-            lastName: this._joinName(result && result.apellido_paterno, result && result.apellido_materno),
-            middleName: "",
-            padronesText: "",
-            isRetentionAgent: false,
-            isPerceptionAgent: false,
-            isPublicSector: false,
-            isEmergencyZone: false,
-            // Criterio funcional de Terranova: una persona natural (DNI) es consumidor final.
-            // Para RUC la casilla depende de la consulta y queda en manos del cajero.
-            isFinalConsumer: true,
-            isExoneratedPerception: false,
-            isOthers: false,
-            isNotDomiciled: false,
-            raw: result
-        };
-    }
-
     /**
      * Motivos por los que a este contribuyente NO se le puede emitir factura. Vacío = apto.
      *
@@ -548,18 +499,6 @@ export default class SunatCustomerService {
         }
 
         return reasons;
-    }
-
-    private _padronesToText(padrones: any): string {
-        if (!padrones) {
-            return "";
-        }
-
-        if (Array.isArray(padrones)) {
-            return padrones.join(" ");
-        }
-
-        return padrones.toString();
     }
 
     private _getStringProperty(customer: ProxyEntities.Customer, key: string): string {

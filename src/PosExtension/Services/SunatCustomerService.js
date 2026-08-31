@@ -1,16 +1,20 @@
-System.register(["PosApi/Entities"], function (exports_1, context_1) {
+System.register(["PosApi/Entities", "../DataService/SunatLookupRequest"], function (exports_1, context_1) {
     "use strict";
-    var Entities_1, SunatCustomerService;
+    var Entities_1, SunatLookupRequest_1, SunatCustomerService;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
             function (Entities_1_1) {
                 Entities_1 = Entities_1_1;
+            },
+            function (SunatLookupRequest_1_1) {
+                SunatLookupRequest_1 = SunatLookupRequest_1_1;
             }
         ],
         execute: function () {
             SunatCustomerService = (function () {
-                function SunatCustomerService() {
+                function SunatCustomerService(context) {
+                    this._context = context;
                 }
                 SunatCustomerService.prototype.normalizeDocument = function (documentNumber) {
                     return (documentNumber || "").replace(/\D/g, "");
@@ -88,58 +92,53 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     if (cached) {
                         return Promise.resolve(cached);
                     }
-                    var url = documentType === "RUC"
-                        ? "https://api.perudevs.com/api/v1/ruc?document=" + normalizedDocument + "&key=" + SunatCustomerService._apiKey
-                        : "https://api.perudevs.com/api/v1/dni/complete?document=" + normalizedDocument + "&key=" + SunatCustomerService._apiKey;
-                    return this._fetchWithTimeout(url)
+                    if (!this._context) {
+                        return Promise.reject(new Error("La consulta no esta disponible aqui. Ingrese los datos manualmente."));
+                    }
+                    return this._context.runtime
+                        .executeAsync(new SunatLookupRequest_1.ConsultarDocumentoSunatRequest(normalizedDocument))
                         .then(function (response) {
-                        if (!response.ok) {
-                            throw new Error(SunatCustomerService._describeHttpFailure(response.status));
+                        var lista = (response && response.data && response.data.result) || [];
+                        var resultado = lista.length > 0 ? lista[0] : null;
+                        if (!resultado || !resultado.Found) {
+                            throw new Error((resultado && resultado.Message) || "No se encontro el documento en SUNAT.");
                         }
-                        return response.json().then(function (parsed) { return parsed; }, function () {
-                            throw new Error("El servicio de consulta SUNAT respondio algo que no se pudo interpretar. "
-                                + "Ingrese los datos manualmente.");
-                        });
-                    })
-                        .then(function (apiData) {
-                        if (apiData && apiData.estado === true && apiData.resultado) {
-                            var mapped = _this._mapResult(apiData.resultado, documentType, normalizedDocument);
-                            SunatCustomerService._writeCache(normalizedDocument, mapped);
-                            return mapped;
-                        }
-                        throw new Error(apiData && apiData.mensaje ? apiData.mensaje : "No se encontro el documento en SUNAT.");
+                        var mapped = _this._desdeElServidor(resultado, documentType, normalizedDocument);
+                        SunatCustomerService._writeCache(normalizedDocument, mapped);
+                        return mapped;
+                    }, function () {
+                        throw new Error("No se pudo consultar el documento. Reintente o ingrese los datos manualmente.");
                     });
                 };
-                SunatCustomerService.prototype._fetchWithTimeout = function (url) {
-                    var timeoutPromise = new Promise(function (_resolve, reject) {
-                        setTimeout(function () {
-                            reject(new Error("El servicio de consulta SUNAT no respondio en "
-                                + (SunatCustomerService._timeoutMs / 1000) + " segundos. "
-                                + "Reintente o ingrese los datos manualmente."));
-                        }, SunatCustomerService._timeoutMs);
-                    });
-                    var networkPromise = fetch(url, { method: "GET" })
-                        .then(function (response) { return response; }, function () {
-                        throw new Error("No se pudo contactar el servicio de consulta SUNAT. "
-                            + "Verifique la conexion o ingrese los datos manualmente.");
-                    });
-                    return Promise.race([networkPromise, timeoutPromise]);
-                };
-                SunatCustomerService._describeHttpFailure = function (status) {
-                    if (status === 401 || status === 403) {
-                        return "La clave del servicio de consulta SUNAT fue rechazada (HTTP " + status
-                            + "). Avise a sistemas; ingrese los datos manualmente.";
-                    }
-                    if (status === 429) {
-                        return "Se alcanzo el limite de consultas del servicio SUNAT. "
-                            + "Espere unos minutos o ingrese los datos manualmente.";
-                    }
-                    if (status >= 500) {
-                        return "El servicio de consulta SUNAT no esta disponible en este momento (HTTP " + status
-                            + "). No es un problema de la caja: ingrese los datos manualmente y continue la venta.";
-                    }
-                    return "El servicio de consulta SUNAT rechazo la consulta (HTTP " + status
-                        + "). Verifique el documento o ingrese los datos manualmente.";
+                SunatCustomerService.prototype._desdeElServidor = function (resultado, documentType, documentNumber) {
+                    var esRuc = documentType === "RUC";
+                    var isOrganization = this.isOrganizationDocument(documentNumber);
+                    return {
+                        documentNumber: documentNumber,
+                        documentType: documentType,
+                        documentTypeCode: esRuc ? "6" : "1",
+                        customerTypeValue: isOrganization ? 2 : 1,
+                        name: resultado.Name || "",
+                        firstName: resultado.FirstName || "",
+                        lastName: resultado.LastName || "",
+                        middleName: "",
+                        padronesText: resultado.PadronesText || "",
+                        taxpayerStatus: resultado.TaxpayerStatus || "",
+                        taxpayerCondition: resultado.TaxpayerCondition || "",
+                        isRetentionAgent: !!resultado.IsRetentionAgent,
+                        isPerceptionAgent: !!resultado.IsPerceptionAgent,
+                        isPublicSector: false,
+                        isEmergencyZone: false,
+                        isExoneratedPerception: false,
+                        isFinalConsumer: !esRuc,
+                        isOthers: false,
+                        isNotDomiciled: false,
+                        department: resultado.Department || "",
+                        province: resultado.Province || "",
+                        district: resultado.District || "",
+                        address: resultado.Address || "",
+                        raw: resultado
+                    };
                 };
                 SunatCustomerService._readCache = function (documentNumber) {
                     var entry = SunatCustomerService._cache[documentNumber];
@@ -237,63 +236,6 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     }
                     return differences;
                 };
-                SunatCustomerService.prototype._mapResult = function (result, documentType, documentNumber) {
-                    var padronesText = this._padronesToText(result && result.padrones);
-                    var lowerPadrones = padronesText.toLowerCase();
-                    var lowerTipo = ((result && result.tipo) || "").toString().toLowerCase();
-                    if (documentType === "RUC") {
-                        var razonSocial = (result && result.razon_social) || "";
-                        var isOrganization = this.isOrganizationDocument(documentNumber);
-                        var split = isOrganization
-                            ? { firstName: "", lastName: "" }
-                            : this.splitPersonName(razonSocial);
-                        return {
-                            documentNumber: documentNumber,
-                            documentType: documentType,
-                            documentTypeCode: "6",
-                            customerTypeValue: isOrganization ? 2 : 1,
-                            name: razonSocial,
-                            firstName: split.firstName,
-                            lastName: split.lastName,
-                            padronesText: padronesText,
-                            taxpayerStatus: ((result && result.estado) || "").toString(),
-                            taxpayerCondition: ((result && result.condicion) || "").toString(),
-                            isRetentionAgent: lowerPadrones.indexOf("retencion") >= 0 || lowerPadrones.indexOf("retenci\u00f3n") >= 0,
-                            isPerceptionAgent: lowerPadrones.indexOf("percepcion") >= 0 || lowerPadrones.indexOf("percepci\u00f3n") >= 0,
-                            isPublicSector: lowerTipo.indexOf("publica") >= 0 || lowerTipo.indexOf("p\u00fablica") >= 0,
-                            isEmergencyZone: false,
-                            isExoneratedPerception: false,
-                            isFinalConsumer: false,
-                            isOthers: false,
-                            isNotDomiciled: false,
-                            department: (result && result.departamento) || "",
-                            province: (result && result.provincia) || "",
-                            district: (result && result.distrito) || "",
-                            address: (result && result.direccion) || "",
-                            raw: result
-                        };
-                    }
-                    return {
-                        documentNumber: documentNumber,
-                        documentType: documentType,
-                        documentTypeCode: "1",
-                        customerTypeValue: 1,
-                        name: (result && result.nombre_completo) || this._joinName(result && result.nombres, result && result.apellido_paterno, result && result.apellido_materno),
-                        firstName: (result && result.nombres) || "",
-                        lastName: this._joinName(result && result.apellido_paterno, result && result.apellido_materno),
-                        middleName: "",
-                        padronesText: "",
-                        isRetentionAgent: false,
-                        isPerceptionAgent: false,
-                        isPublicSector: false,
-                        isEmergencyZone: false,
-                        isFinalConsumer: true,
-                        isExoneratedPerception: false,
-                        isOthers: false,
-                        isNotDomiciled: false,
-                        raw: result
-                    };
-                };
                 SunatCustomerService.prototype.getInvoiceBlockReasons = function (sunatData) {
                     var reasons = [];
                     if (!sunatData || sunatData.documentType !== "RUC") {
@@ -308,15 +250,6 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                         reasons.push("Condición del domicilio: " + condition + " (debe ser HABIDO)");
                     }
                     return reasons;
-                };
-                SunatCustomerService.prototype._padronesToText = function (padrones) {
-                    if (!padrones) {
-                        return "";
-                    }
-                    if (Array.isArray(padrones)) {
-                        return padrones.join(" ");
-                    }
-                    return padrones.toString();
                 };
                 SunatCustomerService.prototype._getStringProperty = function (customer, key) {
                     if (!customer || !customer.ExtensionProperties) {
@@ -357,8 +290,6 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                 SunatCustomerService.prototype._normalizeForCompare = function (value) {
                     return (value || "").toUpperCase().replace(/\s+/g, " ").trim();
                 };
-                SunatCustomerService._apiKey = "cGVydWRldnMucHJvZHVjdGlvbi5maXRjb2RlcnMuNjgxY2IzYzE5ZmE0MTczZjYxMzIwYWVh";
-                SunatCustomerService._timeoutMs = 8000;
                 SunatCustomerService._cacheTtlMs = 30 * 60 * 1000;
                 SunatCustomerService._cache = {};
                 return SunatCustomerService;

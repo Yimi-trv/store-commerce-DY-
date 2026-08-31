@@ -192,7 +192,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         this._resolve = null;
         this._currentCustomer = null;
         this._initialSearchText = "";
-        this._sunatService = new SunatCustomerService();
+        this._sunatService = new SunatCustomerService(this.context);
         this._lastSunatData = null;
     }
 
