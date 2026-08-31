@@ -50,7 +50,7 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
         /// Eso es deliberado: mientras no haya token el comportamiento es exactamente el de
         /// antes, así que esto se puede desplegar sin esperar a la credencial y sin romper nada.
         /// </summary>
-        private const string FactilizaToken = "";
+        private const string FactilizaToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0MTk0NiJ9.APE9LknLx5FnryA60c0hnfqpfiPPNoiGpiOqvmaJbHU";
 
         /// <summary>Clave de PeruDevs. Estaba en el TypeScript del POS, a la vista de cualquiera.</summary>
         private const string PeruDevsKey =
@@ -196,9 +196,64 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
             }
         }
 
+        /// <summary>
+        /// Recorta y, si hace falta, repara el texto doblemente codificado.
+        ///
+        /// TODO LO QUE MAPEA UN PROVEEDOR PASA POR AQUÍ, y es a propósito: es el único embudo,
+        /// así que ningún campo se queda sin reparar por olvido.
+        ///
+        /// EL PROBLEMA, VERIFICADO CONTRA LA API REAL
+        /// Factiliza sirve el texto con los acentos codificados DOS veces. En el DNI 00000001 la
+        /// dirección llega como "AV.SAENZ PE\u00C3\u0091A 924": esos dos caracteres son los
+        /// bytes UTF-8 de la "Ñ" (C3 91) leídos como si fueran Latin-1. Y no es cosa nuestra —el
+        /// servidor declara charset=utf-8 y leerlo a mano da exactamente lo mismo—: el dato ya
+        /// sale corrupto de su lado.
+        ///
+        /// Importa porque "PEÑA", "MUÑOZ" o "GARCÍA" son apellidos corrientes en Perú, y ese
+        /// texto termina impreso en un comprobante.
+        ///
+        /// LA DETECCIÓN TIENE QUE SER LA SEGURA, NO LA OBVIA
+        /// "Todos los caracteres caben en un byte y alguno pasa de 0x7F" parece suficiente, pero
+        /// un "MUÑOZ" correcto también cumple eso, y reinterpretarlo lo DESTRUYE ("MU?OZ"). Por
+        /// eso solo se repara si al reinterpretar sale UTF-8 válido: si aparece el carácter de
+        /// reemplazo, el texto ya estaba bien y se devuelve intacto.
+        ///
+        /// Así vale para los dos proveedores: PeruDevs manda UTF-8 correcto y no se toca.
+        /// </summary>
         private static string Texto(string valor)
         {
-            return (valor ?? string.Empty).Trim();
+            var limpio = (valor ?? string.Empty).Trim();
+
+            if (limpio.Length == 0)
+            {
+                return limpio;
+            }
+
+            var sospechoso = false;
+
+            foreach (var caracter in limpio)
+            {
+                if (caracter > 0xFF)
+                {
+                    // Hay algo que no cabe en un byte: no puede ser una cadena mal reinterpretada.
+                    return limpio;
+                }
+
+                if (caracter > 0x7F)
+                {
+                    sospechoso = true;
+                }
+            }
+
+            if (!sospechoso)
+            {
+                return limpio;
+            }
+
+            // 28591 = ISO-8859-1. No se usa Encoding.Latin1: no existe en netstandard2.0.
+            var reinterpretado = Encoding.UTF8.GetString(Encoding.GetEncoding(28591).GetBytes(limpio));
+
+            return reinterpretado.IndexOf('\uFFFD') >= 0 ? limpio : reinterpretado;
         }
 
         // ─────────────────────────── FACTILIZA (principal) ───────────────────────────
