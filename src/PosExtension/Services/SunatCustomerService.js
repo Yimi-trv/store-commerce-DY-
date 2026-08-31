@@ -57,16 +57,32 @@ System.register(["PosApi/Entities", "../DataService/SunatLookupRequest"], functi
                     }
                     var tokens = clean.split(" ");
                     var isNumber = new RegExp("^" + numberToken + "$", "i");
-                    for (var index = 1; index < tokens.length; index++) {
-                        if (isNumber.test(tokens[index]) && /[A-Za-z]/.test(tokens.slice(0, index).join(" "))) {
-                            return {
-                                street: this._trimSeparators(tokens.slice(0, index).join(" ")),
-                                streetNumber: tokens[index],
-                                compliment: this._trimSeparators(tokens.slice(index + 1).join(" "))
-                            };
+                    var inicioDelComplemento = tokens.length;
+                    for (var index = 0; index < tokens.length; index++) {
+                        if (SunatCustomerService._esInicioDeComplemento(tokens[index])) {
+                            inicioDelComplemento = index;
+                            break;
                         }
                     }
+                    var elegido = -1;
+                    for (var index = 1; index < inicioDelComplemento; index++) {
+                        if (isNumber.test(tokens[index]) && /[A-Za-z]/.test(tokens.slice(0, index).join(" "))) {
+                            elegido = index;
+                        }
+                    }
+                    if (elegido > 0) {
+                        var calle = this._trimSeparators(tokens.slice(0, elegido).join(" "));
+                        return {
+                            street: calle ? calle + " N\u00B0" : calle,
+                            streetNumber: tokens[elegido],
+                            compliment: this._trimSeparators(tokens.slice(elegido + 1).join(" "))
+                        };
+                    }
                     return { street: clean, streetNumber: "", compliment: "" };
+                };
+                SunatCustomerService._esInicioDeComplemento = function (token) {
+                    var limpio = (token || "").replace(/[.,]/g, "").toUpperCase();
+                    return SunatCustomerService._COMPLEMENTOS.indexOf(limpio) >= 0;
                 };
                 SunatCustomerService.prototype._trimSeparators = function (value) {
                     return (value || "").replace(/^[\s.,\-]+/, "").replace(/[\s.,\-]+$/, "").trim();
@@ -292,6 +308,12 @@ System.register(["PosApi/Entities", "../DataService/SunatLookupRequest"], functi
                 };
                 SunatCustomerService._cacheTtlMs = 30 * 60 * 1000;
                 SunatCustomerService._cache = {};
+                SunatCustomerService._COMPLEMENTOS = [
+                    "INT", "INTERIOR", "DPTO", "DPT", "DEPT", "DEPARTAMENTO", "PISO", "OF", "OFIC", "OFICINA",
+                    "MZ", "MZA", "MANZANA", "LT", "LTE", "LOTE", "BLOCK", "BLQ", "TDA", "TIENDA",
+                    "URB", "URBANIZACION", "BARRIO", "BARR", "ASOC", "ASOCIACION", "AAHH", "PJ", "PJE",
+                    "PSJE", "SECTOR", "ETAPA", "COND", "CONDOMINIO", "RESIDENCIAL", "RES", "CASERIO", "CAS"
+                ];
                 return SunatCustomerService;
             }());
             exports_1("default", SunatCustomerService);

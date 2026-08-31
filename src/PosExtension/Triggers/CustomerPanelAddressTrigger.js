@@ -58,7 +58,7 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "PosApi/Consume/C
                             _this._onDocumentClick(event);
                         }, true);
                     }
-                    var marca = "RegenerateFE 1.5.0 activo | reglas: comprobante-vs-documento,"
+                    var marca = "RegenerateFE 1.5.1 activo | reglas: comprobante-vs-documento,"
                         + " veto-RUC-observado, consulta-en-el-servidor, cliente-descriptivo, direccion-obligatoria-solo-empresas,"
                         + " modal-en-toda-vista, cliente-antes-del-pago, boleta-solo-negada-a-empresas, mapa-de-clicks";
                     this.context.logger.logInformational(marca);

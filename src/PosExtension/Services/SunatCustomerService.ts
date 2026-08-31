@@ -92,6 +92,18 @@ export default class SunatCustomerService {
      */
     private static _cache: { [documentNumber: string]: { data: ISunatCustomerData; expiresAt: number } } = {};
 
+    /**
+     * Palabras con las que arranca el complemento en las direcciones de SUNAT y RENIEC.
+     * No pretende ser exhaustiva: lo que no esté aquí solo hace que la dirección se parta
+     * como antes, nunca que se parta mal.
+     */
+    private static readonly _COMPLEMENTOS: string[] = [
+        "INT", "INTERIOR", "DPTO", "DPT", "DEPT", "DEPARTAMENTO", "PISO", "OF", "OFIC", "OFICINA",
+        "MZ", "MZA", "MANZANA", "LT", "LTE", "LOTE", "BLOCK", "BLQ", "TDA", "TIENDA",
+        "URB", "URBANIZACION", "BARRIO", "BARR", "ASOC", "ASOCIACION", "AAHH", "PJ", "PJE",
+        "PSJE", "SECTOR", "ETAPA", "COND", "CONDOMINIO", "RESIDENCIAL", "RES", "CASERIO", "CAS"
+    ];
+
     public normalizeDocument(documentNumber: string): string {
         return (documentNumber || "").replace(/\D/g, "");
     }
@@ -147,7 +159,8 @@ export default class SunatCustomerService {
      *   "AV. LARCO NRO. 1234 INT. 501"        -> AV. LARCO NRO.        | 1234 | INT. 501
      *   "JR. UNION NRO. 123 DPTO. 401 PISO 4" -> JR. UNION NRO.        | 123  | DPTO. 401 PISO 4
      *   "AV. PRIMAVERA NRO. S/N"              -> AV. PRIMAVERA NRO.    | S/N  | (vacío)
-     *   "CAL. SAN MARTIN 456"                 -> CAL. SAN MARTIN       | 456  | (vacío)
+     *   "CAL. SAN MARTIN 456"                 -> CAL. SAN MARTIN N°    | 456  | (vacío)
+     *   "AV. CORDILLERA NEGRA 979 BARRIO..."  -> AV. CORDILLERA NEGRA N° | 979 | BARRIO...
      *
      * El corte se hace sobre el marcador de número (NRO., N°, NUM...), que es lo que SUNAT
      * emite de forma consistente. Lo de antes es la calle, lo de después del número es el
@@ -158,10 +171,15 @@ export default class SunatCustomerService {
      * la dirección completa concatenando Street y StreetNumber, así que si el "NRO." se
      * descarta al separar, desaparece también del comprobante. Solo se extrae el número.
      *
-     * DELIBERADAMENTE CONSERVADORA: si no hay marcador ni un número al final reconocible, se
-     * devuelve la cadena entera como calle y los otros dos campos vacíos. Es preferible dejar
-     * la dirección como llegó a partirla mal —una dirección troceada al azar es peor que una
-     * sin trocear, y el cajero no tendría cómo notarlo. Los tres campos quedan editables.
+     * CUANDO NO VIENE MARCADOR, SE ESCRIBE "N°". Factiliza entrega la dirección del DNI sin
+     * él —"AV. CORDILLERA NEGRA 979 BARRIO LOS OLIVOS"—, pero ahí el número está igual de
+     * claro: va detrás del nombre de la vía. Se asume eso y se añade el marcador, para que la
+     * dirección impresa se lea como se escribe en Perú y no como "AV. CORDILLERA NEGRA 979".
+     *
+     * DELIBERADAMENTE CONSERVADORA: si no hay marcador ni un número reconocible, se devuelve la
+     * cadena entera como calle y los otros dos campos vacíos. Es preferible dejar la dirección
+     * como llegó a partirla mal —una dirección troceada al azar es peor que una sin trocear, y
+     * el cajero no tendría cómo notarlo. Los tres campos quedan editables.
      */
     public parseAddressParts(fullAddress: string): { street: string; streetNumber: string; compliment: string } {
         const clean: string = (fullAddress || "").replace(/\s+/g, " ").trim();
@@ -189,23 +207,58 @@ export default class SunatCustomerService {
             };
         }
 
-        // Sin marcador: "CAL. SAN MARTIN 456 INT. 2". Se busca el primer bloque que sea un número
-        // y que tenga texto delante — así una dirección que ARRANCA con número no se parte
-        // dejando la calle vacía.
+        // Sin marcador: "AV. CORDILLERA NEGRA 979 BARRIO LOS OLIVOS".
         const tokens: string[] = clean.split(" ");
         const isNumber: RegExp = new RegExp("^" + numberToken + "$", "i");
 
-        for (let index: number = 1; index < tokens.length; index++) {
-            if (isNumber.test(tokens[index]) && /[A-Za-z]/.test(tokens.slice(0, index).join(" "))) {
-                return {
-                    street: this._trimSeparators(tokens.slice(0, index).join(" ")),
-                    streetNumber: tokens[index],
-                    compliment: this._trimSeparators(tokens.slice(index + 1).join(" "))
-                };
+        // Donde empieza el complemento, si es que empieza. Lo que va de ahí en adelante no
+        // puede ser el número de la calle: "INT. 4" o "MZ. B LT. 15" son otra cosa.
+        let inicioDelComplemento: number = tokens.length;
+
+        for (let index: number = 0; index < tokens.length; index++) {
+            if (SunatCustomerService._esInicioDeComplemento(tokens[index])) {
+                inicioDelComplemento = index;
+                break;
             }
         }
 
+        // EL ÚLTIMO NÚMERO ANTES DEL COMPLEMENTO, NO EL PRIMERO. En "AV. 28 DE JULIO 250" el
+        // primero es parte del NOMBRE de la avenida, y quedarse con él daba
+        // "AV." + "28" + "DE JULIO 250" — una dirección irreconocible. Los nombres de vía con
+        // número son de lo más corriente en Perú (28 de Julio, 2 de Mayo, 9 de Octubre).
+        let elegido: number = -1;
+
+        for (let index: number = 1; index < inicioDelComplemento; index++) {
+            if (isNumber.test(tokens[index]) && /[A-Za-z]/.test(tokens.slice(0, index).join(" "))) {
+                elegido = index;
+            }
+        }
+
+        if (elegido > 0) {
+            const calle: string = this._trimSeparators(tokens.slice(0, elegido).join(" "));
+
+            return {
+                // Se añade el marcador que la dirección no traía: es como se escribe una
+                // dirección fiscal aquí, y D365 imprime Street + StreetNumber concatenados.
+                street: calle ? calle + " N\u00B0" : calle,
+                streetNumber: tokens[elegido],
+                compliment: this._trimSeparators(tokens.slice(elegido + 1).join(" "))
+            };
+        }
+
         return { street: clean, streetNumber: "", compliment: "" };
+    }
+
+    /**
+     * ¿Este bloque abre la parte de complemento de la dirección?
+     *
+     * Sirve para no confundir el número de la calle con los que aparecen dentro del
+     * complemento: en "JR. LOS OLIVOS 120 INT. 4" el de la calle es el 120, no el 4.
+     */
+    private static _esInicioDeComplemento(token: string): boolean {
+        const limpio: string = (token || "").replace(/[.,]/g, "").toUpperCase();
+
+        return SunatCustomerService._COMPLEMENTOS.indexOf(limpio) >= 0;
     }
 
     /** Quita puntuación y espacios sueltos que quedan en los bordes al cortar. */
