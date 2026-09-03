@@ -185,6 +185,83 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     if (actual.className !== nueva)
                         actual.className = nueva;
                 };
+                ThemeEngine.avisarProducto = function () {
+                    var lineas = ThemeEngine.todos(".transactionLinesPane .listViewLine");
+                    var ahora = {};
+                    for (var i = 0; i < lineas.length; i++) {
+                        var codigo = ThemeEngine.textoDeCelda(lineas[i], "ItemIdField");
+                        if (!codigo)
+                            continue;
+                        var cantidad = parseFloat(ThemeEngine.textoDeCelda(lineas[i], "QuantityField")) || 0;
+                        if (ahora[codigo]) {
+                            ahora[codigo].cantidad += cantidad;
+                        }
+                        else {
+                            ahora[codigo] = {
+                                cantidad: cantidad,
+                                nombre: ThemeEngine.textoDeCelda(lineas[i], "ProductNameField") || codigo
+                            };
+                        }
+                    }
+                    var antes = ThemeEngine.lineasVistas;
+                    if (!antes) {
+                        ThemeEngine.lineasVistas = ahora;
+                        return;
+                    }
+                    var aviso = "";
+                    for (var cod in ahora) {
+                        if (!ahora.hasOwnProperty(cod))
+                            continue;
+                        var nuevo = ahora[cod];
+                        var viejo = antes[cod];
+                        if (!viejo) {
+                            aviso = "+ " + nuevo.nombre + "   (" + ThemeEngine.numero(nuevo.cantidad) + ")";
+                        }
+                        else if (nuevo.cantidad > viejo.cantidad) {
+                            aviso = nuevo.nombre + "   " + ThemeEngine.numero(viejo.cantidad)
+                                + " → " + ThemeEngine.numero(nuevo.cantidad);
+                        }
+                    }
+                    ThemeEngine.lineasVistas = ahora;
+                    if (aviso)
+                        ThemeEngine.mostrarAviso(aviso);
+                };
+                ThemeEngine.textoDeCelda = function (fila, campo) {
+                    var celda = fila.querySelector(".tillLayout-" + campo);
+                    if (!celda)
+                        return "";
+                    return (celda.textContent || "").replace(/\s+/g, " ").trim();
+                };
+                ThemeEngine.numero = function (valor) {
+                    return (Math.round(valor * 1000) / 1000).toString();
+                };
+                ThemeEngine.mostrarAviso = function (texto) {
+                    var caja = ThemeEngine.cajaAviso;
+                    if (!caja) {
+                        caja = document.createElement("div");
+                        caja.setAttribute("id", "sct-aviso");
+                        document.body.appendChild(caja);
+                        ThemeEngine.cajaAviso = caja;
+                    }
+                    var rejilla = ThemeEngine.q(".transactionLinesPane");
+                    if (rejilla) {
+                        var r = rejilla.getBoundingClientRect();
+                        if (r.width > 0) {
+                            caja.style.left = Math.round(r.left + 12) + "px";
+                            caja.style.top = Math.round(r.top + 10) + "px";
+                        }
+                    }
+                    if (caja.textContent !== texto)
+                        caja.textContent = texto;
+                    if (!caja.classList.contains("sct-visible"))
+                        caja.classList.add("sct-visible");
+                    if (ThemeEngine.temporizadorAviso)
+                        window.clearTimeout(ThemeEngine.temporizadorAviso);
+                    ThemeEngine.temporizadorAviso = window.setTimeout(function () {
+                        if (ThemeEngine.cajaAviso)
+                            ThemeEngine.cajaAviso.classList.remove("sct-visible");
+                    }, ThemeEngine.MS_AVISO);
+                };
                 ThemeEngine.encajarColumnasDeLineas = function () {
                     var cabecera = ThemeEngine.q(".transactionLinesPane .listViewHeader")
                         || ThemeEngine.q(".listViewHeader");
@@ -1119,7 +1196,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     ThemeEngine.prepararBotones();
                     var pasosComunes = [
                         ThemeEngine.aplicarZonas, ThemeEngine.aplicarPestanas, ThemeEngine.aplicarMontos,
-                        ThemeEngine.aplicarCliente, ThemeEngine.limpiarTooltips
+                        ThemeEngine.aplicarCliente, ThemeEngine.limpiarTooltips, ThemeEngine.avisarProducto
                     ];
                     for (var i = 0; i < pasosComunes.length; i++) {
                         try {
@@ -1263,6 +1340,10 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                 ThemeEngine.estiloColumnas = null;
                 ThemeEngine.anchosDeColumna = null;
                 ThemeEngine.sobranteDeColumnas = 0;
+                ThemeEngine.lineasVistas = null;
+                ThemeEngine.cajaAviso = null;
+                ThemeEngine.temporizadorAviso = 0;
+                ThemeEngine.MS_AVISO = 1800;
                 ThemeEngine.punteroActivo = -1;
                 ThemeEngine.marcaPuntero = 0;
                 ThemeEngine.MS_SUELTA_PUNTERO = 1500;

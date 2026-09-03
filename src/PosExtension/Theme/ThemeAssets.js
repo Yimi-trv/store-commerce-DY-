@@ -64,6 +64,8 @@ System.register([], function (exports_1, context_1) {
             + ".dark .commerceTabControl.righttabs > .tabContent,.dark .transactionLinesPane,.sct-cli-card,.sct-dom-card,.fields.row,.panel-footer,#ButtonGrid4Control{background-color:" + FONDO_TARJETA + " !important;background-image:none !important;}\n"
             + ".sct-tbtn::before,.sct-bbtn::before,.sct-pbtn::before{content:none !important;}\n"
             + ".buttonGridButton{touch-action:manipulation !important;-webkit-tap-highlight-color:rgba(0,0,0,0) !important;user-select:none !important;-webkit-user-select:none !important;}\n"
+            + "#sct-aviso{position:fixed !important;z-index:99999 !important;pointer-events:none !important;opacity:0;transition:opacity 0.15s ease-out;background:" + ROJO + " !important;color:#FFFFFF !important;font-weight:600 !important;font-size:15px !important;line-height:1.25 !important;padding:8px 14px !important;border-radius:10px !important;box-shadow:0 4px 14px rgba(0,0,0,0.45) !important;max-width:60% !important;white-space:nowrap !important;overflow:hidden !important;text-overflow:ellipsis !important;}\n"
+            + "#sct-aviso.sct-visible{opacity:1;}\n"
             + ".sct-tbtn > *:not(i.sct-ic),#ButtonGrid4Control .sct-pbtn > *:not(i.sct-ic){display:none !important;}\n"
             + ".sct-ic{position:absolute;background-repeat:no-repeat;background-position:center;background-size:contain;pointer-events:none;}\n"
             + ".sct-cbtn .sct-ic{left:28px;top:50%;transform:translateY(-50%);width:46px;height:46px;}\n"

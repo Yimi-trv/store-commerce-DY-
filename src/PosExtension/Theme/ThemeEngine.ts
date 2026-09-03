@@ -113,6 +113,13 @@ export class ThemeEngine {
     private static anchosDeColumna: { [campo: string]: number } | null = null;
     private static sobranteDeColumnas: number = 0;
 
+    // Aviso de producto agregado o sumado. Ver avisarProducto().
+    // null = todavia no se ha tomado la primera foto, y esa NO se anuncia.
+    private static lineasVistas: { [codigo: string]: { cantidad: number; nombre: string } } | null = null;
+    private static cajaAviso: HTMLElement | null = null;
+    private static temporizadorAviso: number = 0;
+    private static readonly MS_AVISO: number = 1800;
+
     // Un solo dedo a la vez sobre las cuadriculas de botones. Ver vigilarToquesMultiples().
     private static punteroActivo: number = -1;
     private static marcaPuntero: number = 0;
@@ -327,6 +334,130 @@ export class ThemeEngine {
         // vigilante y vuelve el bucle de mutaciones.
         var nueva: string = "sct-ic " + clase;
         if (actual.className !== nueva) actual.className = nueva;
+    }
+
+    // ---------------------------------------------------------------- aviso de producto
+
+    // Avisa a la cajera de que un producto entro o le subio la cantidad.
+    //
+    // POR QUE EXISTE. Al escanear un producto que YA estaba en el carrito, la cantidad se suma
+    // pero no hay ninguna senal: la cajera se guiaba solo por el precio y no sabia si el escaneo
+    // habia entrado. Palabras del usuario: "no ayuda visualmente a la cajera, no sabe si el
+    // producto se sumo".
+    //
+    // POR QUE NO SE RESALTA LA FILA, que es lo primero que uno intenta. Se probo y funciona, pero
+    // NO SIRVE: el POS devuelve la vista al final de la lista tras cada escaneo, asi que la fila
+    // que cambia —si es de las de arriba— parpadea fuera de la pantalla. Un aviso a altura fija se
+    // ve siempre, sin importar donde este el scroll.
+    //
+    // Y POR QUE NO SE TOCA LA SELECCION. Era la otra via evidente: marcar como activa la linea que
+    // cambio. Se descarto a proposito. En el POS, "ANULAR PRODUCTO" y "DEFINIR CANTIDAD" actuan
+    // sobre LA LINEA SELECCIONADA; si el tema la mueve por su cuenta, el cajero puede acabar
+    // anulando un producto distinto del que cree. En una caja eso no es un fallo estetico.
+    // El aviso da la misma informacion sin tocar nada del estado del POS.
+    //
+    // SALE EN LOS DOS CASOS, nuevo y repetido, a proposito: si el aviso aparece SIEMPRE, entonces
+    // "que no aparezca" pasa a significar que el escaneo no entro. La cajera aprende esa senal sin
+    // que nadie se la explique. Si solo saliera en los repetidos, un escaneo perdido se veria
+    // igual que uno correcto.
+    private static avisarProducto(): void {
+        var lineas: HTMLElement[] = ThemeEngine.todos(".transactionLinesPane .listViewLine");
+
+        // Cantidad total por codigo. Se agrupa por codigo —y no por fila— porque el POS puede
+        // partir un mismo articulo en dos lineas (precios o descuentos distintos): sumando, un
+        // escaneo nuevo siempre hace subir el total, aunque caiga en la otra linea.
+        var ahora: { [codigo: string]: { cantidad: number; nombre: string } } = {};
+
+        for (var i: number = 0; i < lineas.length; i++) {
+            var codigo: string = ThemeEngine.textoDeCelda(lineas[i], "ItemIdField");
+            if (!codigo) continue;
+            var cantidad: number = parseFloat(ThemeEngine.textoDeCelda(lineas[i], "QuantityField")) || 0;
+
+            if (ahora[codigo]) {
+                ahora[codigo].cantidad += cantidad;
+            } else {
+                ahora[codigo] = {
+                    cantidad: cantidad,
+                    nombre: ThemeEngine.textoDeCelda(lineas[i], "ProductNameField") || codigo
+                };
+            }
+        }
+
+        var antes = ThemeEngine.lineasVistas;
+
+        // Primera pasada: se toma la foto EN SILENCIO. Si no, al abrir el POS con una venta ya
+        // empezada se anunciarian de golpe todos los productos que ya estaban.
+        if (!antes) {
+            ThemeEngine.lineasVistas = ahora;
+            return;
+        }
+
+        var aviso: string = "";
+        for (var cod in ahora) {
+            if (!ahora.hasOwnProperty(cod)) continue;
+            var nuevo = ahora[cod];
+            var viejo = antes[cod];
+
+            if (!viejo) {
+                aviso = "+ " + nuevo.nombre + "   (" + ThemeEngine.numero(nuevo.cantidad) + ")";
+            } else if (nuevo.cantidad > viejo.cantidad) {
+                aviso = nuevo.nombre + "   " + ThemeEngine.numero(viejo.cantidad)
+                    + " → " + ThemeEngine.numero(nuevo.cantidad);
+            }
+            // Una cantidad que BAJA no se avisa: eso es una correccion del cajero, que ya sabe
+            // lo que acaba de hacer. El aviso es para confirmar que un escaneo entro.
+        }
+
+        ThemeEngine.lineasVistas = ahora;
+        if (aviso) ThemeEngine.mostrarAviso(aviso);
+    }
+
+    /** Texto de una celda de la fila, por el nombre del campo que le pone el layout de HQ. */
+    private static textoDeCelda(fila: HTMLElement, campo: string): string {
+        var celda: HTMLElement | null = fila.querySelector(".tillLayout-" + campo) as HTMLElement | null;
+        if (!celda) return "";
+        return (celda.textContent || "").replace(/\s+/g, " ").trim();
+    }
+
+    /** Cantidad legible: 3 se ve "3", no "3.000". */
+    private static numero(valor: number): string {
+        return (Math.round(valor * 1000) / 1000).toString();
+    }
+
+    // Pinta el aviso sobre la esquina superior izquierda de la caja de lineas.
+    //
+    // El elemento se crea UNA vez y se cuelga del <body>. Que este fuera del DOM del POS es
+    // deliberado: dentro, cada aviso seria una mutacion en la rejilla y dispararia una pasada del
+    // motor por cada escaneo. Colgado del body, el vigilante lo ve una sola vez al crearlo y su
+    // filtro lo descarta (no es un buttonGridButton ni una zona).
+    private static mostrarAviso(texto: string): void {
+        var caja: HTMLElement | null = ThemeEngine.cajaAviso;
+
+        if (!caja) {
+            caja = document.createElement("div");
+            caja.setAttribute("id", "sct-aviso");
+            document.body.appendChild(caja);
+            ThemeEngine.cajaAviso = caja;
+        }
+
+        // La posicion se mide cada vez: la caja de lineas cambia de sitio entre 1024 y 1920, y
+        // tambien al redimensionar. Clavarla era volver al error de los pixeles de UAT.
+        var rejilla: HTMLElement | null = ThemeEngine.q(".transactionLinesPane");
+        if (rejilla) {
+            var r = rejilla.getBoundingClientRect();
+            if (r.width > 0) {
+                caja.style.left = Math.round(r.left + 12) + "px";
+                caja.style.top = Math.round(r.top + 10) + "px";
+            }
+        }
+
+        if (caja.textContent !== texto) caja.textContent = texto;
+        if (!caja.classList.contains("sct-visible")) caja.classList.add("sct-visible");
+
+        if (ThemeEngine.temporizadorAviso) window.clearTimeout(ThemeEngine.temporizadorAviso);
+        ThemeEngine.temporizadorAviso = window.setTimeout(function (): void {
+            if (ThemeEngine.cajaAviso) ThemeEngine.cajaAviso.classList.remove("sct-visible");
+        }, ThemeEngine.MS_AVISO);
     }
 
     // ---------------------------------------------------------------- columnas de la venta
@@ -1796,7 +1927,7 @@ export class ThemeEngine {
 
         var pasosComunes: Array<() => void> = [
             ThemeEngine.aplicarZonas, ThemeEngine.aplicarPestanas, ThemeEngine.aplicarMontos,
-            ThemeEngine.aplicarCliente, ThemeEngine.limpiarTooltips
+            ThemeEngine.aplicarCliente, ThemeEngine.limpiarTooltips, ThemeEngine.avisarProducto
         ];
         
         for (var i: number = 0; i < pasosComunes.length; i++) {

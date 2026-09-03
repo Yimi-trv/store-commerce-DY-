@@ -145,6 +145,19 @@ export function construirCss(): string {
         //   user-select:none           evita que un toque mantenido seleccione el texto del boton
         //                              y saque el menu de copiar.
         + ".buttonGridButton{touch-action:manipulation !important;-webkit-tap-highlight-color:rgba(0,0,0,0) !important;user-select:none !important;-webkit-user-select:none !important;}\n"
+        // AVISO DE PRODUCTO. Se muestra al agregar un producto o al sumarle cantidad, sobre la
+        // esquina superior izquierda de la caja de lineas. Ver ThemeEngine.avisarProducto().
+        //
+        // POR QUE EXISTE: la cajera no tenia forma de saber si un producto repetido se habia
+        // sumado. Se guiaba solo por el precio. Y no sirve resaltar la fila: el POS devuelve la
+        // vista al final tras cada escaneo, asi que la fila que cambia se queda arriba, fuera de
+        // pantalla.
+        //
+        // position:fixed y colgado del <body>, NO del DOM del POS: si se insertara dentro de la
+        // rejilla, cada aviso dispararia al vigilante del tema y provocaria una pasada por escaneo.
+        // pointer-events:none para que no robe ni un toque en una pantalla tactil.
+        + "#sct-aviso{position:fixed !important;z-index:99999 !important;pointer-events:none !important;opacity:0;transition:opacity 0.15s ease-out;background:" + ROJO + " !important;color:#FFFFFF !important;font-weight:600 !important;font-size:15px !important;line-height:1.25 !important;padding:8px 14px !important;border-radius:10px !important;box-shadow:0 4px 14px rgba(0,0,0,0.45) !important;max-width:60% !important;white-space:nowrap !important;overflow:hidden !important;text-overflow:ellipsis !important;}\n"
+        + "#sct-aviso.sct-visible{opacity:1;}\n"
         + ".sct-tbtn > *:not(i.sct-ic),#ButtonGrid4Control .sct-pbtn > *:not(i.sct-ic){display:none !important;}\n"
         + ".sct-ic{position:absolute;background-repeat:no-repeat;background-position:center;background-size:contain;pointer-events:none;}\n"
         + ".sct-cbtn .sct-ic{left:28px;top:50%;transform:translateY(-50%);width:46px;height:46px;}\n"
