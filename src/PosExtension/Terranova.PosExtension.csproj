@@ -16,4 +16,15 @@
     <ProjectReference Include="..\CommerceRuntime\RegenerateFE.CommerceRuntime.csproj" />
   </ItemGroup>
 
+  <!-- La caja anuncia su version en consola desde CustomerPanelAddressTrigger, y esa linea es
+       una copia a mano del manifest porque el POS no expone la version en runtime. Se
+       descuadra sola en cuanto alguien sube la version sin tocar el trigger —paso dos veces en
+       dos pulls seguidos— y entonces la caja anuncia una version distinta de la que corre.
+       El chequeo rompe el build aqui en vez de dejar que el desfase llegue al despliegue.
+       Va en PowerShell y no en funciones de propiedad de MSBuild porque el manifest lleva
+       parentesis en la descripcion y romperia el parseo. -->
+  <Target Name="VerificarHuellaDeVersion" BeforeTargets="Build">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build\VerificarHuellaDeVersion.ps1&quot; -Raiz &quot;$(MSBuildProjectDirectory)&quot;" />
+  </Target>
+
 </Project>
