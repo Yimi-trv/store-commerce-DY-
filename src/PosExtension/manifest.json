@@ -2,7 +2,7 @@
  "$schema": "./devDependencies/schemas/manifestSchema.json",
  "name": "RegenerateFE",
  "publisher": "DP",
- "version": "1.5.4",
+ "version": "1.5.5",
  "minimumPosVersion": "9.51.0.0",
  "description": "Extension POS: consulta de RUC y DNI via SUNAT en Customer Add/Edit + tema visual Trujillo Market (layout amplio y compacto 1024x768)",
  "components": {
