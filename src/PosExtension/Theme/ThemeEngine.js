@@ -186,6 +186,7 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         actual.className = nueva;
                 };
                 ThemeEngine.avisarProducto = function () {
+                    ThemeEngine.vigilarLineas();
                     var lineas = ThemeEngine.todos(".transactionLinesPane .listViewLine");
                     var ahora = {};
                     for (var i = 0; i < lineas.length; i++) {
@@ -225,6 +226,30 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     ThemeEngine.lineasVistas = ahora;
                     if (aviso)
                         ThemeEngine.mostrarAviso(aviso);
+                };
+                ThemeEngine.vigilarLineas = function () {
+                    var pane = ThemeEngine.q(".transactionLinesPane");
+                    if (!pane || pane === ThemeEngine.paneVigilado)
+                        return;
+                    if (!ThemeEngine.observadorLineas) {
+                        ThemeEngine.observadorLineas = new MutationObserver(function () {
+                            if (ThemeEngine.temporizadorLineas)
+                                window.clearTimeout(ThemeEngine.temporizadorLineas);
+                            ThemeEngine.temporizadorLineas = window.setTimeout(function () {
+                                try {
+                                    ThemeEngine.avisarProducto();
+                                }
+                                catch (e) { }
+                            }, 80);
+                        });
+                    }
+                    ThemeEngine.observadorLineas.disconnect();
+                    ThemeEngine.observadorLineas.observe(pane, {
+                        childList: true,
+                        subtree: true,
+                        characterData: true
+                    });
+                    ThemeEngine.paneVigilado = pane;
                 };
                 ThemeEngine.textoDeCelda = function (fila, campo) {
                     var celda = fila.querySelector(".tillLayout-" + campo);
@@ -1344,6 +1369,9 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                 ThemeEngine.cajaAviso = null;
                 ThemeEngine.temporizadorAviso = 0;
                 ThemeEngine.MS_AVISO = 1800;
+                ThemeEngine.observadorLineas = null;
+                ThemeEngine.paneVigilado = null;
+                ThemeEngine.temporizadorLineas = 0;
                 ThemeEngine.punteroActivo = -1;
                 ThemeEngine.marcaPuntero = 0;
                 ThemeEngine.MS_SUELTA_PUNTERO = 1500;

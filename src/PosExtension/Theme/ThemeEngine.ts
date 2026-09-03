@@ -119,6 +119,9 @@ export class ThemeEngine {
     private static cajaAviso: HTMLElement | null = null;
     private static temporizadorAviso: number = 0;
     private static readonly MS_AVISO: number = 1800;
+    private static observadorLineas: MutationObserver | null = null;
+    private static paneVigilado: HTMLElement | null = null;
+    private static temporizadorLineas: number = 0;
 
     // Un solo dedo a la vez sobre las cuadriculas de botones. Ver vigilarToquesMultiples().
     private static punteroActivo: number = -1;
@@ -361,6 +364,8 @@ export class ThemeEngine {
     // que nadie se la explique. Si solo saliera en los repetidos, un escaneo perdido se veria
     // igual que uno correcto.
     private static avisarProducto(): void {
+        ThemeEngine.vigilarLineas();
+
         var lineas: HTMLElement[] = ThemeEngine.todos(".transactionLinesPane .listViewLine");
 
         // Cantidad total por codigo. Se agrupa por codigo —y no por fila— porque el POS puede
@@ -410,6 +415,49 @@ export class ThemeEngine {
 
         ThemeEngine.lineasVistas = ahora;
         if (aviso) ThemeEngine.mostrarAviso(aviso);
+    }
+
+    // Vigilante PROPIO de la caja de lineas, solo para el aviso de producto.
+    //
+    // BUG CORREGIDO: "si paso el producto por primera vez avisa, pero si lo vuelvo a pasar no
+    // sale, a menos que toque la pantalla otra vez".
+    //
+    // El aviso vivia dentro de la pasada general del motor, y una pasada solo se dispara cuando
+    // el vigilante principal ve APARECER cierto nodo (un buttonGridButton, una fila .fields) o
+    // cuando el cajero interactua (click, pointerup, keyup). Con eso:
+    //   - producto NUEVO     -> se anade una fila y se rehace el panel de totales -> hay pasada.
+    //   - producto REPETIDO  -> solo cambia el TEXTO de la cantidad, no aparece ningun nodo
+    //                           -> no hay pasada -> no salia el aviso hasta tocar la pantalla.
+    //
+    // Se le da vigilante propio en vez de ampliar el principal a proposito: una pasada completa
+    // mide geometria y reescribe hojas, y lanzarla en cada tecleo del carrito seria caro y volveria
+    // a abrir la puerta a los parpadeos que costo cerrar. Este observador solo llama a
+    // avisarProducto(), que compara dos listas y no toca el DOM del POS.
+    //
+    // Se reengancha si el POS reconstruye el panel (al anular una venta, al cambiar de vista):
+    // por eso se compara contra paneVigilado en vez de conectar una sola vez.
+    private static vigilarLineas(): void {
+        var pane: HTMLElement | null = ThemeEngine.q(".transactionLinesPane");
+        if (!pane || pane === ThemeEngine.paneVigilado) return;
+
+        if (!ThemeEngine.observadorLineas) {
+            ThemeEngine.observadorLineas = new MutationObserver((): void => {
+                // Un escaneo produce una rafaga de mutaciones; se espera a que se asiente para
+                // comparar una sola vez y anunciar la cantidad final, no los pasos intermedios.
+                if (ThemeEngine.temporizadorLineas) window.clearTimeout(ThemeEngine.temporizadorLineas);
+                ThemeEngine.temporizadorLineas = window.setTimeout(function (): void {
+                    try { ThemeEngine.avisarProducto(); } catch (e) { }
+                }, 80);
+            });
+        }
+
+        ThemeEngine.observadorLineas.disconnect();
+        ThemeEngine.observadorLineas.observe(pane, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+        ThemeEngine.paneVigilado = pane;
     }
 
     /** Texto de una celda de la fila, por el nombre del campo que le pone el layout de HQ. */
