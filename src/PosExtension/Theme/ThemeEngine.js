@@ -268,18 +268,22 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         document.body.appendChild(caja);
                         ThemeEngine.cajaAviso = caja;
                     }
-                    var rejilla = ThemeEngine.q(".transactionLinesPane");
-                    if (rejilla) {
-                        var r = rejilla.getBoundingClientRect();
-                        if (r.width > 0) {
-                            caja.style.left = Math.round(r.left + 12) + "px";
-                            caja.style.top = Math.round(r.top + 10) + "px";
-                        }
-                    }
                     if (caja.textContent !== texto)
                         caja.textContent = texto;
                     if (!caja.classList.contains("sct-visible"))
                         caja.classList.add("sct-visible");
+                    var rejilla = ThemeEngine.q(".transactionLinesPane");
+                    if (rejilla) {
+                        var r = rejilla.getBoundingClientRect();
+                        if (r.width > 0) {
+                            var alto = Math.round(caja.getBoundingClientRect().height) || 34;
+                            var arriba = Math.round(r.top - alto - 6);
+                            if (arriba < 4)
+                                arriba = Math.round(r.top + 10);
+                            caja.style.left = Math.round(r.left + 12) + "px";
+                            caja.style.top = arriba + "px";
+                        }
+                    }
                     if (ThemeEngine.temporizadorAviso)
                         window.clearTimeout(ThemeEngine.temporizadorAviso);
                     ThemeEngine.temporizadorAviso = window.setTimeout(function () {

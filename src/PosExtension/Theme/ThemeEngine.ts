@@ -488,19 +488,30 @@ export class ThemeEngine {
             ThemeEngine.cajaAviso = caja;
         }
 
+        // El texto va ANTES de colocar: la altura del aviso depende de lo que ponga, y hace falta
+        // para calcular cuanto hay que subirlo.
+        if (caja.textContent !== texto) caja.textContent = texto;
+        if (!caja.classList.contains("sct-visible")) caja.classList.add("sct-visible");
+
         // La posicion se mide cada vez: la caja de lineas cambia de sitio entre 1024 y 1920, y
         // tambien al redimensionar. Clavarla era volver al error de los pixeles de UAT.
+        //
+        // Va ENCIMA de la caja de lineas, en el aire que queda bajo la cabecera. Dentro tapaba las
+        // pestañas "Lineas / Pagos", que es donde estaba antes y el usuario lo pidio mas arriba.
+        // Si ahi no cupiera —pantalla corta, o un aviso de dos lineas— se queda dentro, como antes:
+        // mejor tapar una pestaña que salirse por arriba y no verse.
         var rejilla: HTMLElement | null = ThemeEngine.q(".transactionLinesPane");
         if (rejilla) {
             var r = rejilla.getBoundingClientRect();
             if (r.width > 0) {
+                var alto: number = Math.round(caja.getBoundingClientRect().height) || 34;
+                var arriba: number = Math.round(r.top - alto - 6);
+                if (arriba < 4) arriba = Math.round(r.top + 10);
+
                 caja.style.left = Math.round(r.left + 12) + "px";
-                caja.style.top = Math.round(r.top + 10) + "px";
+                caja.style.top = arriba + "px";
             }
         }
-
-        if (caja.textContent !== texto) caja.textContent = texto;
-        if (!caja.classList.contains("sct-visible")) caja.classList.add("sct-visible");
 
         if (ThemeEngine.temporizadorAviso) window.clearTimeout(ThemeEngine.temporizadorAviso);
         ThemeEngine.temporizadorAviso = window.setTimeout(function (): void {
