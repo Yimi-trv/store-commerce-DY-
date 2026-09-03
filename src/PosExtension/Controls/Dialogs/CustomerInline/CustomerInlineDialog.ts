@@ -131,6 +131,9 @@ export interface ICustomerInlineDialogResult {
 }
 
 export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
+    /** Valor de la opcion "agregar una nueva" del desplegable de direcciones. */
+    private static readonly NUEVA_DIRECCION: string = "nueva";
+
     private _mode: CustomerInlineDialogMode;
     private _resolve: ((result: ICustomerInlineDialogResult | null) => void) | null;
     private _currentCustomer: ProxyEntities.Customer | null;
@@ -159,6 +162,12 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private _editingAddressRecordId: number = 0;
 
     /**
+     * Las direcciones del cliente que se está editando, en el MISMO orden que el desplegable:
+     * el value de cada opción es el índice de este arreglo.
+     */
+    private _currentAddresses: any[] = [];
+
+    /**
      * Resultados por término de búsqueda, compartidos entre aperturas del modal — que crea una
      * instancia nueva cada vez. Vive en memoria y se pierde al recargar el POS.
      */
@@ -181,6 +190,20 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     private static _colorText: string = "#E8E6E3";
 
     private static _searchCache: { [key: string]: any[] } = {};
+
+    /**
+     * MAESTROS CACHEADOS POR CAJA.
+     *
+     * Departamentos, provincias, distritos, propositos y grupos son datos maestros que no
+     * cambian durante un turno, y se pedian una y otra vez: tres peticiones en cada apertura del
+     * modal, y DOS MAS cada vez que el cajero elige otra direccion en el desplegable —porque la
+     * cascada geografica se reposiciona—. Comparar tres direcciones costaba mas de un segundo
+     * de espera para recibir siempre exactamente lo mismo.
+     *
+     * Se guarda la PROMESA y no el resultado: al abrir el modal salen varias peticiones a la vez
+     * y asi las simultaneas comparten un unico viaje en lugar de duplicarlo.
+     */
+    private static _maestros: { [clave: string]: Promise<any[]> } = {};
 
     /** Campo de documento del canal, resuelto una sola vez por sesión. */
     private static _documentSearchField: any = null;
@@ -209,6 +232,12 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         this._currentCustomer = customer || null;
         this._initialSearchText = initialSearchText || "";
         this._direccionAMediasAceptada = false;
+
+        // SE REINICIAN AL ABRIR. El modal es una sola instancia que se reutiliza en cada
+        // apertura: sin esto, editar un cliente sin direcciones después de haber editado otro
+        // conservaba el RecordId anterior y la actualización apuntaba a la dirección de otro.
+        this._editingAddressRecordId = 0;
+        this._currentAddresses = [];
 
         return new Promise((resolve: (result: ICustomerInlineDialogResult | null) => void) => {
             this._resolve = resolve;
@@ -315,6 +344,15 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
         if (provinceSelect) {
             provinceSelect.onchange = (): void => {
                 this._loadDistricts(element, departmentSelect ? departmentSelect.value : "", provinceSelect.value);
+            };
+        }
+
+        // Elegir otra de las direcciones registradas la carga en el formulario.
+        const addressPicker: HTMLSelectElement =
+            element.querySelector("#customerInlineAddressPicker") as HTMLSelectElement;
+        if (addressPicker) {
+            addressPicker.onchange = (): void => {
+                this._onAddressPicked(element, addressPicker.value);
             };
         }
 
@@ -645,12 +683,34 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
      * vacío y el grupo lo resuelve `_applyChannelDefaults` copiándolo del cliente que la venta
      * ya tiene asignado — que es el comportamiento que ya venía funcionando.
      */
-    private _loadCustomerGroups(element: HTMLElement): Promise<void> {
-        return this.context.runtime
-            .executeAsync(new GetCustomerGroupsRequest<GetCustomerGroupsResponse>())
-            .then((response: any): void => {
-                const groups: any[] = (response && response.data && response.data.result) || [];
+    /**
+     * Devuelve un maestro, del cache si ya se pidio.
+     *
+     * Un fallo NO se cachea: si el canal no respondio esta vez, el siguiente intento tiene que
+     * volver a preguntar en lugar de quedarse con el error para toda la sesion.
+     */
+    private static _maestro(clave: string, traer: () => Promise<any[]>): Promise<any[]> {
+        const cacheado: Promise<any[]> = CustomerInlineDialog._maestros[clave];
+        if (cacheado) {
+            return cacheado;
+        }
 
+        const pedido: Promise<any[]> = traer()
+            .catch((reason: any): any[] => {
+                delete CustomerInlineDialog._maestros[clave];
+                throw reason;
+            });
+
+        CustomerInlineDialog._maestros[clave] = pedido;
+        return pedido;
+    }
+
+    private _loadCustomerGroups(element: HTMLElement): Promise<void> {
+        return CustomerInlineDialog._maestro("grupos", (): Promise<any[]> =>
+            this.context.runtime
+                .executeAsync(new GetCustomerGroupsRequest<GetCustomerGroupsResponse>())
+                .then((response: any): any[] => (response && response.data && response.data.result) || []))
+            .then((groups: any[]): void => {
                 if (groups.length === 0) {
                     this._logChunked("=== Grupos de cliente ===", "el canal no devolvio ninguno; se usa el del canal por defecto");
                     this._fillGroupSelect(element, []);
@@ -721,10 +781,12 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     private _loadDepartments(element: HTMLElement): Promise<void> {
-        return this.context.runtime
-            .executeAsync(new GetStateProvincesServiceRequest(this._getCorrelationId(), "PER"))
-            .then((response: any): void => {
-                const states: any[] = (response && response.data && response.data.stateProvinces) || [];
+        return CustomerInlineDialog._maestro("departamentos", (): Promise<any[]> =>
+            this.context.runtime
+                .executeAsync(new GetStateProvincesServiceRequest(this._getCorrelationId(), "PER"))
+                .then((response: any): any[] =>
+                    (response && response.data && response.data.stateProvinces) || []))
+            .then((states: any[]): void => {
                 const options: Array<{ value: string; label: string }> = [];
 
                 for (let i: number = 0; i < states.length; i++) {
@@ -750,10 +812,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return Promise.resolve();
         }
 
-        return this.context.runtime
-            .executeAsync(new GetCountiesRequest<GetCountiesResponse>(stateId))
-            .then((response: any): void => {
-                const counties: any[] = (response && response.data && response.data.result) || [];
+        return CustomerInlineDialog._maestro("provincias|" + stateId, (): Promise<any[]> =>
+            this.context.runtime
+                .executeAsync(new GetCountiesRequest<GetCountiesResponse>(stateId))
+                .then((response: any): any[] => (response && response.data && response.data.result) || []))
+            .then((counties: any[]): void => {
                 const options: Array<{ value: string; label: string }> = [];
 
                 for (let i: number = 0; i < counties.length; i++) {
@@ -777,10 +840,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             return Promise.resolve();
         }
 
-        return this.context.runtime
-            .executeAsync(new GetCitiesRequest<GetCitiesResponse>(stateId, countyId))
-            .then((response: any): void => {
-                const cities: any[] = (response && response.data && response.data.result) || [];
+        return CustomerInlineDialog._maestro("distritos|" + stateId + "|" + countyId, (): Promise<any[]> =>
+            this.context.runtime
+                .executeAsync(new GetCitiesRequest<GetCitiesResponse>(stateId, countyId))
+                .then((response: any): any[] => (response && response.data && response.data.result) || []))
+            .then((cities: any[]): void => {
                 const options: Array<{ value: string; label: string }> = [];
 
                 for (let i: number = 0; i < cities.length; i++) {
@@ -907,11 +971,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             { value: ProxyEntities.AddressType.Other, label: "Otros" }
         ];
 
-        return this.context.runtime
-            .executeAsync(new GetAddressPurposesRequest<GetAddressPurposesResponse>())
-            .then((response: any): void => {
-                const purposes: any[] = (response && response.data && response.data.result) || [];
-
+        return CustomerInlineDialog._maestro("propositos", (): Promise<any[]> =>
+            this.context.runtime
+                .executeAsync(new GetAddressPurposesRequest<GetAddressPurposesResponse>())
+                .then((response: any): any[] => (response && response.data && response.data.result) || []))
+            .then((purposes: any[]): void => {
                 if (purposes.length === 0) {
                     this._logChunked("=== Propositos de direccion ===", "el canal no devolvio ninguno; se usa el enum AddressType");
                     this._fillPurposeSelect(element, fallback);
@@ -1122,26 +1186,178 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
     }
 
     /**
-     * Carga la dirección actual del cliente en la sección compartida, para que editar sea
-     * modificar lo que hay y no volver a escribirlo todo.
+     * Carga las direcciones del cliente en la sección compartida, para que editar sea modificar
+     * lo que hay y no volver a escribirlo todo.
      *
-     * Se prefiere la dirección marcada como principal; si ninguna lo está, la primera.
+     * SE CARGAN TODAS, NO SOLO LA PRINCIPAL. Un cliente puede tener varias direcciones dadas de
+     * alta en HQ y antes solo se veía una: para facturar a otra, el cajero tenía que
+     * reescribirla encima de la principal, que quedaba destruida. Ahora van todas al desplegable
+     * y se abre posicionado en la principal, que sigue siendo el caso habitual.
      */
     private _prefillAddressFromCustomer(element: HTMLElement, customer: ProxyEntities.Customer): void {
         const addresses: any[] = (customer && customer.Addresses) || [];
+        this._currentAddresses = addresses;
+
         if (addresses.length === 0) {
-            this._logChunked("=== Direccion actual del cliente ===", "el cliente no tiene direcciones cargadas");
+            this._fillAddressPicker(element);
+            this._logChunked("=== Direcciones del cliente ===", "el cliente no tiene direcciones cargadas");
             return;
         }
 
-        let address: any = addresses[0];
+        let elegida: number = 0;
         for (let i: number = 0; i < addresses.length; i++) {
             if (addresses[i].IsPrimary) {
-                address = addresses[i];
+                elegida = i;
                 break;
             }
         }
 
+        this._fillAddressPicker(element, elegida);
+        this._applyAddressToForm(element, addresses[elegida]);
+
+        // CUÁNTAS LLEGAN DE VERDAD AL POS. Se registra porque no está documentado si el canal
+        // entrega también las direcciones dadas de baja o solo las vigentes, y de eso depende si
+        // hace falta ir a buscarlas por otra vía.
+        const resumen: string[] = [];
+        for (let i: number = 0; i < addresses.length; i++) {
+            resumen.push(this._describeAddress(addresses[i], i)
+                + "   [RecordId=" + (addresses[i].RecordId || 0)
+                + " Deactivate=" + (addresses[i].Deactivate === true) + "]");
+        }
+
+        this._logChunked("=== Direcciones del cliente ===",
+            "llegan " + addresses.length + " | se abre en la #" + (elegida + 1)
+            + "\n" + resumen.join("\n"));
+    }
+
+    /**
+     * Llena el desplegable con las direcciones cargadas más la opción de agregar una nueva.
+     *
+     * @param seleccionada Índice que queda elegido; sin él se posiciona en "agregar una nueva".
+     */
+    private _fillAddressPicker(element: HTMLElement, seleccionada?: number): void {
+        const picker: HTMLSelectElement =
+            element.querySelector("#customerInlineAddressPicker") as HTMLSelectElement;
+        if (!picker) {
+            return;
+        }
+
+        picker.innerHTML = "";
+
+        for (let i: number = 0; i < this._currentAddresses.length; i++) {
+            const opcion: HTMLOptionElement = document.createElement("option");
+            opcion.value = String(i);
+            opcion.text = this._describeAddress(this._currentAddresses[i], i);
+            picker.appendChild(opcion);
+        }
+
+        // Sin esta opción, editar solo podía pisar una dirección existente: no había manera de
+        // AGREGAR una segunda desde el modal.
+        const nueva: HTMLOptionElement = document.createElement("option");
+        nueva.value = CustomerInlineDialog.NUEVA_DIRECCION;
+        nueva.text = "+ Agregar una direccion nueva";
+        picker.appendChild(nueva);
+
+        picker.value = typeof seleccionada === "number"
+            ? String(seleccionada)
+            : CustomerInlineDialog.NUEVA_DIRECCION;
+
+        this._toggleAddressPicker(element);
+    }
+
+    /**
+     * El desplegable solo tiene sentido editando y con al menos una dirección cargada. Vive
+     * aparte porque la regla se aplica desde dos sitios —al llenarlo y al cambiar de pestaña— y
+     * duplicarla lo dejaría visible en el alta, donde no hay nada que elegir.
+     */
+    private _toggleAddressPicker(element: HTMLElement): void {
+        const field: HTMLElement =
+            element.querySelector("#customerInlineAddressPickerField") as HTMLElement;
+        if (field) {
+            field.style.display =
+                (this._mode === "edit" && this._currentAddresses.length > 0) ? "" : "none";
+        }
+    }
+
+    /**
+     * El rótulo de cada opción. Lleva el propósito y el distrito porque dos direcciones de un
+     * mismo cliente suelen empezar igual, y por la calle sola no se distinguen en el desplegable.
+     */
+    private _describeAddress(address: any, indice: number): string {
+        const trozos: string[] = [];
+
+        const proposito: string = (address.Name || "").trim();
+        if (proposito) {
+            trozos.push(proposito);
+        }
+
+        let calle: string = (address.Street || "").trim();
+        if (address.StreetNumber) {
+            calle = (calle + " " + address.StreetNumber).trim();
+        }
+        trozos.push(calle || "(sin calle)");
+
+        const distrito: string = (address.DistrictName || address.City || "").trim();
+        if (distrito) {
+            trozos.push(distrito);
+        }
+
+        let rotulo: string = String(indice + 1) + ". " + trozos.join(" \u00B7 ");
+
+        if (address.IsPrimary) {
+            rotulo = rotulo + "  \u2605 principal";
+        }
+
+        // Si el canal llega a entregar direcciones dadas de baja, se ven y se marcan: una así se
+        // elige a propósito o no se elige, pero no se confunde con una vigente.
+        if (address.Deactivate === true) {
+            rotulo = rotulo + "  (inactiva)";
+        }
+
+        return rotulo;
+    }
+
+    /** Responde al cambio en el desplegable. */
+    private _onAddressPicked(element: HTMLElement, valor: string): void {
+        if (valor === CustomerInlineDialog.NUEVA_DIRECCION) {
+            this._clearAddressForm(element);
+
+            // RecordId en cero es lo que hace que al guardar se AGREGUE en vez de reemplazar.
+            this._editingAddressRecordId = 0;
+            this._logChunked("=== Direccion elegida ===", "se agregara una direccion nueva");
+            return;
+        }
+
+        const indice: number = parseInt(valor, 10);
+        const address: any = this._currentAddresses[indice];
+
+        if (!address) {
+            return;
+        }
+
+        this._applyAddressToForm(element, address);
+        this._logChunked("=== Direccion elegida ===", this._describeAddress(address, indice));
+    }
+
+    /**
+     * Vacía los campos de calle para dar de alta una dirección nueva.
+     *
+     * La cascada geográfica se deja como está a propósito: una segunda dirección suele caer en
+     * el mismo distrito, y limpiarla obligaría a recargar provincias y distritos y a elegirlo
+     * todo otra vez. Los tres desplegables quedan a la vista para corregirlos.
+     */
+    private _clearAddressForm(element: HTMLElement): void {
+        this._setValue(element, "customerInlineCreateAddress", "");
+        this._setValue(element, "customerInlineCreateStreetNumber", "");
+        this._setValue(element, "customerInlineCreateBuildingCompliment", "");
+
+        // Sin marcar: agregar una dirección no debería quitarle la condición de principal a la
+        // que ya la tiene, salvo que el cajero lo pida marcando la casilla.
+        this._setChecked(element, "customerInlineCreateAddressPrimary", false);
+    }
+
+    /** Vuelca una dirección concreta en el formulario compartido. */
+    private _applyAddressToForm(element: HTMLElement, address: any): void {
         if (address.StreetNumber || address.BuildingCompliment) {
             this._setValue(element, "customerInlineCreateAddress", address.Street || "");
             this._setValue(element, "customerInlineCreateStreetNumber", address.StreetNumber || "");
@@ -1160,7 +1376,7 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
             purposeSelect.value = String(address.AddressTypeValue);
         }
 
-        this._logChunked("=== Direccion actual del cliente ===",
+        this._logChunked("=== Direccion cargada en el formulario ===",
             "Street=" + (address.Street || "")
             + " | State=" + (address.State || "") + " County=" + (address.County || "")
             + " City=" + (address.City || "") + " | AddressType=" + (address.AddressTypeValue || ""));
@@ -1557,11 +1773,13 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
 
                 this._preselectGeographyFromSunat(element, sunatData);
                 this._selectPurposeForDocumentType(element, sunatData.documentType);
-                // RUC 20 es organización; DNI y demás documentos de persona son Persona.
-                this._setValue(element, "customerInlineCreateCustomerType",
-                    String(sunatData.documentType === "RUC"
-                        ? ProxyEntities.CustomerType.Organization
-                        : ProxyEntities.CustomerType.Person));
+                // El tipo de cliente ya lo puso _applyCustomerType unas líneas más arriba.
+                //
+                // Aquí había una segunda escritura del MISMO campo que marcaba Organización para
+                // cualquier RUC, contradiciendo a su propio comentario ("RUC 20 es
+                // organización"): un RUC 10 es persona natural y quedaba mal clasificado. Además
+                // pisaba el valor bueno sin volver a mostrar los campos de apellidos y nombres,
+                // así que el formulario acababa incoherente consigo mismo.
                 this._showTextResult(element, "customerInlineCreateResult", this._formatSunatSummary(sunatData));
                 this._showMessage(element, "Datos obtenidos. Complete si falta algo y presione Crear en Sistema.");
             });
@@ -2559,6 +2777,18 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                         existingAddresses.push(editedAddress);
                     }
 
+                    // UNA SOLA PRINCIPAL. Ahora que el cajero puede cambiar de dirección en el
+                    // desplegable, marcar la nueva como principal dejaba DOS marcadas: la que ya
+                    // lo era sigue viniendo con IsPrimary y se manda tal cual. Con dos, cuál gana
+                    // depende del orden del arreglo, y el comprobante puede salir con la otra.
+                    if (editedAddress.IsPrimary) {
+                        for (let i: number = 0; i < existingAddresses.length; i++) {
+                            if (existingAddresses[i] !== editedAddress) {
+                                existingAddresses[i].IsPrimary = false;
+                            }
+                        }
+                    }
+
                     customer.Addresses = existingAddresses;
 
                     this._logChunked("=== Direccion que se guarda ===",
@@ -2606,6 +2836,37 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 if (!this._sunatService.getDocumentType(documentNumber)) {
                     this._showMessage(element, "El documento debe ser válido.");
                     return Promise.resolve();
+                }
+
+                // GUARDAR NO DEBERIA COSTAR UNA CONSULTA A SUNAT.
+                // Esta llamada solo existe para refrescar los padrones (agente de retencion,
+                // percepcion, etc.) en las propiedades de extension del cliente. Se hacia
+                // SIEMPRE, y en la caja se medio en ~850 ms de espera con el cajero delante
+                // —mas si el proveedor tarda: el limite es 5 s por proveedor y son dos—.
+                //
+                // Cuando el cajero solo cambia de direccion, el documento es el mismo y esos
+                // padrones YA corresponden a el: consultarlos otra vez no cambia nada de lo que
+                // se guarda. Se consulta unicamente si el documento cambio, que es cuando los
+                // padrones pasan a ser de otro contribuyente.
+                //
+                // Refrescarlos a proposito sigue siendo posible con "Validar con SUNAT", que es
+                // la via pensada para eso y la deja explicita.
+                const documentoGuardado: string = this._sunatService.normalizeDocument(
+                    this._sunatService.getDocumentNumber(customer) || "");
+
+                if (documentoGuardado === documentNumber) {
+                    this._logChunked("=== Guardado ===",
+                        "documento sin cambios (" + documentNumber + "): no se consulta SUNAT");
+                    return updateWithCustomer(customer);
+                }
+
+                // Si el cajero ya consulto ESTE documento en esta apertura del modal, se
+                // reutiliza: antes se preguntaba dos veces por lo mismo.
+                if (this._lastSunatData && this._lastSunatData.documentNumber === documentNumber) {
+                    this._logChunked("=== Guardado ===",
+                        "se reutiliza la consulta que ya hizo el cajero (" + documentNumber + ")");
+                    this._sunatService.applySunatMetadata(customer, this._lastSunatData);
+                    return updateWithCustomer(customer);
                 }
 
                 this._showMessage(element, "Validando SUNAT antes de guardar cambios...");
@@ -2891,6 +3152,11 @@ export default class CustomerInlineDialog extends ExtensionTemplatedDialogBase {
                 block.style.display = blocks[i].visible ? "" : "none";
             }
         }
+
+        // La sección de dirección es compartida entre crear y editar, así que al cambiar de
+        // pestaña hay que rehacer esta decisión: el desplegable de direcciones registradas no
+        // pinta nada en el alta de un cliente que todavía no tiene ninguna.
+        this._toggleAddressPicker(element);
 
         if (mode === "search") {
             this._showMessage(element, "Busque clientes existentes por documento, nombre o cuenta.");

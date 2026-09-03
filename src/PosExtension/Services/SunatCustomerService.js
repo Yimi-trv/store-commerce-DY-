@@ -129,14 +129,17 @@ System.register(["PosApi/Entities", "../DataService/SunatLookupRequest"], functi
                 SunatCustomerService.prototype._desdeElServidor = function (resultado, documentType, documentNumber) {
                     var esRuc = documentType === "RUC";
                     var isOrganization = this.isOrganizationDocument(documentNumber);
+                    var partes = (esRuc && !isOrganization)
+                        ? this.splitPersonName(resultado.Name || "")
+                        : { firstName: resultado.FirstName || "", lastName: resultado.LastName || "" };
                     return {
                         documentNumber: documentNumber,
                         documentType: documentType,
                         documentTypeCode: esRuc ? "6" : "1",
                         customerTypeValue: isOrganization ? 2 : 1,
                         name: resultado.Name || "",
-                        firstName: resultado.FirstName || "",
-                        lastName: resultado.LastName || "",
+                        firstName: partes.firstName,
+                        lastName: partes.lastName,
                         middleName: "",
                         padronesText: resultado.PadronesText || "",
                         taxpayerStatus: resultado.TaxpayerStatus || "",

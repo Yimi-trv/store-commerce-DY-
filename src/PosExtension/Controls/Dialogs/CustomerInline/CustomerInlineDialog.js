@@ -74,6 +74,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     _this._searchSkip = 0;
                     _this._searchInFlight = false;
                     _this._editingAddressRecordId = 0;
+                    _this._currentAddresses = [];
                     _this._pendingAlertResolve = null;
                     _this._mode = "search";
                     _this._resolve = null;
@@ -92,6 +93,8 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     this._currentCustomer = customer || null;
                     this._initialSearchText = initialSearchText || "";
                     this._direccionAMediasAceptada = false;
+                    this._editingAddressRecordId = 0;
+                    this._currentAddresses = [];
                     return new Promise(function (resolve) {
                         _this._resolve = resolve;
                         var dialogOptions = {
@@ -168,6 +171,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (provinceSelect) {
                         provinceSelect.onchange = function () {
                             _this._loadDistricts(element, departmentSelect ? departmentSelect.value : "", provinceSelect.value);
+                        };
+                    }
+                    var addressPicker = element.querySelector("#customerInlineAddressPicker");
+                    if (addressPicker) {
+                        addressPicker.onchange = function () {
+                            _this._onAddressPicked(element, addressPicker.value);
                         };
                     }
                     var streetInput = element.querySelector("#customerInlineCreateAddress");
@@ -327,12 +336,27 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     report.push("--- viewport: " + (typeof window !== "undefined" ? window.innerWidth : "?") + "px ---");
                     this._logChunked("=== Ancho del dialogo ===", report.join("\n"));
                 };
+                CustomerInlineDialog._maestro = function (clave, traer) {
+                    var cacheado = CustomerInlineDialog._maestros[clave];
+                    if (cacheado) {
+                        return cacheado;
+                    }
+                    var pedido = traer()
+                        .catch(function (reason) {
+                        delete CustomerInlineDialog._maestros[clave];
+                        throw reason;
+                    });
+                    CustomerInlineDialog._maestros[clave] = pedido;
+                    return pedido;
+                };
                 CustomerInlineDialog.prototype._loadCustomerGroups = function (element) {
                     var _this = this;
-                    return this.context.runtime
-                        .executeAsync(new CustomerGroupsRequest_1.GetCustomerGroupsRequest())
-                        .then(function (response) {
-                        var groups = (response && response.data && response.data.result) || [];
+                    return CustomerInlineDialog._maestro("grupos", function () {
+                        return _this.context.runtime
+                            .executeAsync(new CustomerGroupsRequest_1.GetCustomerGroupsRequest())
+                            .then(function (response) { return (response && response.data && response.data.result) || []; });
+                    })
+                        .then(function (groups) {
                         if (groups.length === 0) {
                             _this._logChunked("=== Grupos de cliente ===", "el canal no devolvio ninguno; se usa el del canal por defecto");
                             _this._fillGroupSelect(element, []);
@@ -375,10 +399,14 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._loadDepartments = function (element) {
                     var _this = this;
-                    return this.context.runtime
-                        .executeAsync(new StoreOperations_1.GetStateProvincesServiceRequest(this._getCorrelationId(), "PER"))
-                        .then(function (response) {
-                        var states = (response && response.data && response.data.stateProvinces) || [];
+                    return CustomerInlineDialog._maestro("departamentos", function () {
+                        return _this.context.runtime
+                            .executeAsync(new StoreOperations_1.GetStateProvincesServiceRequest(_this._getCorrelationId(), "PER"))
+                            .then(function (response) {
+                            return (response && response.data && response.data.stateProvinces) || [];
+                        });
+                    })
+                        .then(function (states) {
                         var options = [];
                         for (var i = 0; i < states.length; i++) {
                             options.push({
@@ -400,10 +428,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (!stateId) {
                         return Promise.resolve();
                     }
-                    return this.context.runtime
-                        .executeAsync(new GeographicRequests_1.GetCountiesRequest(stateId))
-                        .then(function (response) {
-                        var counties = (response && response.data && response.data.result) || [];
+                    return CustomerInlineDialog._maestro("provincias|" + stateId, function () {
+                        return _this.context.runtime
+                            .executeAsync(new GeographicRequests_1.GetCountiesRequest(stateId))
+                            .then(function (response) { return (response && response.data && response.data.result) || []; });
+                    })
+                        .then(function (counties) {
                         var options = [];
                         for (var i = 0; i < counties.length; i++) {
                             options.push({
@@ -423,10 +453,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (!stateId || !countyId) {
                         return Promise.resolve();
                     }
-                    return this.context.runtime
-                        .executeAsync(new GeographicRequests_1.GetCitiesRequest(stateId, countyId))
-                        .then(function (response) {
-                        var cities = (response && response.data && response.data.result) || [];
+                    return CustomerInlineDialog._maestro("distritos|" + stateId + "|" + countyId, function () {
+                        return _this.context.runtime
+                            .executeAsync(new GeographicRequests_1.GetCitiesRequest(stateId, countyId))
+                            .then(function (response) { return (response && response.data && response.data.result) || []; });
+                    })
+                        .then(function (cities) {
                         var options = [];
                         for (var i = 0; i < cities.length; i++) {
                             options.push({
@@ -515,10 +547,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         { value: Entities_1.ProxyEntities.AddressType.Home, label: "Casa" },
                         { value: Entities_1.ProxyEntities.AddressType.Other, label: "Otros" }
                     ];
-                    return this.context.runtime
-                        .executeAsync(new AddressPurposesRequest_1.GetAddressPurposesRequest())
-                        .then(function (response) {
-                        var purposes = (response && response.data && response.data.result) || [];
+                    return CustomerInlineDialog._maestro("propositos", function () {
+                        return _this.context.runtime
+                            .executeAsync(new AddressPurposesRequest_1.GetAddressPurposesRequest())
+                            .then(function (response) { return (response && response.data && response.data.result) || []; });
+                    })
+                        .then(function (purposes) {
                         if (purposes.length === 0) {
                             _this._logChunked("=== Propositos de direccion ===", "el canal no devolvio ninguno; se usa el enum AddressType");
                             _this._fillPurposeSelect(element, fallback);
@@ -677,17 +711,104 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                 };
                 CustomerInlineDialog.prototype._prefillAddressFromCustomer = function (element, customer) {
                     var addresses = (customer && customer.Addresses) || [];
+                    this._currentAddresses = addresses;
                     if (addresses.length === 0) {
-                        this._logChunked("=== Direccion actual del cliente ===", "el cliente no tiene direcciones cargadas");
+                        this._fillAddressPicker(element);
+                        this._logChunked("=== Direcciones del cliente ===", "el cliente no tiene direcciones cargadas");
                         return;
                     }
-                    var address = addresses[0];
+                    var elegida = 0;
                     for (var i = 0; i < addresses.length; i++) {
                         if (addresses[i].IsPrimary) {
-                            address = addresses[i];
+                            elegida = i;
                             break;
                         }
                     }
+                    this._fillAddressPicker(element, elegida);
+                    this._applyAddressToForm(element, addresses[elegida]);
+                    var resumen = [];
+                    for (var i = 0; i < addresses.length; i++) {
+                        resumen.push(this._describeAddress(addresses[i], i)
+                            + "   [RecordId=" + (addresses[i].RecordId || 0)
+                            + " Deactivate=" + (addresses[i].Deactivate === true) + "]");
+                    }
+                    this._logChunked("=== Direcciones del cliente ===", "llegan " + addresses.length + " | se abre en la #" + (elegida + 1)
+                        + "\n" + resumen.join("\n"));
+                };
+                CustomerInlineDialog.prototype._fillAddressPicker = function (element, seleccionada) {
+                    var picker = element.querySelector("#customerInlineAddressPicker");
+                    if (!picker) {
+                        return;
+                    }
+                    picker.innerHTML = "";
+                    for (var i = 0; i < this._currentAddresses.length; i++) {
+                        var opcion = document.createElement("option");
+                        opcion.value = String(i);
+                        opcion.text = this._describeAddress(this._currentAddresses[i], i);
+                        picker.appendChild(opcion);
+                    }
+                    var nueva = document.createElement("option");
+                    nueva.value = CustomerInlineDialog.NUEVA_DIRECCION;
+                    nueva.text = "+ Agregar una direccion nueva";
+                    picker.appendChild(nueva);
+                    picker.value = typeof seleccionada === "number"
+                        ? String(seleccionada)
+                        : CustomerInlineDialog.NUEVA_DIRECCION;
+                    this._toggleAddressPicker(element);
+                };
+                CustomerInlineDialog.prototype._toggleAddressPicker = function (element) {
+                    var field = element.querySelector("#customerInlineAddressPickerField");
+                    if (field) {
+                        field.style.display =
+                            (this._mode === "edit" && this._currentAddresses.length > 0) ? "" : "none";
+                    }
+                };
+                CustomerInlineDialog.prototype._describeAddress = function (address, indice) {
+                    var trozos = [];
+                    var proposito = (address.Name || "").trim();
+                    if (proposito) {
+                        trozos.push(proposito);
+                    }
+                    var calle = (address.Street || "").trim();
+                    if (address.StreetNumber) {
+                        calle = (calle + " " + address.StreetNumber).trim();
+                    }
+                    trozos.push(calle || "(sin calle)");
+                    var distrito = (address.DistrictName || address.City || "").trim();
+                    if (distrito) {
+                        trozos.push(distrito);
+                    }
+                    var rotulo = String(indice + 1) + ". " + trozos.join(" \u00B7 ");
+                    if (address.IsPrimary) {
+                        rotulo = rotulo + "  \u2605 principal";
+                    }
+                    if (address.Deactivate === true) {
+                        rotulo = rotulo + "  (inactiva)";
+                    }
+                    return rotulo;
+                };
+                CustomerInlineDialog.prototype._onAddressPicked = function (element, valor) {
+                    if (valor === CustomerInlineDialog.NUEVA_DIRECCION) {
+                        this._clearAddressForm(element);
+                        this._editingAddressRecordId = 0;
+                        this._logChunked("=== Direccion elegida ===", "se agregara una direccion nueva");
+                        return;
+                    }
+                    var indice = parseInt(valor, 10);
+                    var address = this._currentAddresses[indice];
+                    if (!address) {
+                        return;
+                    }
+                    this._applyAddressToForm(element, address);
+                    this._logChunked("=== Direccion elegida ===", this._describeAddress(address, indice));
+                };
+                CustomerInlineDialog.prototype._clearAddressForm = function (element) {
+                    this._setValue(element, "customerInlineCreateAddress", "");
+                    this._setValue(element, "customerInlineCreateStreetNumber", "");
+                    this._setValue(element, "customerInlineCreateBuildingCompliment", "");
+                    this._setChecked(element, "customerInlineCreateAddressPrimary", false);
+                };
+                CustomerInlineDialog.prototype._applyAddressToForm = function (element, address) {
                     if (address.StreetNumber || address.BuildingCompliment) {
                         this._setValue(element, "customerInlineCreateAddress", address.Street || "");
                         this._setValue(element, "customerInlineCreateStreetNumber", address.StreetNumber || "");
@@ -701,7 +822,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (purposeSelect && address.AddressTypeValue) {
                         purposeSelect.value = String(address.AddressTypeValue);
                     }
-                    this._logChunked("=== Direccion actual del cliente ===", "Street=" + (address.Street || "")
+                    this._logChunked("=== Direccion cargada en el formulario ===", "Street=" + (address.Street || "")
                         + " | State=" + (address.State || "") + " County=" + (address.County || "")
                         + " City=" + (address.City || "") + " | AddressType=" + (address.AddressTypeValue || ""));
                     this._preselectGeography(element, address.State || "", address.County || "", address.City || "");
@@ -981,9 +1102,6 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         _this._applyCustomerType(element, sunatData.customerTypeValue);
                         _this._preselectGeographyFromSunat(element, sunatData);
                         _this._selectPurposeForDocumentType(element, sunatData.documentType);
-                        _this._setValue(element, "customerInlineCreateCustomerType", String(sunatData.documentType === "RUC"
-                            ? Entities_1.ProxyEntities.CustomerType.Organization
-                            : Entities_1.ProxyEntities.CustomerType.Person));
                         _this._showTextResult(element, "customerInlineCreateResult", _this._formatSunatSummary(sunatData));
                         _this._showMessage(element, "Datos obtenidos. Complete si falta algo y presione Crear en Sistema.");
                     });
@@ -1609,6 +1727,13 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             if (!replaced) {
                                 existingAddresses.push(editedAddress);
                             }
+                            if (editedAddress.IsPrimary) {
+                                for (var i = 0; i < existingAddresses.length; i++) {
+                                    if (existingAddresses[i] !== editedAddress) {
+                                        existingAddresses[i].IsPrimary = false;
+                                    }
+                                }
+                            }
                             customer.Addresses = existingAddresses;
                             _this._logChunked("=== Direccion que se guarda ===", (replaced ? "actualiza RecordId=" + _this._editingAddressRecordId : "agrega una nueva")
                                 + "\n" + _this._stringify(editedAddress));
@@ -1644,6 +1769,16 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                         if (!_this._sunatService.getDocumentType(documentNumber)) {
                             _this._showMessage(element, "El documento debe ser válido.");
                             return Promise.resolve();
+                        }
+                        var documentoGuardado = _this._sunatService.normalizeDocument(_this._sunatService.getDocumentNumber(customer) || "");
+                        if (documentoGuardado === documentNumber) {
+                            _this._logChunked("=== Guardado ===", "documento sin cambios (" + documentNumber + "): no se consulta SUNAT");
+                            return updateWithCustomer(customer);
+                        }
+                        if (_this._lastSunatData && _this._lastSunatData.documentNumber === documentNumber) {
+                            _this._logChunked("=== Guardado ===", "se reutiliza la consulta que ya hizo el cajero (" + documentNumber + ")");
+                            _this._sunatService.applySunatMetadata(customer, _this._lastSunatData);
+                            return updateWithCustomer(customer);
                         }
                         _this._showMessage(element, "Validando SUNAT antes de guardar cambios...");
                         return _this._sunatService.lookup(documentNumber)
@@ -1839,6 +1974,7 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                             block.style.display = blocks[i].visible ? "" : "none";
                         }
                     }
+                    this._toggleAddressPicker(element);
                     if (mode === "search") {
                         this._showMessage(element, "Busque clientes existentes por documento, nombre o cuenta.");
                     }
@@ -1990,10 +2126,12 @@ System.register(["PosApi/Create/Dialogs", "PosApi/Consume/Customer", "PosApi/Con
                     if (this.context && this.context.logger)
                         this.context.logger.logError(message);
                 };
+                CustomerInlineDialog.NUEVA_DIRECCION = "nueva";
                 CustomerInlineDialog._hostStyleId = "customerInlineHostStyle";
                 CustomerInlineDialog._colorSurface = "#1B1A19";
                 CustomerInlineDialog._colorText = "#E8E6E3";
                 CustomerInlineDialog._searchCache = {};
+                CustomerInlineDialog._maestros = {};
                 CustomerInlineDialog._documentSearchField = null;
                 CustomerInlineDialog._documentSearchFieldResolved = false;
                 return CustomerInlineDialog;

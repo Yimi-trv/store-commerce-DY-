@@ -351,17 +351,28 @@ export default class SunatCustomerService {
         const esRuc: boolean = documentType === "RUC";
         const isOrganization: boolean = this.isOrganizationDocument(documentNumber);
 
+        // EN UN RUC DE PERSONA NATURAL (10, 15, 17) EL NOMBRE VIENE CONCATENADO.
+        // SUNAT lo entrega como "MARCHENA MELGAREJO DANILO LEONARDO" en un solo campo, y D365
+        // exige apellidos y nombres por separado: sin partirlo, el alta se queda con "Nombres"
+        // vacío y en rojo, que es como se reportó.
+        //
+        // Con DNI no hace falta: ahí el proveedor ya los manda separados y el servidor los pasa
+        // tal cual. Y una empresa no tiene nombres que partir.
+        const partes: { firstName: string; lastName: string } = (esRuc && !isOrganization)
+            ? this.splitPersonName(resultado.Name || "")
+            : { firstName: resultado.FirstName || "", lastName: resultado.LastName || "" };
+
         return {
             documentNumber: documentNumber,
             documentType: documentType,
             documentTypeCode: esRuc ? "6" : "1",
             customerTypeValue: isOrganization ? 2 : 1,
             name: resultado.Name || "",
-            firstName: resultado.FirstName || "",
+            firstName: partes.firstName,
             // LOS DOS APELLIDOS VAN JUNTOS EN LastName. D365 compone el nombre de una persona
             // como FirstName + MiddleName + LastName; el materno en MiddleName sacaba los
             // apellidos al reves en el comprobante. MiddleName es un segundo NOMBRE.
-            lastName: resultado.LastName || "",
+            lastName: partes.lastName,
             middleName: "",
             padronesText: resultado.PadronesText || "",
             taxpayerStatus: resultado.TaxpayerStatus || "",

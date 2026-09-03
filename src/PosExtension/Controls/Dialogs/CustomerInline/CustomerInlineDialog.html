@@ -598,6 +598,17 @@
     <div id="customerInlineAddressSection" style="display: none;">
         <h3 class="customer-inline-dialog__section-title">Dirección</h3>
         <div class="customer-inline-dialog__grid">
+            <!-- DIRECCIONES YA REGISTRADAS — solo al editar.
+                 Un cliente puede tener varias direcciones dadas de alta en HQ (fiscal, entrega,
+                 domicilio). El modal cargaba una sola —la principal— y a las demás no había
+                 forma de llegar: para usar otra el cajero tenía que reescribirla entera, y al
+                 guardar pisaba la principal en vez de cambiar de dirección.
+                 Se llena en _fillAddressPicker y queda oculto fuera del modo editar. -->
+            <div class="customer-inline-dialog__field" id="customerInlineAddressPickerField"
+                 style="grid-column: 1 / -1; display: none;">
+                <label for="customerInlineAddressPicker">Direcciones registradas del cliente:</label>
+                <select id="customerInlineAddressPicker"></select>
+            </div>
             <div class="customer-inline-dialog__field">
                 <label for="customerInlineCreateAddressPurpose">Propósito de la dirección:</label>
                 <!-- Las opciones se cargan en onReady desde los propósitos del canal, o desde
