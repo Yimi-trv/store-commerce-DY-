@@ -1079,8 +1079,13 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             "border-radius": "12px",
                             "color": "#FFFFFF"
                         });
-                        if (!def)
+                        if (!def) {
+                            if (boton.classList.contains("sct-pbtn-tema"))
+                                boton.classList.remove("sct-pbtn-tema");
                             continue;
+                        }
+                        if (!boton.classList.contains("sct-pbtn-tema"))
+                            boton.classList.add("sct-pbtn-tema");
                         ThemeEngine.estilo(boton, { "background-image": "none" });
                         if (!boton.classList.contains(def.clase))
                             boton.classList.add(def.clase);

@@ -1767,7 +1767,19 @@ export class ThemeEngine {
             });
 
             // No reconocido: se respeta tal cual, con su imagen nativa incluida.
-            if (!def) continue;
+            //
+            // Se le QUITA la marca del tema por si la llevaba de antes: si HQ le cambia el nombre
+            // a un boton y deja de reconocerse, tiene que recuperar su aspecto nativo en vez de
+            // quedarse con el contenido oculto y sin rotulo — una caja vacia.
+            if (!def) {
+                if (boton.classList.contains("sct-pbtn-tema")) boton.classList.remove("sct-pbtn-tema");
+                continue;
+            }
+
+            // Marca de "este boton lo pinta el tema". El CSS la usa para ocultar el contenido
+            // nativo y borrar la imagen de fondo SOLO aqui: a un metodo de pago desconocido eso le
+            // dejaba una caja vacia y le borraba su logo de marca. Ver ThemeAssets.
+            if (!boton.classList.contains("sct-pbtn-tema")) boton.classList.add("sct-pbtn-tema");
 
             ThemeEngine.estilo(boton, { "background-image": "none" });
             if (!boton.classList.contains(def.clase)) boton.classList.add(def.clase);

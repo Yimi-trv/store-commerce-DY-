@@ -158,7 +158,15 @@ export function construirCss(): string {
         // pointer-events:none para que no robe ni un toque en una pantalla tactil.
         + "#sct-aviso{position:fixed !important;z-index:99999 !important;pointer-events:none !important;opacity:0;transition:opacity 0.15s ease-out;background:" + ROJO + " !important;color:#FFFFFF !important;font-weight:600 !important;font-size:15px !important;line-height:1.25 !important;padding:8px 14px !important;border-radius:10px !important;box-shadow:0 4px 14px rgba(0,0,0,0.45) !important;max-width:60% !important;white-space:nowrap !important;overflow:hidden !important;text-overflow:ellipsis !important;}\n"
         + "#sct-aviso.sct-visible{opacity:1;}\n"
-        + ".sct-tbtn > *:not(i.sct-ic),#ButtonGrid4Control .sct-pbtn > *:not(i.sct-ic){display:none !important;}\n"
+        // Ocultar el contenido nativo del boton para repintarlo con icono y rotulo del tema SOLO
+        // vale para los botones que el tema RECONOCE. De ahi la clase .sct-pbtn-tema, que
+        // prepararBotones() pone unicamente cuando ha sabido de que metodo de pago se trata.
+        //
+        // BUG CORREGIDO: antes esto alcanzaba a todo .sct-pbtn. Un metodo de pago que el tema no
+        // conoce —el "Efectivo" duplicado de HQ, o los dos que se añadieron despues— se quedaba
+        // con el contenido oculto y sin ::after que lo sustituyera: una caja vacia. Con la clase,
+        // un boton desconocido se queda tal cual lo manda el POS, que es lo correcto.
+        + ".sct-tbtn > *:not(i.sct-ic),#ButtonGrid4Control .sct-pbtn-tema > *:not(i.sct-ic){display:none !important;}\n"
         + ".sct-ic{position:absolute;background-repeat:no-repeat;background-position:center;background-size:contain;pointer-events:none;}\n"
         + ".sct-cbtn .sct-ic{left:28px;top:50%;transform:translateY(-50%);width:46px;height:46px;}\n"
         + ".sct-tbtn .sct-ic{left:50%;top:20px;transform:translateX(-50%);width:60px;height:60px;}\n"
@@ -200,7 +208,14 @@ export function construirCss(): string {
         + "#ButtonGrid4Control .sct-p3::after{content:'Empleado\\A en planilla';}\n"
         + "#ButtonGrid4Control .sct-p4::after{content:'A Cuenta\\A de Terceros';}\n"
         + "#ButtonGrid4Control .sct-p2::after{content:none !important;}\n"
-        + "#ButtonGrid4Control .buttonGridButton.sct-p2 i.sct-ic{display:block !important;left:50% !important;top:50% !important;transform:translate(-50%,-50%) !important;width:190px !important;height:46px !important;background-image:" + LOGO_NIUBIZ + " !important;background-size:contain !important;}\n";
+        // El logo de NIUBIZ se mide EN PORCENTAJE de su boton, nunca en pixeles.
+        //
+        // BUG CORREGIDO: "niubiz se sale de su caja". Estaba clavado en 190x46, que era lo que
+        // medía cuando ocupaba una fila entera. Al añadir dos metodos de pago mas, HQ lo paso a
+        // fila 2 columna 3 con ColumnSpan 2, o sea 152px — y el logo se salio 38px por los lados.
+        // Con porcentaje y background-size:contain se ajusta solo, le pongan los botones que le
+        // pongan a la cuadricula.
+        + "#ButtonGrid4Control .buttonGridButton.sct-p2 i.sct-ic{display:block !important;left:50% !important;top:50% !important;transform:translate(-50%,-50%) !important;width:80% !important;height:56% !important;background-image:" + LOGO_NIUBIZ + " !important;background-size:contain !important;background-position:center !important;background-repeat:no-repeat !important;}\n";
 
     // CSS AMPLIO (1920x855)
     var cssAmplio: string = ""
@@ -278,7 +293,15 @@ export function construirCss(): string {
         // Antes el tema los posicionaba con left/top/width/height fijos por clase, y eso ataba el
         // resultado al numero y al orden de botones de UAT: en master, que tiene otro orden y un
         // boton mas, cada tile recibia el sitio y el icono de otro metodo de pago.
-        + "#ButtonGrid4Control .sct-pbtn{background-image:none !important;background-color:rgba(22,21,20,0.6) !important;border:1px solid rgba(255,255,255,0.16) !important;border-radius:12px !important;color:#FFFFFF !important;}\n";
+        // background-image:none SOLO para los botones reconocidos (.sct-pbtn-tema), que llevan su
+        // propio icono. Alcanzaba a todo .sct-pbtn y ahi estaba el bug: los metodos de pago que el
+        // tema no conoce traen su logo de marca COMO IMAGEN DE FONDO —Diners, American Express— y
+        // esta regla se lo borraba. En compacto no existia esta regla, y de ahi que los logos se
+        // vieran en pantalla pequeña y no en la grande.
+        // Para los reconocidos es ademas redundante: prepararBotones() ya les escribe
+        // background-image:none inline al asignarles su clase.
+        + "#ButtonGrid4Control .sct-pbtn-tema{background-image:none !important;}\n"
+        + "#ButtonGrid4Control .sct-pbtn{background-color:rgba(22,21,20,0.6) !important;border:1px solid rgba(255,255,255,0.16) !important;border-radius:12px !important;color:#FFFFFF !important;}\n";
 
 
     // =============================================================================================
@@ -477,7 +500,9 @@ export function construirCss(): string {
         + "#ButtonGrid4Control .sct-pbtn .sct-ic{width:30px !important;height:30px !important;top:4px !important;}\n"
         + "#ButtonGrid4Control .sct-pbtn::after{left:2px !important;right:2px !important;bottom:3px !important;font-size:11px !important;line-height:1.05 !important;}\n"
         + "#ButtonGrid4Control .sct-p4::after{font-size:10.5px !important;}\n"
-        + "#ButtonGrid4Control .buttonGridButton.sct-p2 i.sct-ic{width:135px !important;height:34px !important;}\n"
+        // Sin tamaño propio: el porcentaje del bloque base ya se adapta al boton, y clavarlo aqui
+        // era lo que hacia que el logo se saliera en cuanto HQ cambiaba la cuadricula.
+        // (Estaba en 135x34.)
         + "#TotalsPanel .fields.row{border:1px solid rgba(255,255,255,0.14) !important;border-radius:14px 14px 0 0 !important;border-bottom:none !important;box-sizing:border-box !important;display:flex !important;flex-direction:column !important;align-items:stretch !important;gap:0 !important;height:188px !important;min-height:188px !important;max-height:188px !important;padding:6px 12px 8px !important;overflow:hidden !important;}\n"
         + "#TotalsPanel .fields.row *{color:#E8E6E3 !important;font-size:13px !important;line-height:1.2 !important;}\n"
         + "#TotalsPanel .fields.row .secondaryFontColor,#TotalsPanel .fields.row .h6{color:#A19F9D !important;}\n"
