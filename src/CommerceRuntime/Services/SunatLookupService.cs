@@ -19,8 +19,10 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
     /// CONSULTA DE DNI Y RUC, CON PROVEEDOR PRINCIPAL Y RESPALDO
     /// =========================================================
     ///
-    /// Factiliza primero, PeruDevs de respaldo. Devuelve siempre la misma forma
-    /// (SunatCustomerResult), sepa o no el POS de dónde salió el dato.
+    /// Dos proveedores, y cuál va primero DEPENDE DEL DOCUMENTO: para un RUC de empresa (20)
+    /// pregunta PeruDevs y Factiliza queda de respaldo; para DNI y RUC de persona natural es al
+    /// revés. Ver Proveedores(). Devuelve siempre la misma forma (SunatCustomerResult), sepa o
+    /// no el POS de dónde salió el dato.
     ///
     /// POR QUÉ ESTO ESTÁ EN EL SERVIDOR Y NO EN EL POS
     /// La clave del proveedor iba escrita en el TypeScript que se despliega a cada caja:
@@ -95,7 +97,7 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
 
             var motivos = new List<string>();
 
-            foreach (var proveedor in Proveedores())
+            foreach (var proveedor in Proveedores(documento))
             {
                 ResultadoProveedor resultado;
 
@@ -132,15 +134,54 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
                 "No se pudo consultar el documento. " + string.Join(" | ", motivos)));
         }
 
-        /// <summary>En orden de preferencia. Factiliza no entra si no hay token.</summary>
-        private static IEnumerable<IProveedorConsulta> Proveedores()
+        /// <summary>
+        /// En orden de preferencia PARA ESE DOCUMENTO. Factiliza no entra si no hay token.
+        ///
+        /// EL ORDEN NO ES EL MISMO PARA TODOS LOS DOCUMENTOS
+        /// Con DNI, Factiliza trae nombres, apellidos Y DIRECCIÓN; PeruDevs solo los nombres. Por
+        /// eso Factiliza va primero en el caso general.
+        ///
+        /// Con un RUC de EMPRESA (20) esa ventaja desaparece —los dos traen razón social, estado,
+        /// condición, dirección y padrones—, así que ahí pregunta PeruDevs primero (decisión del
+        /// negocio, 2026-09-05) y Factiliza queda de respaldo. Reparte la cuota entre los dos
+        /// proveedores en vez de gastar la de Factiliza en el caso más frecuente.
+        ///
+        /// El respaldo sigue existiendo en AMBOS sentidos: si el primero falla técnicamente, se
+        /// prueba el otro. Lo único que cambia es a quién se pregunta primero.
+        /// </summary>
+        private static IEnumerable<IProveedorConsulta> Proveedores(string documento)
         {
-            if (!string.IsNullOrWhiteSpace(FactilizaToken))
+            var hayFactiliza = !string.IsNullOrWhiteSpace(FactilizaToken);
+
+            if (EsRucDeEmpresa(documento))
+            {
+                yield return new ProveedorPeruDevs();
+
+                if (hayFactiliza)
+                {
+                    yield return new ProveedorFactiliza();
+                }
+
+                yield break;
+            }
+
+            if (hayFactiliza)
             {
                 yield return new ProveedorFactiliza();
             }
 
             yield return new ProveedorPeruDevs();
+        }
+
+        /// <summary>
+        /// RUC 20 = empresa. Un RUC 10, 15 o 17 es persona natural y NO entra aquí: para esos el
+        /// orden es el general, porque comparten con el DNI la carencia de datos de PeruDevs.
+        /// </summary>
+        private static bool EsRucDeEmpresa(string documento)
+        {
+            return !string.IsNullOrEmpty(documento)
+                && documento.Length == 11
+                && documento.StartsWith("20", StringComparison.Ordinal);
         }
 
         private static ConsultarDocumentoSunatResponse Responder(SunatCustomerResult resultado)
