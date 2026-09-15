@@ -19,9 +19,9 @@ export default class PrePaymentDocumentTypeTrigger extends PrePaymentTrigger {
     public execute(options: IPrePaymentTriggerOptions): Promise<ClientEntities.ICancelable> {
         // options.cart ya trae el carrito: pedirlo otra vez era una ida y vuelta por cobro.
         //
-        // Ya no hace falta mirar CON QUE se esta cobrando. La boleta con RUC dejo de depender
-        // del medio de pago: depende de si el cliente es una empresa, y eso lo dice su
-        // documento. Ver DocumentTypeRule.
+        // No hace falta mirar CON QUE se esta cobrando: la regla solo depende del documento del
+        // cliente. Desde el 2026-09-14 la boleta pasa siempre, y lo unico que se bloquea es una
+        // factura a quien no tiene RUC. Ver DocumentTypeRule.
         return DocumentTypeRule.evaluateCart(this.context, options ? options.cart : null)
             .then((reason: string): Promise<ClientEntities.ICancelable> => {
                 if (!reason) {

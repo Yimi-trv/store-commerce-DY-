@@ -73,19 +73,10 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
                     var service = new SunatCustomerService_1.default();
                     var documentType = service.getDocumentType(documentNumber);
                     var hasRuc = documentType === "RUC";
-                    var esEmpresa = service.isOrganizationDocument(documentNumber);
                     context.logger.logInformational("DocumentTypeRule: comprobante=" + document
                         + " | cuenta=" + accountNumber
                         + " | documento=" + (documentNumber || "(sin documento)")
-                        + " | tipo=" + (documentType || "(ninguno)")
-                        + " | empresa=" + esEmpresa);
-                    if (document === DocumentTypeRule.BOLETA && esEmpresa) {
-                        return "El cliente " + accountNumber + " es una empresa: su RUC " + documentNumber
-                            + " empieza en 20."
-                            + "\n\nA una empresa se le emite FACTURA, no boleta."
-                            + "\n\nCambie el comprobante a Factura, o asigne a la venta un cliente que no sea"
-                            + " una empresa.";
-                    }
+                        + " | tipo=" + (documentType || "(ninguno)"));
                     if (document === DocumentTypeRule.FACTURA && !hasRuc) {
                         return "El cliente " + accountNumber
                             + (documentNumber ? " tiene el documento " + documentNumber + ", que no es un RUC." : " no tiene RUC registrado.")
@@ -123,7 +114,6 @@ System.register(["PosApi/Consume/Cart", "PosApi/Consume/Customer", "PosApi/Consu
                         context.logger.logError("DocumentTypeRule: no se pudo mostrar el aviso de bloqueo.");
                     });
                 };
-                DocumentTypeRule.BOLETA = "BOLETA";
                 DocumentTypeRule.FACTURA = "FACTURA";
                 DocumentTypeRule._documentCache = {};
                 return DocumentTypeRule;

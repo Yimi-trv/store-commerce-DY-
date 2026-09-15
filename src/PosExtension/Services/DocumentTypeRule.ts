@@ -9,21 +9,26 @@ import SunatCustomerService from "./SunatCustomerService";
  * ==========================================================
  *
  *   FACTURA  -> exige RUC. A un cliente sin RUC la factura sale observada.
- *   BOLETA   -> es para consumidor final. Solo se le niega a las EMPRESAS.
+ *   BOLETA   -> se le puede emitir a CUALQUIER cliente, tenga o no RUC.
  *
- * QUÉ CUENTA COMO EMPRESA, Y POR QUÉ NO BASTA "TENER RUC"
- * Solo el RUC que empieza en 20. Los que empiezan en 10, 15 o 17 son PERSONAS naturales con
- * RUC —un profesional que emite recibos por honorarios, por ejemplo— y a una persona sí se le
- * emite boleta: la boleta es para consumidor final, y comprando para sí misma lo es.
+ * POR QUÉ LA BOLETA YA NO SE LE NIEGA A NADIE (decisión del negocio, 2026-09-14)
+ * Legalmente se le puede emitir boleta a un cliente con RUC, empresa incluida: lo que ese
+ * comprador no puede es usarla como crédito fiscal, y eso es decisión suya al pedirla.
+ * Negarla era una restricción más dura que la norma.
  *
- * Ese criterio lo decide `isOrganizationDocument`, que ya existía y es el mismo que decide si
- * hace falta dirección fiscal. Una sola definición de "empresa" para las dos reglas.
+ * Así que esta regla ya solo impide lo que de verdad no se puede: una FACTURA a quien no tiene
+ * RUC.
  *
- * ANTES ESTO ERA MÁS ENREDADO. Se bloqueaba la boleta a TODO RUC, y para dejar pasar a los
- * empleados por Recibo por Honorarios había una excepción que miraba el grupo de cliente del
- * canal y exigía que el cobro fuera a cuenta de terceros. Con la regla de arriba esos empleados
- * entran solos —tienen RUC 10— y aquella excepción quedó cubierta, así que se quitó: dos
- * caminos hacia la misma decisión es como las reglas terminan separándose.
+ * CÓMO SE LLEGÓ AQUÍ — para no volver atrás sin saberlo
+ *   1. Al principio se bloqueaba la boleta a TODO RUC, con una excepción para los empleados por
+ *      Recibo por Honorarios que miraba el grupo de cliente y el medio de pago.
+ *   2. 2026-08-25: se limitó a las EMPRESAS (RUC 20). Las personas naturales con RUC 10, 15 o
+ *      17 pasaron a poder llevarla, y la excepción de honorarios quedó cubierta y se quitó.
+ *   3. 2026-09-14: tampoco se le niega a las empresas. No queda ninguna restricción sobre la
+ *      boleta.
+ *
+ * `isOrganizationDocument` sigue existiendo y NO es código muerto: todavía decide si la
+ * dirección fiscal es obligatoria al crear y qué tipo de cliente es.
  *
  * DE DÓNDE SALE EL TIPO DE COMPROBANTE
  * Lo elige el control "Boleta / Factura" de la localización DP (OptionDetailsCustomControl),
@@ -41,8 +46,10 @@ import SunatCustomerService from "./SunatCustomerService";
  */
 export class DocumentTypeRule {
 
-    /** Valores literales que usa el control de DP. */
-    private static readonly BOLETA: string = "BOLETA";
+    /**
+     * Valor literal que usa el control de DP para la factura, normalizado a mayúsculas. La
+     * boleta no necesita constante: ya no hay nada que comprobar sobre ella.
+     */
     private static readonly FACTURA: string = "FACTURA";
 
     /**
@@ -129,7 +136,8 @@ export class DocumentTypeRule {
     /**
      * Decide con el DOCUMENTO del cliente, no con su CustomerTypeValue.
      *
-     * Un RUC 10 es persona natural: lleva factura si la pide, y boleta si compra para sí.
+     * La boleta pasa siempre, sea cual sea el cliente. Lo único que se bloquea es una factura a
+     * quien no tiene RUC.
      */
     private static _evaluateDocument(
         document: string, documentNumber: string, accountNumber: string, context: any): string {
@@ -137,24 +145,12 @@ export class DocumentTypeRule {
         const service: SunatCustomerService = new SunatCustomerService();
         const documentType: string | null = service.getDocumentType(documentNumber);
         const hasRuc: boolean = documentType === "RUC";
-        const esEmpresa: boolean = service.isOrganizationDocument(documentNumber);
 
         context.logger.logInformational(
             "DocumentTypeRule: comprobante=" + document
             + " | cuenta=" + accountNumber
             + " | documento=" + (documentNumber || "(sin documento)")
-            + " | tipo=" + (documentType || "(ninguno)")
-            + " | empresa=" + esEmpresa);
-
-        // Solo a las EMPRESAS se les niega la boleta. Una persona natural con RUC (10, 15, 17)
-        // es consumidor final cuando compra para sí misma, y la boleta le corresponde.
-        if (document === DocumentTypeRule.BOLETA && esEmpresa) {
-            return "El cliente " + accountNumber + " es una empresa: su RUC " + documentNumber
-                + " empieza en 20."
-                + "\n\nA una empresa se le emite FACTURA, no boleta."
-                + "\n\nCambie el comprobante a Factura, o asigne a la venta un cliente que no sea"
-                + " una empresa.";
-        }
+            + " | tipo=" + (documentType || "(ninguno)"));
 
         if (document === DocumentTypeRule.FACTURA && !hasRuc) {
             return "El cliente " + accountNumber
@@ -169,8 +165,8 @@ export class DocumentTypeRule {
     /**
      * Olvida el documento cacheado de una cuenta. HAY QUE LLAMARLO al crear o editar un
      * cliente: el documento SÍ se puede cambiar desde el modal, y una caché vieja diría que
-     * un cliente que acaba de recibir un RUC sigue sin tenerlo — dejando pasar la boleta que
-     * esta regla existe para impedir.
+     * un cliente que acaba de recibir un RUC sigue sin tenerlo — y le negaría la factura que
+     * ya le corresponde.
      */
     public static forget(accountNumber: string): void {
         if (accountNumber && DocumentTypeRule._documentCache.hasOwnProperty(accountNumber)) {
