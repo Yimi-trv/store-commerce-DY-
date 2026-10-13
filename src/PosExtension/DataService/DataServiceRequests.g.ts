@@ -138,3 +138,55 @@ export namespace TRU_Sunat {
   }
 
 }
+
+export namespace TRU_Vales {
+  // Entity Set ValeRestriccionResult
+  export class ConsultarRestriccionResponse extends DataServiceResponse {
+    public result: Entities.ValeRestriccionResult[];
+  }
+
+  export class ConsultarRestriccionRequest<TResponse extends ConsultarRestriccionResponse> extends DataServiceRequest<TResponse> {
+    /**
+     * Constructor
+     */
+      public constructor(codigo: string) {
+        super();
+
+        this._entitySet = "TRU_Vales";
+        this._entityType = "ValeRestriccionResult";
+        this._method = "ConsultarRestriccion";
+        this._parameters = { codigo: codigo };
+        this._isAction = false;
+        this._returnType = Entities.ValeRestriccionResult;
+        this._isReturnTypeCollection = true;
+        
+      }
+  }
+
+}
+
+export namespace TRU_ValesItems {
+  // Entity Set ItemRestringidoResult
+  export class RestringidosResponse extends DataServiceResponse {
+    public result: Entities.ItemRestringidoResult[];
+  }
+
+  export class RestringidosRequest<TResponse extends RestringidosResponse> extends DataServiceRequest<TResponse> {
+    /**
+     * Constructor
+     */
+      public constructor() {
+        super();
+
+        this._entitySet = "TRU_ValesItems";
+        this._entityType = "ItemRestringidoResult";
+        this._method = "Restringidos";
+        this._parameters = {  };
+        this._isAction = false;
+        this._returnType = Entities.ItemRestringidoResult;
+        this._isReturnTypeCollection = true;
+        
+      }
+  }
+
+}

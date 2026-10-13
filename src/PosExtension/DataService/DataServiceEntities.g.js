@@ -190,6 +190,69 @@ System.register(["PosApi/Entities"], function (exports_1, context_1) {
                     return SunatCustomerResult;
                 }());
                 Entities.SunatCustomerResult = SunatCustomerResult;
+                var ValeRestriccionResult = (function () {
+                    function ValeRestriccionResult(odataObject) {
+                        odataObject = odataObject || {};
+                        this.Id = (odataObject.Id != null) ? parseInt(odataObject.Id, 10) : undefined;
+                        this.Codigo = odataObject.Codigo;
+                        this.Existe = odataObject.Existe;
+                        this.TipoVale = odataObject.TipoVale;
+                        this.PermiteAlcohol = odataObject.PermiteAlcohol;
+                        this.Indeterminado = odataObject.Indeterminado;
+                        this.Mensaje = odataObject.Mensaje;
+                        this.Detalle = odataObject.Detalle;
+                        this.ExtensionProperties = undefined;
+                        if (odataObject.ExtensionProperties) {
+                            this.ExtensionProperties = [];
+                            for (var i = 0; i < odataObject.ExtensionProperties.length; i++) {
+                                if (odataObject.ExtensionProperties[i] != null) {
+                                    if (odataObject.ExtensionProperties[i]['@odata.type'] != null) {
+                                        var className = odataObject.ExtensionProperties[i]['@odata.type'];
+                                        className = className.substr(className.lastIndexOf('.') + 1).concat("Class");
+                                        this.ExtensionProperties[i] = new Entities_1.ProxyEntities[className](odataObject.ExtensionProperties[i]);
+                                    }
+                                    else {
+                                        this.ExtensionProperties[i] = new Entities_1.ProxyEntities.CommercePropertyClass(odataObject.ExtensionProperties[i]);
+                                    }
+                                }
+                                else {
+                                    this.ExtensionProperties[i] = undefined;
+                                }
+                            }
+                        }
+                    }
+                    return ValeRestriccionResult;
+                }());
+                Entities.ValeRestriccionResult = ValeRestriccionResult;
+                var ItemRestringidoResult = (function () {
+                    function ItemRestringidoResult(odataObject) {
+                        odataObject = odataObject || {};
+                        this.Id = (odataObject.Id != null) ? parseInt(odataObject.Id, 10) : undefined;
+                        this.ItemId = odataObject.ItemId;
+                        this.Categoria = odataObject.Categoria;
+                        this.ExtensionProperties = undefined;
+                        if (odataObject.ExtensionProperties) {
+                            this.ExtensionProperties = [];
+                            for (var i = 0; i < odataObject.ExtensionProperties.length; i++) {
+                                if (odataObject.ExtensionProperties[i] != null) {
+                                    if (odataObject.ExtensionProperties[i]['@odata.type'] != null) {
+                                        var className = odataObject.ExtensionProperties[i]['@odata.type'];
+                                        className = className.substr(className.lastIndexOf('.') + 1).concat("Class");
+                                        this.ExtensionProperties[i] = new Entities_1.ProxyEntities[className](odataObject.ExtensionProperties[i]);
+                                    }
+                                    else {
+                                        this.ExtensionProperties[i] = new Entities_1.ProxyEntities.CommercePropertyClass(odataObject.ExtensionProperties[i]);
+                                    }
+                                }
+                                else {
+                                    this.ExtensionProperties[i] = undefined;
+                                }
+                            }
+                        }
+                    }
+                    return ItemRestringidoResult;
+                }());
+                Entities.ItemRestringidoResult = ItemRestringidoResult;
             })(Entities || (exports_1("Entities", Entities = {})));
         }
     };

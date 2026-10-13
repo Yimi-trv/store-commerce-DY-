@@ -1,14 +1,15 @@
 # Store Commerce — Terranova (Trujillo Perú E-Invoicing)
 
 Extensión de Dynamics 365 Commerce para el CSU: **API de facturación electrónica** +
-**módulo POS de clientes SUNAT** + integración de la localización Perú (DP).
+**módulo POS de clientes SUNAT** + **vale de consumo AL PORTADOR** (no paga alcohol) +
+integración de la localización Perú (DP).
 
 ## Componentes
 
 | Componente | Qué hace |
 |---|---|
-| `src/CommerceRuntime` | API CRT: `TRU_SalesTransactions` (consultas con filtros/paginación), `TRU_ElectronicDocuments` (TXT FE), `TRU_GeographicData/ResolveUbigeo` (nombres SUNAT → códigos D365), `TRU_Diagnostics` (sondas del channel DB), `PosExtensionPackagesService` (descubrimiento del paquete POS) |
-| `src/PosExtension` | Módulo clientes en el POS: botón **Consultar SUNAT** (RUC/DNI → datos + padrones + dirección automática validada) y **SunatPadronesControl** (8 padrones editables con refresco en vivo) |
+| `src/CommerceRuntime` | API CRT: `TRU_Vales`/`TRU_ValesItems` (tipo de vale y artículos restringidos — ver [`docs/vale-al-portador.md`](docs/vale-al-portador.md)), `TRU_SalesTransactions` (consultas con filtros/paginación), `TRU_ElectronicDocuments` (TXT FE), `TRU_GeographicData/ResolveUbigeo` (nombres SUNAT → códigos D365), `TRU_Diagnostics` (sondas del channel DB), `PosExtensionPackagesService` (descubrimiento del paquete POS) |
+| `src/PosExtension` | Módulo clientes en el POS: botón **Consultar SUNAT** (RUC/DNI → datos + padrones + dirección automática validada) y **SunatPadronesControl** (8 padrones editables con refresco en vivo). Además, la regla del **vale AL PORTADOR**: cuatro triggers que impiden pagar bebidas alcohólicas con ese tipo de vale |
 | `src/ScaleUnit.Api` | Empaquetador: genera el `CloudScaleUnitExtensionPackage.zip` para LCS. Incluye `dp-overrides/` (guard anti descarga duplicada del TXT + fixes del DP) |
 | `10.0.47-4/` | Entrega de la localización DP que el build fusiona al paquete (DLL CRT + POS + 13 SQL) |
 
@@ -45,6 +46,13 @@ Salida: `src\ScaleUnit.Api\bin\Release\netstandard2.0\CloudScaleUnitExtensionPac
 2. Validar por API (sin tocar cajas): `GET {rs}/Commerce/TRU_GeographicData/ResolveUbigeo(departamento='ANCASH',provincia='HUARAZ',distrito='HUARAZ')` responde → versión viva.
 3. En la caja: **cerrar Store Commerce por completo y reabrir** (descarga la extensión nueva).
 4. Prueba del módulo clientes: Nuevo cliente → Consultar SUNAT → datos/padrones/dirección automáticos → Guardar.
+5. Prueba del vale al portador: venta con una cerveza → pasar un vale al portador → debe bloquear
+   nombrando el producto. Guía completa en [`docs/vale-al-portador.md`](docs/vale-al-portador.md).
+
+⚠ El vale al portador necesita **dos constantes completadas** en
+`src/CommerceRuntime/Services/ValeRestriccionService.cs` (`ValesBaseUrl` y `ValesApiKey`).
+Vacías, la restricción no se aplica y el CSU ni siquiera sale a internet — es a propósito,
+para poder desplegar antes de que el sistema de vales esté publicado.
 
 ## Consumo de la API desde afuera
 

@@ -2,9 +2,9 @@
  "$schema": "./devDependencies/schemas/manifestSchema.json",
  "name": "RegenerateFE",
  "publisher": "DP",
- "version": "1.5.9",
+ "version": "1.6.0",
  "minimumPosVersion": "9.51.0.0",
- "description": "Extension POS: consulta de RUC y DNI via SUNAT en Customer Add/Edit + tema visual Trujillo Market (layout amplio y compacto 1024x768)",
+ "description": "Extension POS: consulta de RUC y DNI via SUNAT en Customer Add/Edit + vale de consumo AL PORTADOR (no paga bebidas alcoholicas) + tema visual Trujillo Market (layout amplio y compacto 1024x768)",
  "components": {
   "extend": {
    "views": {
@@ -81,6 +81,30 @@
      "modulePath": "Triggers/PreEndTransactionDocumentTypeTrigger",
      "name": "PreEndTransactionDocumentTypeTrigger",
      "description": "Red de seguridad: impide cerrar la transaccion con un comprobante que no corresponde al documento del cliente."
+    },
+    {
+     "triggerType": "PostGetGiftCardNumber",
+     "modulePath": "Triggers/PostGetGiftCardNumberValePortadorTrigger",
+     "name": "PostGetGiftCardNumberValePortadorTrigger",
+     "description": "Al pasar un vale: si es AL PORTADOR avisa al cajero, y cancela el pago si la venta tiene bebidas alcoholicas."
+    },
+    {
+     "triggerType": "PreAddTenderLine",
+     "modulePath": "Triggers/PreAddTenderLineValePortadorTrigger",
+     "name": "PreAddTenderLineValePortadorTrigger",
+     "description": "Red de seguridad del pago: cubre las tarjetas regalo que no entran por el lector (venta suspendida, otra operacion)."
+    },
+    {
+     "triggerType": "PreProductSale",
+     "modulePath": "Triggers/PreProductSaleValePortadorTrigger",
+     "name": "PreProductSaleValePortadorTrigger",
+     "description": "El orden inverso: vale al portador ya aplicado y recien entonces se agrega el licor."
+    },
+    {
+     "triggerType": "PreEndTransaction",
+     "modulePath": "Triggers/PreEndTransactionValePortadorTrigger",
+     "name": "PreEndTransactionValePortadorTrigger",
+     "description": "Ultimo neto: impide cerrar una venta con alcohol pagada con un vale al portador."
     },
     {
      "triggerType": "PostOperation",
