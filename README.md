@@ -1,14 +1,15 @@
 # Store Commerce — Terranova (Trujillo Perú E-Invoicing)
 
 Extensión de Dynamics 365 Commerce para el CSU: **API de facturación electrónica** +
-**módulo POS de clientes SUNAT** + integración de la localización Perú (DP).
+**módulo POS de clientes SUNAT** + **vale de consumo con restricción** (los que empiezan con
+`TA` no pagan alcohol) + integración de la localización Perú (DP).
 
 ## Componentes
 
 | Componente | Qué hace |
 |---|---|
-| `src/CommerceRuntime` | API CRT: `TRU_SalesTransactions` (consultas con filtros/paginación), `TRU_ElectronicDocuments` (TXT FE), `TRU_GeographicData/ResolveUbigeo` (nombres SUNAT → códigos D365), `TRU_Diagnostics` (sondas del channel DB), `PosExtensionPackagesService` (descubrimiento del paquete POS) |
-| `src/PosExtension` | Módulo clientes en el POS: botón **Consultar SUNAT** (RUC/DNI → datos + padrones + dirección automática validada) y **SunatPadronesControl** (8 padrones editables con refresco en vivo) |
+| `src/CommerceRuntime` | API CRT: `TRU_ValesItems` (qué artículos son bebida alcohólica — ver [`docs/vale-sin-alcohol.md`](docs/vale-sin-alcohol.md)), `TRU_SalesTransactions` (consultas con filtros/paginación), `TRU_ElectronicDocuments` (TXT FE), `TRU_GeographicData/ResolveUbigeo` (nombres SUNAT → códigos D365), `TRU_Diagnostics` (sondas del channel DB), `PosExtensionPackagesService` (descubrimiento del paquete POS) |
+| `src/PosExtension` | Módulo clientes en el POS: botón **Consultar SUNAT** (RUC/DNI → datos + padrones + dirección automática validada) y **SunatPadronesControl** (8 padrones editables con refresco en vivo). Además, la regla del **vale con restricción**: cuatro triggers que impiden pagar bebidas alcohólicas con un vale cuyo código empieza con `TA` |
 | `src/ScaleUnit.Api` | Empaquetador: genera el `CloudScaleUnitExtensionPackage.zip` para LCS. Incluye `dp-overrides/` (guard anti descarga duplicada del TXT + fixes del DP) |
 | `10.0.47-4/` | Entrega de la localización DP que el build fusiona al paquete (DLL CRT + POS + 13 SQL) |
 
@@ -45,6 +46,13 @@ Salida: `src\ScaleUnit.Api\bin\Release\netstandard2.0\CloudScaleUnitExtensionPac
 2. Validar por API (sin tocar cajas): `GET {rs}/Commerce/TRU_GeographicData/ResolveUbigeo(departamento='ANCASH',provincia='HUARAZ',distrito='HUARAZ')` responde → versión viva.
 3. En la caja: **cerrar Store Commerce por completo y reabrir** (descarga la extensión nueva).
 4. Prueba del módulo clientes: Nuevo cliente → Consultar SUNAT → datos/padrones/dirección automáticos → Guardar.
+5. Prueba del vale con restricción: venta con una cerveza → pasar un vale `TA…` → debe bloquear
+   nombrando el producto; con un vale `T…` normal no debe pasar nada. Guía completa en
+   [`docs/vale-sin-alcohol.md`](docs/vale-sin-alcohol.md).
+
+> El vale con restricción **no necesita configuración**: la restricción viaja dentro del código
+> de barras y la caja la lee sola, sin salir a la red. Lo único que consulta al CSU es qué
+> artículos son alcohol, y eso sale del channel DB.
 
 ## Consumo de la API desde afuera
 
