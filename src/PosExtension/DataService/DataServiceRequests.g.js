@@ -15,7 +15,7 @@ System.register(["PosApi/Entities", "./DataServiceEntities.g", "PosApi/Consume/D
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var Entities_1, DataServiceEntities_g_1, DataService_1, TRU_Diagnostics, TRU_GeographicData, TRU_SalesTransactions, TRU_Sunat;
+    var Entities_1, DataServiceEntities_g_1, DataService_1, TRU_Diagnostics, TRU_GeographicData, TRU_SalesTransactions, TRU_Sunat, TRU_ValesItems;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -160,6 +160,32 @@ System.register(["PosApi/Entities", "./DataServiceEntities.g", "PosApi/Consume/D
                 }(DataService_1.DataServiceRequest));
                 TRU_Sunat.ConsultarDocumentoRequest = ConsultarDocumentoRequest;
             })(TRU_Sunat || (exports_1("TRU_Sunat", TRU_Sunat = {})));
+            (function (TRU_ValesItems) {
+                var RestringidosResponse = (function (_super) {
+                    __extends(RestringidosResponse, _super);
+                    function RestringidosResponse() {
+                        return _super !== null && _super.apply(this, arguments) || this;
+                    }
+                    return RestringidosResponse;
+                }(DataService_1.DataServiceResponse));
+                TRU_ValesItems.RestringidosResponse = RestringidosResponse;
+                var RestringidosRequest = (function (_super) {
+                    __extends(RestringidosRequest, _super);
+                    function RestringidosRequest() {
+                        var _this = _super.call(this) || this;
+                        _this._entitySet = "TRU_ValesItems";
+                        _this._entityType = "ItemRestringidoResult";
+                        _this._method = "Restringidos";
+                        _this._parameters = {};
+                        _this._isAction = false;
+                        _this._returnType = DataServiceEntities_g_1.Entities.ItemRestringidoResult;
+                        _this._isReturnTypeCollection = true;
+                        return _this;
+                    }
+                    return RestringidosRequest;
+                }(DataService_1.DataServiceRequest));
+                TRU_ValesItems.RestringidosRequest = RestringidosRequest;
+            })(TRU_ValesItems || (exports_1("TRU_ValesItems", TRU_ValesItems = {})));
         }
     };
 });
