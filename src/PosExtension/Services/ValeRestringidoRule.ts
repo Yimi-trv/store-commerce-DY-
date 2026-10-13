@@ -152,7 +152,11 @@ export class ValeRestringidoRule {
         const restriccion: IRestriccion = ValeRestringidoRule.restriccionDe(codigo);
 
         if (restriccion.desconocida) {
-            return Promise.resolve(ValeRestringidoRule._motivoDesconocida(restriccion.letra));
+            context.logger.logError(
+                "ValeRestringidoRule: el vale " + codigo + " lleva la letra de restricción '"
+                + restriccion.letra + "', que esta versión del POS no conoce. La extensión está "
+                + "desactualizada frente al sistema de vales.");
+            return Promise.resolve(ValeRestringidoRule._motivoDesconocida());
         }
         if (!restriccion.sinAlcohol) {
             return Promise.resolve("");
@@ -162,9 +166,9 @@ export class ValeRestringidoRule {
             .then((hallazgo: { resuelto: boolean; lineas: string[] }): Promise<string> => {
                 if (!hallazgo.resuelto) {
                     return Promise.resolve(
-                        "Este vale no puede pagar bebidas alcohólicas, pero ahora mismo no se "
-                        + "puede verificar qué productos lo son.\n\n"
-                        + "Cobre con otro medio de pago y avise a sistemas.");
+                        "Este vale no cubre bebidas alcohólicas.\n\n"
+                        + "No se pudo revisar qué tiene la venta, así que no se puede cobrar con "
+                        + "este vale. Use otro medio de pago.");
                 }
 
                 if (hallazgo.lineas.length > 0) {
@@ -202,9 +206,9 @@ export class ValeRestringidoRule {
         return ValeRestringidoRule._items(context)
             .then((lista: { resuelto: boolean; items: { [itemId: string]: string } }): string => {
                 if (!lista.resuelto) {
-                    return "La venta se está pagando con un vale que no cubre bebidas alcohólicas "
-                        + "y no se puede verificar si este producto es una.\n\n"
-                        + "Quite el vale y cobre con otro medio de pago.";
+                    return "Esta venta se está pagando con un vale que no cubre bebidas alcohólicas.\n\n"
+                        + "No se pudo revisar si este producto es una, así que no se puede cobrar "
+                        + "con este vale. Quite el vale y use otro medio de pago.";
                 }
 
                 const bloqueados: string[] = [];
@@ -239,9 +243,9 @@ export class ValeRestringidoRule {
         return ValeRestringidoRule._alcoholEnCarrito(context, cart)
             .then((hallazgo: { resuelto: boolean; lineas: string[] }): string => {
                 if (!hallazgo.resuelto) {
-                    return "La venta se está pagando con un vale que no cubre bebidas alcohólicas "
-                        + "y no se puede verificar si la venta tiene alguna.\n\n"
-                        + "Quite el vale y cobre con otro medio de pago.";
+                    return "Esta venta se está pagando con un vale que no cubre bebidas alcohólicas.\n\n"
+                        + "No se pudo revisar qué tiene la venta, así que no se puede cerrar con "
+                        + "este vale. Quite el vale y use otro medio de pago.";
                 }
                 return hallazgo.lineas.length > 0 ? ValeRestringidoRule._motivo(hallazgo.lineas) : "";
             })
@@ -289,11 +293,13 @@ export class ValeRestringidoRule {
             + "\n\nRetire esos productos, o cóbrelos con otro medio de pago.";
     }
 
-    private static _motivoDesconocida(letra: string): string {
-        return "Este vale lleva una restricción (" + letra + ") que esta versión del Store "
-            + "Commerce no sabe aplicar.\n\n"
-            + "Cobre con otro medio de pago y avise a sistemas: la extensión del POS está "
-            + "desactualizada frente al sistema de vales.";
+    /**
+     * El detalle técnico —qué letra es y que la extensión está desactualizada— va al log, no
+     * al diálogo: a quien está cobrando le sirve saber qué hacer con la venta, no por qué.
+     */
+    private static _motivoDesconocida(): string {
+        return "Este vale tiene una restricción que esta caja no reconoce.\n\n"
+            + "No se puede cobrar con él: use otro medio de pago.";
     }
 
     /** ¿Alguna línea de pago del carrito es un vale restringido? Se lee del código, sin red. */

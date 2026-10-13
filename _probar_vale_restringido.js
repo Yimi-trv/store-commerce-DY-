@@ -188,7 +188,7 @@ const casos = [
             const ctx = contexto([], true);
             return Regla.evaluarVale(ctx, "TA174AGO26001", { CartLines: [ARROZ] })
                 .then(function (m) {
-                    return m.indexOf("no se puede verificar") >= 0 ? "bloquea" : "MAL: " + m;
+                    return m.indexOf("No se pudo revisar") >= 0 ? "bloquea" : "MAL: " + m;
                 });
         },
         esperado: "bloquea"
@@ -208,7 +208,7 @@ const casos = [
             const ctx = contexto(["*NO-RESUELTO*"]);
             return Regla.evaluarVale(ctx, "TA174AGO26001", { CartLines: [ARROZ] })
                 .then(function (m) {
-                    return m.indexOf("no se puede verificar") >= 0 ? "bloquea" : "MAL: " + m;
+                    return m.indexOf("No se pudo revisar") >= 0 ? "bloquea" : "MAL: " + m;
                 });
         },
         esperado: "bloquea"
@@ -221,7 +221,7 @@ const casos = [
             return Regla.evaluarVale(ctx, "TB174AGO26001", { CartLines: [ARROZ] })
                 .then(function (m) {
                     const consulto = itemsPedidos > antes;
-                    return (m.indexOf("no sabe aplicar") >= 0 && !consulto)
+                    return (m.indexOf("no reconoce") >= 0 && !consulto)
                         ? "bloquea sin consultar" : "MAL: consulto=" + consulto + " | " + m;
                 });
         },
