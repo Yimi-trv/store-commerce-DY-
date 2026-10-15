@@ -80,9 +80,27 @@ desobedecer al papel.
 
 ## Qué cuenta como alcohol
 
-Los artículos de la categoría `BEBIDAS ALCOHOLICAS` y de **todas sus hijas**, resueltos contra
-el channel DB. Al 2026-10-09 en producción son 23 categorías y **734 artículos** (cervezas,
-vinos, piscos, rones, whiskies, vodkas…).
+Los artículos de la categoría `BEBIDAS ALCOHOLICAS` y de **todas sus descendientes**, a
+cualquier profundidad. Al 2026-10-09 en producción son 23 categorías y **734 artículos**
+(cervezas, vinos, piscos, rones, whiskies, vodkas…).
+
+Lo resuelve el propio Commerce Runtime, con sus peticiones soportadas:
+
+| Petición | Para qué |
+|---|---|
+| `GetChannelCategoriesDataRequest(canal, …)` | el árbol de categorías **de este canal** |
+| `SearchProductsRequest(criterio, …)` | los productos de una categoría |
+
+> **Aquí hubo un error que costó un despliegue.** La primera versión lo resolvía con un
+> `SELECT` a mano sobre `ECORESPRODUCTCATEGORY`, `ECORESCATEGORY` e `INVENTTABLE` del channel
+> DB. En la caja no devolvió nada: esas tablas no están en el channel DB con ese nombre, así
+> que la consulta ni llegaba a correr y el cajero veía un bloqueo sin nombre de producto.
+> El esquema del channel DB es asunto de la plataforma: sus peticiones saben dónde vive el
+> dato en cada versión, un SELECT escrito a mano solo sabe lo que supuso quien lo escribió —
+> y se entera en producción.
+
+La consulta va **categoría por categoría** y no todas juntas, a propósito: así se sabe cuál
+hizo entrar a cada artículo, y ese nombre es el que termina viendo el cajero en el aviso.
 
 > Cuelgan de esa raíz `LICOR-JARABES DE GOMA` (12 artículos) y `LICOR-OTROS COMPLEMENTOS DE
 > BEBIDAS` (36), que **no llevan alcohol**. Quedan bloqueados porque la regla acordada fue el
@@ -119,7 +137,7 @@ Decidido a propósito, no heredado:
 |---|---|---|
 | El vale no está restringido | nada, ni consulta | es casi toda la venta; no debe costar un viaje al servidor |
 | Restringido, pero no se puede resolver qué es alcohol | **bloquea ese vale** | afecta solo a los vales restringidos y es el lado seguro |
-| El CSU devuelve una lista vacía | **bloquea ese vale** | una lista vacía casi siempre es "la categoría se llama distinto", no "no hay licores" |
+| El CSU devuelve una lista vacía | **bloquea ese vale** | una lista vacía casi siempre es "la categoría se llama distinto" o "los productos no bajaron al canal", no "no hay licores" |
 | Letra de restricción desconocida | **bloquea ese vale** | el papel exige algo que esta versión no sabe aplicar |
 
 La diferencia entre "lista vacía" y "no pude" viaja explícita: el CSU manda un `ItemId`
