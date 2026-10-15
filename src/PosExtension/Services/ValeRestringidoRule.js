@@ -64,9 +64,7 @@ System.register(["PosApi/Consume/Dialogs", "../DataService/ItemsRestringidosRequ
                         if (hallazgo.lineas.length > 0) {
                             return Promise.resolve(ValeRestringidoRule._motivo(hallazgo.lineas));
                         }
-                        return ValeRestringidoRule.mostrarAviso(context, "Vale con restricción", "Este vale no puede pagar bebidas alcohólicas.\n\n"
-                            + "La venta actual no tiene ninguna, así que puede continuar.")
-                            .then(function () { return ""; });
+                        return Promise.resolve("");
                     })
                         .catch(function (razon) {
                         ValeRestringidoRule._log(context, "evaluarVale", razon);
@@ -126,9 +124,6 @@ System.register(["PosApi/Consume/Dialogs", "../DataService/ItemsRestringidosRequ
                 };
                 ValeRestringidoRule.mostrarBloqueo = function (context, motivo) {
                     return ValeRestringidoRule._dialogo(context, "Vale con restricción", motivo);
-                };
-                ValeRestringidoRule.mostrarAviso = function (context, titulo, mensaje) {
-                    return ValeRestringidoRule._dialogo(context, titulo, mensaje);
                 };
                 ValeRestringidoRule._dialogo = function (context, titulo, mensaje) {
                     var options = {

@@ -37,7 +37,7 @@ import {
  * Igual que con la regla de comprobantes (DocumentTypeRule), la lógica vive en UN sitio y los
  * triggers solo la llaman. Duplicarla es el error que ya divergió tres veces en este proyecto.
  *
- *   PostGetGiftCardNumber  al pasar el vale  → es donde sale la alerta al cajero
+ *   PostGetGiftCardNumber  al pasar el vale  → corta el pago si la venta ya tiene licor
  *   PreAddTenderLine       red de seguridad del pago
  *   PreProductSale         el orden inverso: vale aplicado y después se agrega una cerveza
  *   PreEndTransaction      último neto antes de cerrar
@@ -175,13 +175,14 @@ export class ValeRestringidoRule {
                     return Promise.resolve(ValeRestringidoRule._motivo(hallazgo.lineas));
                 }
 
-                // Sin alcohol en la venta: se informa y se sigue.
-                return ValeRestringidoRule.mostrarAviso(
-                    context,
-                    "Vale con restricción",
-                    "Este vale no puede pagar bebidas alcohólicas.\n\n"
-                    + "La venta actual no tiene ninguna, así que puede continuar.")
-                    .then((): string => "");
+                /* Sin alcohol en la venta: se sigue EN SILENCIO, sin diálogo.
+                   Hubo un aviso informativo aquí, con el argumento de que el cajero supiera
+                   con qué está cobrando antes de que el cliente agregue una cerveza al final.
+                   Probado en caja, no compensa: obliga a cerrar un modal en el camino normal
+                   —la enorme mayoría de las ventas— para contar algo que no cambia lo que hay
+                   que hacer. Y si al final aparece el licor, PreProductSale lo frena igual y
+                   ahí sí el aviso dice algo útil, nombrando el producto. */
+                return Promise.resolve("");
             })
             .catch((razon: any): string => {
                 ValeRestringidoRule._log(context, "evaluarVale", razon);
@@ -262,10 +263,9 @@ export class ValeRestringidoRule {
         return ValeRestringidoRule._dialogo(context, "Vale con restricción", motivo);
     }
 
-    /** Aviso informativo: el cajero puede continuar. */
-    public static mostrarAviso(context: any, titulo: string, mensaje: string): Promise<void> {
-        return ValeRestringidoRule._dialogo(context, titulo, mensaje);
-    }
+    /* Hubo un mostrarAviso() para el caso "restringido pero la venta no tiene alcohol".
+       Se quito con el aviso: el unico dialogo que queda es el que BLOQUEA. Si la regla no
+       bloquea, el cajero no se entera de nada, que es como debe ser. */
 
     private static _dialogo(context: any, titulo: string, mensaje: string): Promise<void> {
         const options: any = {

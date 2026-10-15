@@ -9,13 +9,13 @@ import ValeRestringidoRule from "../Services/ValeRestringidoRule";
  * EL MOMENTO EN QUE EL CAJERO SE ENTERA.
  *
  * Dispara justo después de pasar (o tipear) el número del vale, ANTES de consultar su saldo
- * y de aplicar el pago. Si el código dice que el vale está restringido (empieza con TA):
+ * y de aplicar el pago. Si el código dice que el vale está restringido (empieza con TA) y la
+ * venta tiene bebidas alcohólicas, se cancela y se dice qué productos sacar.
  *
- *   · la venta tiene bebidas alcohólicas → se cancela y se dice qué productos sacar;
- *   · la venta no tiene                  → se avisa igual y se sigue.
- *
- * El aviso sin bloqueo no es ruido: el cliente todavía puede agregar una cerveza al final, y
- * entonces el cajero ya sabe por qué el POS se la va a rechazar (PreProductSale).
+ * SI LA VENTA NO TIENE ALCOHOL NO SE MUESTRA NADA. Hubo un aviso informativo aquí, para que
+ * el cajero supiera con qué estaba cobrando. Probado en caja, no compensa: obligaba a cerrar
+ * un modal en el camino normal —la enorme mayoría de las ventas— para contar algo que no
+ * cambia lo que hay que hacer. Si el licor aparece después, PreProductSale lo frena igual.
  *
  * POR QUÉ AQUÍ Y NO SOLO AL CERRAR
  * Es el primer punto donde se puede avisar SIN haber cobrado. Los otros tres controles

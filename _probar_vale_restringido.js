@@ -152,13 +152,22 @@ const casos = [
         esperado: "pasa"
     },
     {
-        etiqueta: "vale restringido + solo arroz → pasa (con aviso)",
+        etiqueta: "vale restringido + solo arroz → pasa SIN modal",
         correr: function () {
             const ctx = contexto(["90001"]);
+            let dialogos = 0;
+            const original = ctx.runtime.executeAsync;
+            ctx.runtime.executeAsync = function (p) {
+                if (!(p && p.__items)) { dialogos++; }
+                return original.call(this, p);
+            };
             return Regla.evaluarVale(ctx, "TA174AGO26001", { CartLines: [ARROZ] })
-                .then(function (m) { return m === "" ? "pasa" : "bloquea"; });
+                .then(function (m) {
+                    if (m !== "") { return "bloquea"; }
+                    return dialogos === 0 ? "pasa sin modal" : "MAL: mostro " + dialogos + " modal(es)";
+                });
         },
-        esperado: "pasa"
+        esperado: "pasa sin modal"
     },
     {
         etiqueta: "vale restringido + cerveza → bloquea y nombra el producto",
