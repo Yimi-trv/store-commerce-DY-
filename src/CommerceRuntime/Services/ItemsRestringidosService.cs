@@ -122,14 +122,22 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
                 {
                     DatabaseSchema = "ax",
                     Select = new ColumnSet(new[] { "i.ITEMID", "c.NAME" }),
+                    /* SOLO LA PRIMERA TABLA RECIBE EL ESQUEMA DE DatabaseSchema. Las demás
+                       van con "ax." delante o el motor las busca en el esquema por defecto,
+                       no las encuentra y la consulta muere con un StorageException cuyo
+                       mensaje no dice nada. Así estaba escrita desde el primer diseño, y es
+                       la razón por la que esta lista nunca se resolvió en caja. El patrón
+                       correcto es el de SalesTransactionsService: la primera sin prefijo,
+                       las unidas con el suyo. */
                     From = "ECORESPRODUCTCATEGORY pc " +
-                           "JOIN ECORESCATEGORY c ON c.RECID = pc.CATEGORY " +
-                           "JOIN ECORESCATEGORY raiz ON raiz.CATEGORYHIERARCHY = c.CATEGORYHIERARCHY " +
-                                "AND raiz.NAME = @CATEGORIA " +
+                           "JOIN ax.ECORESCATEGORY c ON c.RECID = pc.CATEGORY " +
+                           "JOIN ax.ECORESCATEGORY raiz ON raiz.CATEGORYHIERARCHY = c.CATEGORYHIERARCHY " +
                                 "AND c.NESTEDSETLEFT >= raiz.NESTEDSETLEFT " +
                                 "AND c.NESTEDSETRIGHT <= raiz.NESTEDSETRIGHT " +
-                           "JOIN INVENTTABLE i ON i.PRODUCT = pc.PRODUCT",
-                    Where = "i.DATAAREAID = @DATAAREAID",
+                           "JOIN ax.INVENTTABLE i ON i.PRODUCT = pc.PRODUCT",
+                    // Los parámetros van en el WHERE, no en el ON: es donde el runtime los
+                    // sustituye, y es el único sitio donde se los ha visto funcionar aquí.
+                    Where = "i.DATAAREAID = @DATAAREAID AND raiz.NAME = @CATEGORIA",
                     OrderBy = "i.ITEMID"
                 };
                 consulta.Parameters["@DATAAREAID"] = dataAreaId;
@@ -175,7 +183,7 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
             {
                 return new ObtenerItemsRestringidosResponse(items, false,
                     "No se pudo resolver la lista de artículos restringidos (empresa " + dataAreaId + "): " +
-                    excepcion.GetType().Name + ": " + excepcion.Message);
+                    Describir(excepcion));
             }
         }
 
@@ -212,8 +220,29 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
             catch (Exception excepcion)
             {
                 return "La consulta principal no devolvió artículos y el diagnóstico tampoco pudo " +
-                       "correr (empresa " + dataAreaId + "): " + excepcion.GetType().Name + ": " + excepcion.Message;
+                       "correr (empresa " + dataAreaId + "): " + Describir(excepcion);
             }
+        }
+
+        /// <summary>
+        /// El mensaje de StorageException ("A storage exception occurred. See inner exception
+        /// for details") no dice absolutamente nada: la causa -el nombre de objeto inválido,
+        /// el error de sintaxis- viaja en la excepción interna. Verla costó un despliegue.
+        /// </summary>
+        private static string Describir(Exception excepcion)
+        {
+            var texto = excepcion.GetType().Name + ": " + excepcion.Message;
+            var interna = excepcion.InnerException;
+            var nivel = 0;
+
+            while (interna != null && nivel < 3)
+            {
+                texto += " | interna: " + interna.GetType().Name + ": " + interna.Message;
+                interna = interna.InnerException;
+                nivel++;
+            }
+
+            return texto;
         }
 
         private static string Texto(ExtensionsEntity fila, string columna)
