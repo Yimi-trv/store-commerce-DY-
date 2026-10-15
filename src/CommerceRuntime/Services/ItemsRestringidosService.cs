@@ -5,10 +5,9 @@ using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Dynamics.Commerce.Runtime;
+using Microsoft.Dynamics.Commerce.Runtime.Data;
 using Microsoft.Dynamics.Commerce.Runtime.DataModel;
-using Microsoft.Dynamics.Commerce.Runtime.DataServices.Messages;
 using Microsoft.Dynamics.Commerce.Runtime.Messages;
-using Microsoft.Dynamics.Commerce.Runtime.Services.Messages;
 using Trujillo.PeruEInvoicing.CommerceRuntime.Entities;
 using Trujillo.PeruEInvoicing.CommerceRuntime.Messages;
 
@@ -30,26 +29,36 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
     /// POS (ValeRestringidoRule.ts). Por eso aquí no hay ninguna llamada de red, ninguna URL
     /// y ninguna clave de integración.
     ///
-    /// POR QUÉ NO HAY SQL A MANO (Y POR QUÉ LO HUBO)
-    /// La primera versión resolvía esto con un SELECT sobre ECORESPRODUCTCATEGORY,
-    /// ECORESCATEGORY e INVENTTABLE del channel DB. En la caja no devolvió nada: esas tablas
-    /// no están en el channel DB con ese nombre, y la consulta ni siquiera llegaba a correr.
-    /// Costó un despliegue descubrirlo.
+    /// POR QUÉ LA JERARQUÍA DE PRODUCTO Y NO LA DE NAVEGACIÓN DEL CANAL
+    /// Hubo una versión que resolvía esto con GetChannelCategoriesDataRequest. Es la petición
+    /// soportada… para otra pregunta: devuelve la jerarquía de NAVEGACIÓN del canal, la que
+    /// sirve para explorar categorías en pantalla. En estas tiendas nadie navega categorías
+    /// —se escanea el código de barras— así que el canal no tiene ninguna asignada y la
+    /// petición devolvía CERO categorías. Comprobado en caja: "El canal 5637151326 no
+    /// devolvió ninguna categoría".
     ///
-    /// Ahora lo resuelve el propio Commerce Runtime, con sus peticiones soportadas:
+    /// La clasificación que importa vive en la jerarquía de CATEGORÍAS DE PRODUCTO
+    /// ("Catalogo Ventas"), que sí baja al channel DB en ECORESPRODUCTCATEGORY. Son dos cosas
+    /// distintas y la segunda no depende de cómo se navegue el catálogo en caja.
     ///
-    ///     GetChannelCategoriesDataRequest  → el árbol de categorías DE ESTE CANAL
-    ///     SearchProductsRequest            → los productos de una categoría
+    /// LAS TABLAS Y COLUMNAS ESTÁN VERIFICADAS CONTRA EL CHANNEL DB, no supuestas: se leyeron
+    /// con la sonda TRU_Diagnostics (mode='Columns') sobre el canal real.
     ///
-    /// La diferencia de fondo: el esquema del channel DB es asunto de la plataforma, no
-    /// nuestro. Estas peticiones saben dónde vive el dato en cada versión; un SELECT escrito
-    /// a mano solo sabe lo que supuso quien lo escribió, y se entera en producción.
+    ///     ax.ECORESPRODUCTCATEGORY   CATEGORY, CATEGORYHIERARCHY, PRODUCT
+    ///     ax.ECORESCATEGORY          RECID, CATEGORYHIERARCHY, NAME, NESTEDSETLEFT/RIGHT
+    ///     ax.INVENTTABLE             ITEMID, PRODUCT, DATAAREAID
+    ///
+    /// EL SUBÁRBOL SE RESUELVE CON NESTED SETS, no subiendo padre a padre. ECORESCATEGORY
+    /// trae NESTEDSETLEFT y NESTEDSETRIGHT: toda descendiente de una raíz cae dentro de su
+    /// intervalo, a cualquier profundidad, en una sola consulta. La primera versión miraba un
+    /// único nivel de hijas y se le escapaba cualquier nieta.
     ///
     /// QUÉ PASA SI ESTA LISTA NO SE PUEDE RESOLVER
     /// Se responde Resuelta=false, y el POS bloquea los vales RESTRINGIDOS (no los demás).
     /// Afecta solo a esos vales y es el lado seguro del error: una lista vacía tratada como
-    /// "no hay alcohol en el catálogo" dejaría pasar justo lo que hay que frenar. El Detalle
-    /// dice en qué paso se quedó y con qué canal, para no volver a depurar a ciegas.
+    /// "no hay alcohol en el catálogo" dejaría pasar justo lo que hay que frenar. Si no hay
+    /// resultados se hace una segunda consulta, solo para el diagnóstico, que distingue "la
+    /// categoría no existe en este channel DB" de "existe pero no tiene productos".
     /// </summary>
     public class ItemsRestringidosService : IRequestHandlerAsync
     {
@@ -59,9 +68,9 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
         };
 
         /// <summary>
-        /// Categoría raíz del catálogo que agrupa las bebidas alcohólicas. Se busca POR NOMBRE
-        /// y no por RecId a propósito: los RecId de UAT y de producción no coinciden, y un id
-        /// a mano haría que la regla se aplicara en un entorno y en el otro no.
+        /// Categoría raíz que agrupa las bebidas alcohólicas. Se busca POR NOMBRE y no por
+        /// RecId a propósito: los RecId de UAT y de producción no coinciden, y un id a mano
+        /// haría que la regla se aplicara en un entorno y en el otro no.
         ///
         /// Entran la categoría y TODAS sus descendientes, a cualquier profundidad. Al
         /// 2026-10-09 en producción son 23 categorías y 734 artículos (cervezas, vinos,
@@ -71,6 +80,9 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
         /// COMPLEMENTOS DE BEBIDAS" (36), que NO llevan alcohol. Quedan bloqueados porque la
         /// regla acordada fue el subárbol completo. Para excluirlos, agréguelos a
         /// CategoriasExcluidas.
+        ///
+        /// El nombre existe en más de una jerarquía ("Catalogo Ventas" y "Catalogo
+        /// Mayorista"): entran las dos, porque un artículo restringido lo está en cualquiera.
         /// </summary>
         private const string CategoriaRaizAlcohol = "BEBIDAS ALCOHOLICAS";
 
@@ -93,140 +105,121 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
         private async Task<ObtenerItemsRestringidosResponse> ItemsRestringidosAsync(ObtenerItemsRestringidosRequest request)
         {
             var items = new Collection<ItemRestringidoResult>();
-            var contexto = request.RequestContext;
-            long canal = 0;
+            var dataAreaId = "(sin resolver)";
 
             try
             {
-                canal = contexto.GetPrincipal().ChannelId;
+                dataAreaId = request.RequestContext.GetChannelConfiguration().InventLocationDataAreaId;
 
-                /* 1. El árbol de categorías de ESTE canal. */
-                var categorias = await contexto.ExecuteAsync<EntityDataServiceResponse<Category>>(
-                    new GetChannelCategoriesDataRequest(canal, QueryResultSettings.AllRecords))
-                    .ConfigureAwait(false);
+                /* Un solo viaje con JOIN, no un DatabaseContext por fila: el patrón N+1 ya
+                   provocó timeouts en este proyecto (gotcha 5 de docs/gotchas.md).
 
-                var todas = categorias.ToList();
-                if (todas.Count == 0)
+                   El JOIN con "raiz" es el subárbol por nested sets: una categoría pertenece
+                   al subárbol si su intervalo [LEFT, RIGHT] cae dentro del de la raíz, dentro
+                   de la MISMA jerarquía. Incluye a la raíz (>= y <=) por si algún día le
+                   cuelgan productos directos. */
+                var consulta = new SqlPagedQuery(QueryResultSettings.AllRecords)
                 {
-                    return NoResuelta(items,
-                        "El canal " + canal + " no devolvió ninguna categoría. Revise la jerarquía " +
-                        "de navegación del canal y la sincronización CDX.");
-                }
+                    DatabaseSchema = "ax",
+                    Select = new ColumnSet(new[] { "i.ITEMID", "c.NAME" }),
+                    From = "ECORESPRODUCTCATEGORY pc " +
+                           "JOIN ECORESCATEGORY c ON c.RECID = pc.CATEGORY " +
+                           "JOIN ECORESCATEGORY raiz ON raiz.CATEGORYHIERARCHY = c.CATEGORYHIERARCHY " +
+                                "AND raiz.NAME = @CATEGORIA " +
+                                "AND c.NESTEDSETLEFT >= raiz.NESTEDSETLEFT " +
+                                "AND c.NESTEDSETRIGHT <= raiz.NESTEDSETRIGHT " +
+                           "JOIN INVENTTABLE i ON i.PRODUCT = pc.PRODUCT",
+                    Where = "i.DATAAREAID = @DATAAREAID",
+                    OrderBy = "i.ITEMID"
+                };
+                consulta.Parameters["@DATAAREAID"] = dataAreaId;
+                consulta.Parameters["@CATEGORIA"] = CategoriaRaizAlcohol;
 
-                /* 2. La raíz por nombre, y de ahí todo el subárbol a cualquier profundidad.
-                      La versión anterior bajaba UN solo nivel: una categoría nieta se escapaba. */
-                var raices = todas
-                    .Where(c => string.Equals((c.Name ?? string.Empty).Trim(), CategoriaRaizAlcohol,
-                                              StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                if (raices.Count == 0)
+                using (var db = new DatabaseContext(request.RequestContext))
                 {
-                    return NoResuelta(items,
-                        "No existe la categoría '" + CategoriaRaizAlcohol + "' en la jerarquía del canal " +
-                        canal + " (" + todas.Count + " categorías revisadas). Verifique el nombre en este entorno.");
-                }
+                    var filas = await db.ReadEntityAsync<ExtensionsEntity>(consulta).ConfigureAwait(false);
 
-                var subarbol = Subarbol(todas, raices);
+                    long contador = 1;
+                    var vistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                /* 3. Los productos de cada categoría del subárbol. Se pregunta categoría por
-                      categoría —no todas juntas— porque así se sabe CUÁL hizo entrar a cada
-                      artículo, y ese nombre es lo que el cajero ve en el aviso. */
-                long contador = 1;
-                var vistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                foreach (Category categoria in subarbol)
-                {
-                    var nombreCategoria = (categoria.Name ?? string.Empty).Trim();
-                    if (CategoriasExcluidas.Contains(nombreCategoria, StringComparer.OrdinalIgnoreCase))
-                        continue;
-
-                    var criterio = new ProductSearchCriteria
+                    foreach (ExtensionsEntity fila in filas)
                     {
-                        Context = new ProjectionDomain { ChannelId = canal, CatalogId = 0 },
-                        CategoryIds = new List<long> { categoria.RecordId },
-                        IncludeProductsFromDescendantCategories = true
-                    };
+                        var itemId = Texto(fila, "ITEMID");
+                        var categoria = Texto(fila, "NAME");
 
-                    var encontrados = await contexto.ExecuteAsync<EntityDataServiceResponse<ProductSearchResult>>(
-                        new SearchProductsRequest(criterio, QueryResultSettings.AllRecords))
-                        .ConfigureAwait(false);
-
-                    foreach (ProductSearchResult producto in encontrados)
-                    {
-                        var itemId = (producto.ItemId ?? string.Empty).Trim();
-                        // Un maestro de producto puede venir sin ItemId; sus variantes sí lo traen.
-                        if (itemId.Length == 0) continue;
-                        // El mismo artículo puede estar en dos categorías del subárbol: basta una.
+                        if (string.IsNullOrWhiteSpace(itemId)) continue;
+                        if (CategoriasExcluidas.Contains(categoria, StringComparer.OrdinalIgnoreCase)) continue;
+                        // Un artículo puede estar en dos categorías del subárbol: basta una vez.
                         if (!vistos.Add(itemId)) continue;
 
                         items.Add(new ItemRestringidoResult
                         {
                             Id = contador++,
                             ItemId = itemId,
-                            Categoria = nombreCategoria.Length > 0 ? nombreCategoria : CategoriaRaizAlcohol
+                            Categoria = string.IsNullOrWhiteSpace(categoria) ? CategoriaRaizAlcohol : categoria
                         });
+                    }
+
+                    if (items.Count == 0)
+                    {
+                        var porque = await PorQueVaciaAsync(db, dataAreaId).ConfigureAwait(false);
+                        return new ObtenerItemsRestringidosResponse(items, false, porque);
                     }
                 }
 
-                if (items.Count == 0)
-                {
-                    // Una lista vacía casi siempre significa que los productos no bajaron al canal,
-                    // no que no haya licores en el catálogo. Se marca como NO resuelta para que el
-                    // POS no la confunda con "no hay nada que bloquear".
-                    return NoResuelta(items,
-                        "La categoría '" + CategoriaRaizAlcohol + "' existe en el canal " + canal +
-                        " con " + subarbol.Count + " categorías en su subárbol, pero ninguna tiene " +
-                        "productos asignados en este canal. Revise la jerarquía de navegación y el CDX.");
-                }
-
                 return new ObtenerItemsRestringidosResponse(items, true,
-                    items.Count + " artículos restringidos en " + subarbol.Count +
-                    " categorías bajo '" + CategoriaRaizAlcohol + "' (canal " + canal + ").");
+                    items.Count + " artículos restringidos bajo '" + CategoriaRaizAlcohol +
+                    "' (empresa " + dataAreaId + ").");
             }
             catch (Exception excepcion)
             {
-                return NoResuelta(items,
-                    "No se pudo resolver la lista de artículos restringidos (canal " + canal + "): " +
+                return new ObtenerItemsRestringidosResponse(items, false,
+                    "No se pudo resolver la lista de artículos restringidos (empresa " + dataAreaId + "): " +
                     excepcion.GetType().Name + ": " + excepcion.Message);
             }
         }
 
         /// <summary>
-        /// La raíz y todas sus descendientes. Itera por niveles en vez de recursión para que una
-        /// jerarquía con un ciclo —que no debería existir, pero el dato viene de fuera— no se
-        /// lleve la pila por delante.
+        /// Solo se llama cuando la consulta principal no devolvió nada, y existe para que el
+        /// siguiente que mire esto no tenga que adivinar en cuál de los dos pasos se quedó:
+        /// la categoría no está en este channel DB, o está pero sin productos asignados.
         /// </summary>
-        private static List<Category> Subarbol(List<Category> todas, List<Category> raices)
+        private static async Task<string> PorQueVaciaAsync(DatabaseContext db, string dataAreaId)
         {
-            var resultado = new List<Category>(raices);
-            var dentro = new HashSet<long>(raices.Select(r => r.RecordId));
-            var frontera = new List<long>(dentro);
-
-            while (frontera.Count > 0)
+            try
             {
-                var siguiente = new List<long>();
-
-                foreach (Category c in todas)
+                var consulta = new SqlPagedQuery(QueryResultSettings.AllRecords)
                 {
-                    if (c.ParentCategory == 0) continue;
-                    if (!frontera.Contains(c.ParentCategory)) continue;
-                    if (!dentro.Add(c.RecordId)) continue;
+                    DatabaseSchema = "ax",
+                    Select = new ColumnSet(new[] { "r.RECID", "r.CATEGORYHIERARCHY" }),
+                    From = "ECORESCATEGORY r",
+                    Where = "r.NAME = @CATEGORIA",
+                    OrderBy = "r.RECID"
+                };
+                consulta.Parameters["@CATEGORIA"] = CategoriaRaizAlcohol;
 
-                    resultado.Add(c);
-                    siguiente.Add(c.RecordId);
-                }
+                var raices = (await db.ReadEntityAsync<ExtensionsEntity>(consulta).ConfigureAwait(false)).Count();
 
-                frontera = siguiente;
+                return raices == 0
+                    ? "La categoría '" + CategoriaRaizAlcohol + "' no existe en el channel DB. " +
+                      "Verifique el nombre en este entorno y que la jerarquía de categorías de " +
+                      "producto esté sincronizada por CDX."
+                    : "La categoría '" + CategoriaRaizAlcohol + "' existe en el channel DB (" + raices +
+                      " jerarquía(s)), pero ningún artículo de la empresa " + dataAreaId +
+                      " cuelga de ella ni de sus descendientes. Revise la asignación de categorías " +
+                      "a productos y la sincronización CDX de ECORESPRODUCTCATEGORY.";
             }
-
-            return resultado;
+            catch (Exception excepcion)
+            {
+                return "La consulta principal no devolvió artículos y el diagnóstico tampoco pudo " +
+                       "correr (empresa " + dataAreaId + "): " + excepcion.GetType().Name + ": " + excepcion.Message;
+            }
         }
 
-        private static ObtenerItemsRestringidosResponse NoResuelta(
-            Collection<ItemRestringidoResult> items, string detalle)
+        private static string Texto(ExtensionsEntity fila, string columna)
         {
-            return new ObtenerItemsRestringidosResponse(items, false, detalle);
+            var valor = fila.GetProperty(columna);
+            return valor == null ? null : valor.ToString().Trim();
         }
     }
 }

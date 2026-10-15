@@ -2,7 +2,7 @@
  "$schema": "./devDependencies/schemas/manifestSchema.json",
  "name": "RegenerateFE",
  "publisher": "DP",
- "version": "1.6.2",
+ "version": "1.6.3",
  "minimumPosVersion": "9.51.0.0",
  "description": "Extension POS: consulta de RUC y DNI via SUNAT en Customer Add/Edit + vale de consumo con restriccion (los que empiezan con TA no pagan bebidas alcoholicas) + tema visual Trujillo Market (layout amplio y compacto 1024x768)",
  "components": {
