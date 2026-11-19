@@ -70,11 +70,15 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
             {
                 result = await RunColumnsAsync(request).ConfigureAwait(false);
             }
+            else if (mode.Equals("Impuestos", StringComparison.OrdinalIgnoreCase))
+            {
+                result = await RunImpuestosAsync(request).ConfigureAwait(false);
+            }
             else
             {
                 result = new ElectronicDocumentResult { Id = 1 };
                 result.Success = false;
-                result.ErrorMessage = "Unknown mode '" + mode + "'. Valid: Views | ProbeTables | Inventory | AddressDiag | ViewDef | GeoMasters | Columns.";
+                result.ErrorMessage = "Unknown mode '" + mode + "'. Valid: Views | ProbeTables | Inventory | AddressDiag | ViewDef | GeoMasters | Columns | Impuestos.";
             }
 
             return new RunDiagnosticResponse(result);
@@ -417,6 +421,44 @@ namespace Trujillo.PeruEInvoicing.CommerceRuntime.Services
             result.TxtContent = sb.ToString();
             result.Success = true;
             result.FileName = "viewdef.txt";
+            return result;
+        }
+
+        /// <summary>
+        /// Dice si el paquete de impuestos sin repetir quedó activo: contadores de ESTA instancia del
+        /// CSU y definición de la vista corregida. Solo contadores y metadatos, sin filas de datos.
+        /// Los contadores llegan por el AppDomain porque el handler vive en otro ensamblado, cargado
+        /// después de DP; el orden del arreglo es el de ContadoresDeImpuestos.
+        /// </summary>
+        private async Task<ElectronicDocumentResult> RunImpuestosAsync(RunDiagnosticRequest request)
+        {
+            var result = new ElectronicDocumentResult { Id = 1 };
+            var ctx = request.RequestContext;
+            var sb = new StringBuilder();
+            sb.Append("=== IMPUESTOS SIN REPETIR ===\n\n");
+
+            long[] contadores = AppDomain.CurrentDomain.GetData("TRU.ImpuestosSinRepetir") as long[];
+            if (contadores == null)
+            {
+                sb.Append("Esta instancia todavia no calculo impuestos con el handler.\n");
+                sb.Append("Si ya hubo ventas aca, el ensamblado no esta registrado.\n");
+            }
+            else
+            {
+                sb.Append("Pedidos al motor:   " + contadores[0] + "\n");
+                sb.Append("Corridas reales:    " + contadores[1] + "\n");
+                sb.Append("Corridas evitadas:  " + contadores[2] + "\n");
+                sb.Append("Verificadas:        " + contadores[3] + "\n");
+                sb.Append("Con diferencia:     " + contadores[4] + (contadores[4] > 0 ? "  (salto APAGADO en esta instancia)" : "") + "\n");
+            }
+
+            sb.Append("\n[VISTA] " + await Sample(ctx, "sys", "definition", "sql_modules", "object_id = OBJECT_ID('ext.DPCUSTTABLE_PEVIEW')") + "\n");
+            sb.Append("(sin 'CASE WHEN' => script aplicado)\n");
+            sb.Append("[FILAS DPCUSTTABLE_PE] " + await Sample(ctx, "sys", "rows", "partitions", "object_id = OBJECT_ID('ext.DPCUSTTABLE_PE') AND index_id IN (0,1)") + "\n");
+
+            result.TxtContent = sb.ToString();
+            result.Success = true;
+            result.FileName = "impuestos.txt";
             return result;
         }
 

@@ -1,4 +1,5 @@
 import { construirCss, TEMA_ACTIVO, CLASE_AMBITO, CLASE_AMPLIO, CLASE_COMPACTO } from "./ThemeAssets";
+import LectorCodigoBarras from "../Services/LectorCodigoBarras";
 
 /**
  * SCT_ThemeEngine — aplica el tema "Trujillo Market" sobre el DOM del POS.
@@ -99,6 +100,35 @@ export class ThemeEngine {
     private static observadorDom: MutationObserver | null = null;
     private static observadorEstilos: MutationObserver | null = null;
     private static ocupado: boolean = false;
+
+    /**
+     * Pasada LIGERA: solo cambio el carrito, asi que no se recoloca la botonera.
+     *
+     * Lo pone y lo quita pasada(), a partir de su origen. Fuera de una pasada vale siempre
+     * false: nadie mas lo toca y asi una pasada completa nunca se salta nada por un flag que
+     * alguien dejo encendido.
+     */
+    private static soloCarrito: boolean = false;
+
+    /**
+     * Cuanto se puede aplazar una pasada por lecturas seguidas antes de correrla igual. Con un
+     * cajero escaneando sin parar, la botonera se recoloca como mucho una vez cada 3 s. Tambien
+     * sirve para que un fallo del detector no deje el tema sin aplicar: DISEÑADO PARA FALLAR
+     * ABIERTO, como el resto de lo que toca comportamiento.
+     */
+    private static readonly MS_DIFERIR_MAX: number = 3000;
+
+    /** Cada cuanto se vuelve a mirar si la lectura ya termino. */
+    private static readonly MS_REINTENTO_DIFERIDA: number = 80;
+
+    /** Tiempo sin lecturas que cuenta como "el cajero dejo de escanear". */
+    private static readonly MS_RITMO_LECTURA: number = 1200;
+
+    /** Cada cuanto se vuelve a mirar si el ritmo de lectura ya termino. */
+    private static readonly MS_REINTENTO_RITMO: number = 250;
+
+    /** Desde cuando se esta aplazando la pasada pendiente. 0 = no hay ninguna aplazada. */
+    private static diferidaDesde: number = 0;
     private static temporizador: number = 0;
     private static temporizadorSalidaAmbito: number = 0;
     private static eventosRegistrados: boolean = false;
@@ -123,6 +153,11 @@ export class ThemeEngine {
     private static paneVigilado: HTMLElement | null = null;
     private static temporizadorLineas: number = 0;
 
+    // Desde 1.6.8 el aviso lo da la VENTA (anunciarVenta). Mientras haya avisado hace menos de
+    // esto, el vigilante de la pantalla solo actualiza su foto y calla. Ver anunciarVenta().
+    private static readonly MS_SILENCIO_PANTALLA: number = 1500;
+    private static ultimoAvisoPorVenta: number = 0;
+
     // Un solo dedo a la vez sobre las cuadriculas de botones. Ver vigilarToquesMultiples().
     private static punteroActivo: number = -1;
     private static marcaPuntero: number = 0;
@@ -131,6 +166,53 @@ export class ThemeEngine {
     private static sondaEstilos: HTMLElement | null = null;
     private static estilosNormalizados: { [clave: string]: string } = {};
     private static recalculoPestanasSolicitado: boolean = false;
+
+    // ------------------------------------------------------------------ medicion de tiempos
+    //
+    // POR QUE ESTA ESTO AQUI
+    // En ciertas tiendas el producto escaneado tarda en aparecer en la venta. Mientras el hilo
+    // esta ocupado, las teclas del lector se encolan —un lector es un teclado— y cuando se
+    // libera entran en el campo que tenga el foco. De ahi salio un importe de
+    // 7.750.371.671.936 en la pantalla de pago: era un EAN-13 peruano tecleado en el numpad.
+    //
+    // ESTO NO OPTIMIZA NADA. Solo mide, para saber EN QUE TIENDA, CON QUE LAYOUT y POR QUE
+    // CAMINO se va el tiempo antes de tocar la geometria. Gotcha 20: diagnostico primero,
+    // teoria despues; que el sistema lo diga en vez de adivinar.
+    //
+    // COSTE: dos lecturas de reloj y unas sumas por pasada. No mide elementos ni toca el DOM,
+    // asi que no puede alterar lo que esta midiendo. Cuando sobre, se quita este bloque, la
+    // medicion dentro de pasada() y el parametro `origen`: nada mas depende de ellos.
+
+    /** A partir de aqui una pasada se considera lenta y se anuncia. */
+    private static readonly MS_PASADA_LENTA: number = 50;
+
+    /** Cada cuantas pasadas se vuelca el resumen acumulado. */
+    private static readonly PASADAS_POR_RESUMEN: number = 100;
+
+    /** Un aviso de pasada lenta como mucho cada tanto: el log de la caja no es infinito. */
+    private static readonly MS_ENTRE_AVISOS: number = 10000;
+
+    /** Contexto del POS, solo para escribir en su log. Lo entrega ApplyThemeTrigger. */
+    private static ctx: any = null;
+    private static ultimoAvisoLento: number = 0;
+
+    private static tiempos: {
+        pasadas: number; lentas: number;
+        sumaTotal: number; maxTotal: number;
+        sumaLayout: number; maxLayout: number;
+        sumaObservar: number; maxObservar: number;
+        porOrigen: { [origen: string]: number };
+        diferidas: number;
+        desde: number;
+    } = {
+        pasadas: 0, lentas: 0,
+        sumaTotal: 0, maxTotal: 0,
+        sumaLayout: 0, maxLayout: 0,
+        sumaObservar: 0, maxObservar: 0,
+        porOrigen: {},
+        diferidas: 0,
+        desde: new Date().getTime()
+    };
 
     private static readonly SELECTORES_OBSERVADOS: string[] = [
         "#TransactionGrid", "#TotalsPanel", "#TotalsPanel .fields.row", "#TotalsPanel .panel-footer",
@@ -397,6 +479,15 @@ export class ThemeEngine {
             return;
         }
 
+        // Si hace un momento aviso la VENTA, esta foto solo se guarda. El aviso ya salio, con la
+        // cantidad exacta, cuando el producto entro; repetirlo desde la pantalla —que va por
+        // detras— es justo lo que se veia desfasado: un "11 → 12" viejo despues de un "12 → 13".
+        // Guardar la foto igual deja la base al dia para cuando la pantalla vuelva a hablar.
+        if (new Date().getTime() - ThemeEngine.ultimoAvisoPorVenta < ThemeEngine.MS_SILENCIO_PANTALLA) {
+            ThemeEngine.lineasVistas = ahora;
+            return;
+        }
+
         var aviso: string = "";
         for (var cod in ahora) {
             if (!ahora.hasOwnProperty(cod)) continue;
@@ -415,6 +506,72 @@ export class ThemeEngine {
 
         ThemeEngine.lineasVistas = ahora;
         if (aviso) ThemeEngine.mostrarAviso(aviso);
+    }
+
+    // EL AVISO SE DISPARA CON LA VENTA, NO CON LA PANTALLA.
+    //
+    // POR QUE. Con 1.6.7 las lecturas ya entraban todas, pero el aviso rojo iba por detras: al
+    // escanear rapido el mismo producto, el aviso no seguia el ritmo de la linea. Salia de mirar
+    // la pantalla: el vigilante de la caja de lineas esperaba 80 ms de calma y comparaba dos
+    // fotos. Esos 80 ms se reinician con cada mutacion, y escaneando seguido el POS no deja de
+    // repintar la rejilla: el aviso esperaba a que parara, y entonces juntaba dos escaneos en uno
+    // (10 → 12) o llegaba cuando la linea ya iba por otra cantidad.
+    //
+    // AHORA lo dispara AvisoProductoTrigger (PostProductSale): el evento del propio POS cuando el
+    // producto entra, con el carrito ya actualizado. Un escaneo, un aviso, con la cantidad exacta,
+    // sin esperar a que la pantalla se calme y sin comparar fotos.
+    //
+    // EL VIGILANTE DE LA PANTALLA SE QUEDA de respaldo. Calla mientras avisan las ventas (ver
+    // MS_SILENCIO_PANTALLA en avisarProducto) y vuelve a hablar si el trigger no trae carrito, o
+    // para lo que no es una venta, como DEFINIR CANTIDAD hacia arriba.
+    //
+    // NO SE FIA A CIEGAS DEL CARRITO. Si el producto recien vendido no esta en el carrito, ese no
+    // es el carrito de despues de la venta: no se avisa desde aqui y avisa la pantalla, como antes.
+    // Mejor un aviso tarde que uno con la cantidad equivocada.
+    public static anunciarVenta(detalles: any[] | null, carrito: any): void {
+        try {
+            if (!TEMA_ACTIVO || !ThemeEngine.eventosRegistrados) return;
+
+            var lineas: any[] | null = carrito && carrito.CartLines ? carrito.CartLines : null;
+            if (!lineas) return;
+
+            var lista: any[] = detalles || [];
+            var aviso: string = "";
+
+            for (var i: number = 0; i < lista.length; i++) {
+                var detalle: any = lista[i] || {};
+                var agregada: number = Number(detalle.quantity) || 0;
+                var producto: any = detalle.product || {};
+                var codigo: string = String(producto.ItemId || "").replace(/\s+/g, "");
+                if (agregada <= 0 || !codigo) continue;
+
+                // Total por codigo, igual que la foto de la pantalla: el POS puede partir un mismo
+                // articulo en dos lineas (precio o descuento distintos).
+                var total: number = 0;
+                var nombre: string = "";
+                for (var j: number = 0; j < lineas.length; j++) {
+                    var linea: any = lineas[j];
+                    if (!linea || linea.IsVoided) continue;
+                    if (String(linea.ItemId || "").replace(/\s+/g, "") !== codigo) continue;
+                    total += Number(linea.Quantity) || 0;
+                    if (!nombre && linea.Description) nombre = String(linea.Description);
+                }
+
+                // El producto acaba de entrar: si el carrito no lo tiene, no es el de despues de
+                // la venta. Se deja todo al vigilante de la pantalla.
+                if (total < agregada) return;
+
+                nombre = nombre || producto.Name || codigo;
+                var previa: number = total - agregada;
+                aviso = previa > 0
+                    ? nombre + "   " + ThemeEngine.numero(previa) + " → " + ThemeEngine.numero(total)
+                    : "+ " + nombre + "   (" + ThemeEngine.numero(total) + ")";
+            }
+
+            if (!aviso) return;
+            ThemeEngine.ultimoAvisoPorVenta = new Date().getTime();
+            ThemeEngine.mostrarAviso(aviso);
+        } catch (e) { }
     }
 
     // Vigilante PROPIO de la caja de lineas, solo para el aviso de producto.
@@ -1097,13 +1254,26 @@ export class ThemeEngine {
         var celdas: any[] | null = ThemeEngine.celdasDeHQ(botones);
         if (celdas && ThemeEngine.repartirPorHQ(idControl, botones, celdas, ancho, altoUtil, proporcion, HUECO)) return;
 
+        // UNA SOLA RONDA DE MEDICIONES. Antes los botones se median aqui para deducir la
+        // rejilla y SE VOLVIAN A MEDIR al colocarlos, con un establecer() de por medio. Leer
+        // geometria detras de una escritura obliga al navegador a rehacer el layout en el
+        // acto: eran N reflujos forzados por panel, y esta funcion corre TRES veces por
+        // pasada. Guardando la posicion, el segundo recorrido es aritmetica.
+        //
+        // Y ademas era fragil. El segundo recorrido buscaba su sitio en unas listas armadas
+        // con las medidas de ANTES de establecer(): si el contenedor cambiaba de tamano y los
+        // botones se movian, indexOf devolvia -1 y el boton caia a la celda (0,0) —todos
+        // apilados, el mismo sintoma que el bug del panel oculto de arriba—. Derivando el
+        // indice de la MISMA medida que arma las listas, esa busqueda no puede fallar.
         var filas: number[] = [];
         var columnas: number[] = [];
+        var posiciones: Array<{ y: number; x: number }> = [];
         var i: number = 0;
         for (i = 0; i < botones.length; i++) {
             var r = botones[i].getBoundingClientRect();
             var y: number = Math.round(r.top);
             var x: number = Math.round(r.left);
+            posiciones.push({ y: y, x: x });
             if (filas.indexOf(y) < 0) filas.push(y);
             if (columnas.indexOf(x) < 0) columnas.push(x);
         }
@@ -1124,9 +1294,8 @@ export class ThemeEngine {
         });
 
         for (i = 0; i < botones.length; i++) {
-            var rect = botones[i].getBoundingClientRect();
-            var fila: number = filas.indexOf(Math.round(rect.top));
-            var columna: number = columnas.indexOf(Math.round(rect.left));
+            var fila: number = filas.indexOf(posiciones[i].y);
+            var columna: number = columnas.indexOf(posiciones[i].x);
             if (fila < 0) fila = 0;
             if (columna < 0) columna = 0;
             ThemeEngine.estilo(botones[i], {
@@ -1214,10 +1383,21 @@ export class ThemeEngine {
         var celdas: any[] | null = ThemeEngine.celdasDeHQ(botones);
         if (celdas && ThemeEngine.colocarPagosPorHQ(botones, celdas, ancho, altoZona, hueco)) return;
 
+        // UNA SOLA RONDA DE MEDICIONES. Esta era la peor de las dos: cada boton se media hasta
+        // TRES veces —una para descubrir su fila, otra para su columna y otra al colocarlo— y
+        // la tercera caia DESPUES de haber escrito el estilo del boton anterior, asi que el
+        // navegador tenia que rehacer el layout en cada vuelta. Con la fila de pagos de HQ
+        // eran del orden de 3N reflujos forzados por pasada, solo aqui.
+        //
+        // Se mide una vez y el resto es aritmetica sobre lo medido. deLaFila guarda INDICES y
+        // no elementos, para poder mirar la posicion guardada de cada uno sin volver al DOM.
         var filas: number[] = [];
+        var posiciones: Array<{ y: number; x: number }> = [];
         var i: number = 0;
         for (i = 0; i < botones.length; i++) {
-            var y: number = Math.round(botones[i].getBoundingClientRect().top);
+            var r = botones[i].getBoundingClientRect();
+            var y: number = Math.round(r.top);
+            posiciones.push({ y: y, x: Math.round(r.left) });
             if (filas.indexOf(y) < 0) filas.push(y);
         }
         filas.sort(function (a: number, b: number): number { return a - b; });
@@ -1227,20 +1407,20 @@ export class ThemeEngine {
         if (altoBoton < 24) return;
 
         for (var f: number = 0; f < filas.length; f++) {
-            var deLaFila: HTMLElement[] = [];
+            var deLaFila: number[] = [];
             var columnas: number[] = [];
             for (i = 0; i < botones.length; i++) {
-                if (Math.round(botones[i].getBoundingClientRect().top) !== filas[f]) continue;
-                deLaFila.push(botones[i]);
-                var x: number = Math.round(botones[i].getBoundingClientRect().left);
-                if (columnas.indexOf(x) < 0) columnas.push(x);
+                if (posiciones[i].y !== filas[f]) continue;
+                deLaFila.push(i);
+                if (columnas.indexOf(posiciones[i].x) < 0) columnas.push(posiciones[i].x);
             }
             columnas.sort(function (a: number, b: number): number { return a - b; });
             var anchoBoton: number = Math.floor((ancho - (columnas.length - 1) * hueco) / columnas.length);
             for (i = 0; i < deLaFila.length; i++) {
-                var col: number = columnas.indexOf(Math.round(deLaFila[i].getBoundingClientRect().left));
+                var indice: number = deLaFila[i];
+                var col: number = columnas.indexOf(posiciones[indice].x);
                 if (col < 0) col = 0;
-                ThemeEngine.estilo(deLaFila[i], {
+                ThemeEngine.estilo(botones[indice], {
                     "top": (f * (altoBoton + hueco)) + "px",
                     "left": (col * (anchoBoton + hueco)) + "px",
                     "width": anchoBoton + "px",
@@ -1894,18 +2074,9 @@ export class ThemeEngine {
             }
         }
         
-        // ORDEN IMPORTANTE: primero se ANCLA la zona de pestañas al carrito y luego se mide. Al
-        // reves, ajustarNumpad y repartirPanel medirian la tarjeta en su sitio viejo.
-        ThemeEngine.anclarZonaPestanas();
-        ThemeEngine.ajustarNumpad();
-        ThemeEngine.acomodarColumnaDerecha();
-        // Se llama a los tres, pero repartirPanel() solo actua sobre el panel VISIBLE. Los otros SI
-        // estan en el DOM (el POS los oculta con display:none, no los borra) y medirlos escribia
-        // geometria basura — ver el guarda al principio de repartirPanel().
-        ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
-        ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
-        ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
+        if (!ThemeEngine.soloCarrito) ThemeEngine.colocarBotones();
         // Se desactiva sola si sobra ancho, asi que vale igual para 1024 y para 1920.
+        // SI corre en la pasada ligera: es la rejilla de la venta, justo lo que acaba de cambiar.
         ThemeEngine.encajarColumnasDeLineas();
         ThemeEngine.solicitarRecalculoPestanas();
     }
@@ -1965,7 +2136,27 @@ export class ThemeEngine {
         
         // Estilos para los botones de pago (las clases sct-p0..sct-p4 ya fueron asignadas en prepararBotones, posiciones manejadas por CSS)
 
-        // ORDEN IMPORTANTE: primero se coloca la zona de pestañas y luego se mide lo de dentro.
+        if (!ThemeEngine.soloCarrito) ThemeEngine.colocarBotones();
+        // Se desactiva sola si sobra ancho, asi que vale igual para 1024 y para 1920.
+        // SI corre en la pasada ligera: es la rejilla de la venta, justo lo que acaba de cambiar.
+        ThemeEngine.encajarColumnasDeLineas();
+    }
+
+    // ---------------------------------------------------------------- ciclo
+
+    /**
+     * GEOMETRIA DE LA BOTONERA — la parte cara de la pasada, y la unica que NO depende del
+     * carrito. Colocar el numpad y las tres cuadriculas mide cada boton y le escribe su sitio.
+     *
+     * POR QUE ESTA EXTRAIDA Y NO ESCRITA DOS VECES. Este mismo bloque vivia duplicado al final
+     * de aplicarLayoutCompacto y de aplicarLayoutAmplio. Duplicado es como esos dos layouts ya
+     * divergieron una vez —el titulo de la tarjeta Boleta solo se marcaba en el amplio—, y
+     * ahora encima habria que acordarse de poner el guarda en los dos.
+     *
+     * ORDEN IMPORTANTE: primero se ANCLA la zona de pestañas al carrito y luego se mide lo de
+     * dentro. Al reves, ajustarNumpad y repartirPanel medirian la tarjeta en su sitio viejo.
+     */
+    private static colocarBotones(): void {
         ThemeEngine.anclarZonaPestanas();
         ThemeEngine.ajustarNumpad();
         ThemeEngine.acomodarColumnaDerecha();
@@ -1975,11 +2166,7 @@ export class ThemeEngine {
         ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
         ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
         ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
-        // Se desactiva sola si sobra ancho, asi que vale igual para 1024 y para 1920.
-        ThemeEngine.encajarColumnasDeLineas();
     }
-
-    // ---------------------------------------------------------------- ciclo
 
     public static aplicarTodo(): void {
         if (!TEMA_ACTIVO) return;
@@ -2034,16 +2221,192 @@ export class ThemeEngine {
         }
     }
 
-    public static pasada(): void {
+    /** Reloj monotono si lo hay; si no, la hora del sistema. Nunca lanza. */
+    private static reloj(): number {
+        try {
+            if (typeof performance !== "undefined" && performance.now) return performance.now();
+        } catch (e) { }
+        return new Date().getTime();
+    }
+
+    /** Un decimal basta: por debajo de 0,1 ms no hay nada que optimizar. */
+    private static ms(valor: number): string {
+        return (Math.round(valor * 10) / 10).toString();
+    }
+
+    /** Escribe en el log del POS y en consola. Nunca lanza: corre dentro de un finally. */
+    private static decir(texto: string): void {
+        try {
+            if (ThemeEngine.ctx && ThemeEngine.ctx.logger && ThemeEngine.ctx.logger.logInformational) {
+                ThemeEngine.ctx.logger.logInformational(texto);
+            }
+        } catch (e) { }
+        try {
+            if (typeof console !== "undefined" && console.log) console.log(texto);
+        } catch (e) { }
+    }
+
+    /**
+     * Acumula lo que costo una pasada y decide si hay que anunciar algo.
+     *
+     * Se separa el layout (aplicarTodo) de la reconexion de observadores (observarCambios)
+     * porque son dos sospechosos distintos: el primero mide y reescribe geometria, el segundo
+     * vuelve a correr los 19 selectores de SELECTORES_OBSERVADOS en CADA pasada. Si el tiempo
+     * esta en el segundo, el arreglo es no reenganchar lo que no cambio; si esta en el
+     * primero, es separar lecturas de escrituras en los bucles de repartirPanel.
+     */
+    private static anotarPasada(origen: string, msLayout: number, msObservar: number): void {
+        var t = ThemeEngine.tiempos;
+        var total: number = msLayout + msObservar;
+        var clave: string = origen || "?";
+
+        t.pasadas++;
+        t.sumaTotal += total;
+        t.sumaLayout += msLayout;
+        t.sumaObservar += msObservar;
+        if (total > t.maxTotal) t.maxTotal = total;
+        if (msLayout > t.maxLayout) t.maxLayout = msLayout;
+        if (msObservar > t.maxObservar) t.maxObservar = msObservar;
+        t.porOrigen[clave] = (t.porOrigen[clave] || 0) + 1;
+
+        // Se publica en window para poder leerlo desde las devtools de la caja sin esperar al
+        // volcado: en una tienda, mirar una variable es mas barato que abrir el log del POS.
+        try { (window as any).SCT_TIEMPOS = t; } catch (e) { }
+
+        if (total >= ThemeEngine.MS_PASADA_LENTA) {
+            t.lentas++;
+            var ahora: number = new Date().getTime();
+            if (ahora - ThemeEngine.ultimoAvisoLento >= ThemeEngine.MS_ENTRE_AVISOS) {
+                ThemeEngine.ultimoAvisoLento = ahora;
+                ThemeEngine.decir(
+                    "SCT_TIEMPOS lenta " + ThemeEngine.ms(total) + " ms"
+                    + " | layout " + ThemeEngine.ms(msLayout)
+                    + " | observadores " + ThemeEngine.ms(msObservar)
+                    + " | origen " + clave
+                    + " | " + ThemeEngine.pantalla());
+            }
+        }
+
+        if (t.pasadas % ThemeEngine.PASADAS_POR_RESUMEN === 0) {
+            ThemeEngine.anunciarResumen();
+        }
+    }
+
+    /** Ancho y layout: la hipotesis es que las tiendas lentas son las de pantalla compacta. */
+    private static pantalla(): string {
+        return window.innerWidth + "x" + window.innerHeight
+            + " " + (ThemeEngine.esCompacto() ? "compacto" : "amplio");
+    }
+
+    /**
+     * El resumen es lo que de verdad sirve: un pico suelto no dice nada, la MEDIA sobre cien
+     * pasadas y el reparto por origen dicen si la caja esta trabajando de mas y por que camino.
+     */
+    private static anunciarResumen(): void {
+        var t = ThemeEngine.tiempos;
+        if (t.pasadas === 0) return;
+
+        var minutos: number = Math.round((new Date().getTime() - t.desde) / 60000);
+        var origenes: string = "";
+        for (var clave in t.porOrigen) {
+            if (t.porOrigen.hasOwnProperty(clave)) {
+                origenes += (origenes ? ", " : "") + clave + "=" + t.porOrigen[clave];
+            }
+        }
+
+        ThemeEngine.decir(
+            "SCT_TIEMPOS resumen: " + t.pasadas + " pasadas en " + minutos + " min"
+            + " | media " + ThemeEngine.ms(t.sumaTotal / t.pasadas) + " ms"
+            + " | max " + ThemeEngine.ms(t.maxTotal) + " ms"
+            + " | lentas(>=" + ThemeEngine.MS_PASADA_LENTA + "ms) " + t.lentas
+            + " | layout media " + ThemeEngine.ms(t.sumaLayout / t.pasadas)
+            + " max " + ThemeEngine.ms(t.maxLayout)
+            + " | observadores media " + ThemeEngine.ms(t.sumaObservar / t.pasadas)
+            + " max " + ThemeEngine.ms(t.maxObservar)
+            + " | origenes " + origenes
+            + " | diferidas por lectura " + t.diferidas
+            + " | " + ThemeEngine.pantalla());
+    }
+
+    /**
+     * Pasadas COMPLETAS que pueden esperar a que el cajero deje de escanear.
+     *
+     * POR QUE. Corriendo este motor con escaneos reales, 20 productos distintos a 700 ms costaban
+     * 40 pasadas completas: 2 por producto, compitiendo con el POS justo mientras dibuja la linea.
+     * La pasada ligera de 1.6.6 no las quitaba: las corria 60 ms. Agregar un producto no mueve
+     * ningun boton, asi que recolocar la botonera a cada escaneo era trabajo perdido.
+     *
+     * NO ESPERAN las que responden a algo que SI cambia la pantalla: un toque del cajero, un boton
+     * nuevo o un cambio de ventana. Tampoco la ligera, que es la que atiende la venta.
+     */
+    private static aplazableDuranteLectura(origen?: string): boolean {
+        return origen === "carrito-repaso" || origen === "tecla-repaso" || origen === "estilos"
+            || origen === "estilos-repaso" || origen === "diferida";
+    }
+
+    public static pasada(origen?: string): void {
         if (ThemeEngine.ocupado) return;
+
+        // NUNCA EN MEDIO DE UNA LECTURA DEL ESCANER, y las completas tampoco durante el ritmo de
+        // lectura (ver aplazableDuranteLectura).
+        //
+        // Con el paquete 1.6.6 —ya con la pasada ligera— una caja perdio una lectura: 10 pitidos y
+        // 9 productos. La hipotesis es que, si una pasada arranca mientras llegan las teclas, el
+        // hilo se ocupa y parte de ellas espera en la cola. Una lectura dura 15-30 ms (medido con
+        // el lector de la caja), asi que esa ventana es corta, pero no cuesta nada respetarla.
+        //
+        // Aplazar es seguro: la pasada vuelve con origen "diferida", que no es "carrito" y por
+        // tanto es COMPLETA, asi que nunca se rebaja una completa que estuviera pendiente. Y si
+        // por lo que sea se aplaza mas de MS_DIFERIR_MAX, corre igual.
+        var enLectura: boolean = LectorCodigoBarras.rafagaEnVuelo();
+        var enRitmo: boolean = ThemeEngine.aplazableDuranteLectura(origen)
+            && LectorCodigoBarras.lecturaReciente(ThemeEngine.MS_RITMO_LECTURA);
+
+        if (enLectura || enRitmo) {
+            var ahoraDiferida: number = new Date().getTime();
+            if (!ThemeEngine.diferidaDesde) {
+                ThemeEngine.diferidaDesde = ahoraDiferida;
+                ThemeEngine.tiempos.diferidas++;
+            }
+            if (ahoraDiferida - ThemeEngine.diferidaDesde < ThemeEngine.MS_DIFERIR_MAX) {
+                ThemeEngine.programarRepasoFinal(
+                    enLectura ? ThemeEngine.MS_REINTENTO_DIFERIDA : ThemeEngine.MS_REINTENTO_RITMO,
+                    "diferida");
+                return;
+            }
+        }
+
+        // La ligera no recoloca nada, asi que no cierra el aplazamiento: si lo hiciera, con cada
+        // producto nuevo el tope de MS_DIFERIR_MAX volveria a empezar y nunca se cumpliria.
+        if (origen !== "carrito") ThemeEngine.diferidaDesde = 0;
+
         ThemeEngine.ocupado = true;
         if (ThemeEngine.observadorDom) ThemeEngine.observadorDom.disconnect();
         if (ThemeEngine.observadorEstilos) ThemeEngine.observadorEstilos.disconnect();
+
+        // LA PASADA LIGERA. Agregar una linea a la venta no mueve el numpad ni las cuadriculas
+        // de botones, pero hasta ahora las recolocaba todas igual: con cada producto escaneado
+        // se median y reescribian decenas de botones, en el camino que el cajero esta mirando.
+        //
+        // Nadie se queda sin geometria por esto. pasadaColapsada() programa SIEMPRE un repaso con
+        // origen "<algo>-repaso", que no es "carrito" y por tanto es una pasada COMPLETA. Ese
+        // repaso espera a que termine el ritmo de lectura: ver aplazableDuranteLectura().
+        ThemeEngine.soloCarrito = (origen === "carrito");
+
+        var inicio: number = ThemeEngine.reloj();
+        var finLayout: number = inicio;
         try {
             ThemeEngine.aplicarTodo();
         } finally {
+            finLayout = ThemeEngine.reloj();
             ThemeEngine.ocupado = false;
+            ThemeEngine.soloCarrito = false;
             ThemeEngine.observarCambios();
+            // La medicion va dentro del finally y envuelta: si aplicarTodo lanzo, el error que
+            // importa es el suyo, no uno de la instrumentacion tapandolo.
+            try {
+                ThemeEngine.anotarPasada(origen || "?", finLayout - inicio, ThemeEngine.reloj() - finLayout);
+            } catch (e) { }
         }
     }
 
@@ -2054,20 +2417,20 @@ export class ThemeEngine {
      * estilo de decenas de nodos— y cada mutacion pedia su propio recorrido completo del DOM.
      * Con el colapso, la rafaga entera cuesta una pasada y el repaso final recoge lo que quede.
      */
-    private static pasadaColapsada(): void {
+    private static pasadaColapsada(origen: string): void {
         var ahora: number = new Date().getTime();
 
         if (ahora - ThemeEngine.ultimaPasadaInmediata > 120) {
             ThemeEngine.ultimaPasadaInmediata = ahora;
-            ThemeEngine.pasada();
+            ThemeEngine.pasada(origen);
         }
 
-        ThemeEngine.programarRepasoFinal(60);
+        ThemeEngine.programarRepasoFinal(60, origen + "-repaso");
     }
 
-    private static programarRepasoFinal(demora: number): void {
+    private static programarRepasoFinal(demora: number, origen: string): void {
         window.clearTimeout(ThemeEngine.temporizador);
-        ThemeEngine.temporizador = window.setTimeout((): void => { ThemeEngine.pasada(); }, demora);
+        ThemeEngine.temporizador = window.setTimeout((): void => { ThemeEngine.pasada(origen); }, demora);
     }
 
     /**
@@ -2095,14 +2458,18 @@ export class ThemeEngine {
 
             if (ahora - ThemeEngine.ultimaPasadaInmediata > 120) {
                 ThemeEngine.ultimaPasadaInmediata = ahora;
-                window.setTimeout((): void => { ThemeEngine.pasada(); }, 0);
+                window.setTimeout((): void => { ThemeEngine.pasada("toque"); }, 0);
             }
         }
 
-        ThemeEngine.programarRepasoFinal(escribiendo ? 300 : 60);
+        // El origen distingue teclado de toque a proposito: un lector de codigo de barras
+        // llega como teclado, y si las pasadas de una tienda son sobre todo "tecla-repaso",
+        // el tiempo se lo esta llevando el escaneo y no el cajero tocando la pantalla.
+        ThemeEngine.programarRepasoFinal(escribiendo ? 300 : 60, escribiendo ? "tecla-repaso" : "toque-repaso");
     }
 
-    public static iniciar(): void {
+    public static iniciar(context?: any): void {
+        if (context) ThemeEngine.ctx = context;
         if (!TEMA_ACTIVO) return;
         var estilo: HTMLStyleElement | null = document.getElementById(ThemeEngine.ID_ESTILO) as HTMLStyleElement | null;
         if (!estilo) {
@@ -2115,28 +2482,41 @@ export class ThemeEngine {
         if (ThemeEngine.observadorDom) ThemeEngine.observadorDom.disconnect();
         if (ThemeEngine.observadorEstilos) ThemeEngine.observadorEstilos.disconnect();
 
+        // SE DISTINGUE QUE APARECIO, no solo si aparecio algo.
+        //
+        // Un boton nuevo (o la cuadricula de pagos) significa que la botonera cambio y hay que
+        // recolocarla: pasada completa. Una fila .fields es la venta —un producto escaneado— y
+        // eso no mueve ni un boton: pasada ligera, que es la que el cajero esta esperando.
+        //
+        // Si aparecen las dos cosas manda el boton, porque la completa incluye a la ligera.
         ThemeEngine.observadorDom = new MutationObserver((mutaciones): void => {
-            var forzar: boolean = false;
-            for (var i: number = 0; i < mutaciones.length; i++) {
+            var botones: boolean = false;
+            var carrito: boolean = false;
+            for (var i: number = 0; i < mutaciones.length && !botones; i++) {
                 var mutacion = mutaciones[i];
                 if (mutacion.type === "childList") {
                     for (var j: number = 0; j < mutacion.addedNodes.length; j++) {
                         var nodo = mutacion.addedNodes[j] as HTMLElement;
-                        if (nodo.nodeType === 1) {
-                            if (nodo.classList && (nodo.classList.contains("buttonGridButton") || nodo.classList.contains("fields") || nodo.id === "ButtonGrid4Control")) {
-                                forzar = true; break;
+                        if (nodo.nodeType === 1 && nodo.classList) {
+                            if (nodo.classList.contains("buttonGridButton") || nodo.id === "ButtonGrid4Control") {
+                                botones = true; break;
+                            }
+                            if (nodo.classList.contains("fields")) {
+                                carrito = true;
                             }
                         }
                     }
                 }
             }
-            if (forzar) {
-                ThemeEngine.pasadaColapsada();
+            if (botones) {
+                ThemeEngine.pasadaColapsada("dom");
+            } else if (carrito) {
+                ThemeEngine.pasadaColapsada("carrito");
             }
         });
 
         ThemeEngine.observadorEstilos = new MutationObserver((): void => {
-            ThemeEngine.pasadaColapsada();
+            ThemeEngine.pasadaColapsada("estilos");
         });
 
         ThemeEngine.observarCambios();
@@ -2147,13 +2527,21 @@ export class ThemeEngine {
                 document.addEventListener(eventos[i], ThemeEngine.alInteractuar, true);
             }
             window.addEventListener("resize", () => {
-                ThemeEngine.pasada();
-                ThemeEngine.programarRepasoFinal(60);
+                ThemeEngine.pasada("resize");
+                ThemeEngine.programarRepasoFinal(60, "resize-repaso");
             });
             ThemeEngine.vigilarToquesMultiples();
             ThemeEngine.eventosRegistrados = true;
         }
 
-        ThemeEngine.pasada();
+        ThemeEngine.pasada("inicio");
+
+        // Deja constancia de que la caja esta midiendo y con que umbral. Sin esta linea, un log
+        // sin avisos de pasada lenta es ambiguo: no se sabe si la caja va bien o si el paquete
+        // que corre no trae la medicion.
+        ThemeEngine.decir(
+            "SCT_TIEMPOS medicion activa | umbral " + ThemeEngine.MS_PASADA_LENTA + " ms"
+            + " | resumen cada " + ThemeEngine.PASADAS_POR_RESUMEN + " pasadas"
+            + " | " + ThemeEngine.pantalla());
     }
 }

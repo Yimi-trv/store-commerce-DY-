@@ -1,11 +1,14 @@
-System.register(["./ThemeAssets"], function (exports_1, context_1) {
+System.register(["./ThemeAssets", "../Services/LectorCodigoBarras"], function (exports_1, context_1) {
     "use strict";
-    var ThemeAssets_1, ThemeEngine;
+    var ThemeAssets_1, LectorCodigoBarras_1, ThemeEngine;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
             function (ThemeAssets_1_1) {
                 ThemeAssets_1 = ThemeAssets_1_1;
+            },
+            function (LectorCodigoBarras_1_1) {
+                LectorCodigoBarras_1 = LectorCodigoBarras_1_1;
             }
         ],
         execute: function () {
@@ -209,6 +212,10 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         ThemeEngine.lineasVistas = ahora;
                         return;
                     }
+                    if (new Date().getTime() - ThemeEngine.ultimoAvisoPorVenta < ThemeEngine.MS_SILENCIO_PANTALLA) {
+                        ThemeEngine.lineasVistas = ahora;
+                        return;
+                    }
                     var aviso = "";
                     for (var cod in ahora) {
                         if (!ahora.hasOwnProperty(cod))
@@ -226,6 +233,49 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     ThemeEngine.lineasVistas = ahora;
                     if (aviso)
                         ThemeEngine.mostrarAviso(aviso);
+                };
+                ThemeEngine.anunciarVenta = function (detalles, carrito) {
+                    try {
+                        if (!ThemeAssets_1.TEMA_ACTIVO || !ThemeEngine.eventosRegistrados)
+                            return;
+                        var lineas = carrito && carrito.CartLines ? carrito.CartLines : null;
+                        if (!lineas)
+                            return;
+                        var lista = detalles || [];
+                        var aviso = "";
+                        for (var i = 0; i < lista.length; i++) {
+                            var detalle = lista[i] || {};
+                            var agregada = Number(detalle.quantity) || 0;
+                            var producto = detalle.product || {};
+                            var codigo = String(producto.ItemId || "").replace(/\s+/g, "");
+                            if (agregada <= 0 || !codigo)
+                                continue;
+                            var total = 0;
+                            var nombre = "";
+                            for (var j = 0; j < lineas.length; j++) {
+                                var linea = lineas[j];
+                                if (!linea || linea.IsVoided)
+                                    continue;
+                                if (String(linea.ItemId || "").replace(/\s+/g, "") !== codigo)
+                                    continue;
+                                total += Number(linea.Quantity) || 0;
+                                if (!nombre && linea.Description)
+                                    nombre = String(linea.Description);
+                            }
+                            if (total < agregada)
+                                return;
+                            nombre = nombre || producto.Name || codigo;
+                            var previa = total - agregada;
+                            aviso = previa > 0
+                                ? nombre + "   " + ThemeEngine.numero(previa) + " → " + ThemeEngine.numero(total)
+                                : "+ " + nombre + "   (" + ThemeEngine.numero(total) + ")";
+                        }
+                        if (!aviso)
+                            return;
+                        ThemeEngine.ultimoAvisoPorVenta = new Date().getTime();
+                        ThemeEngine.mostrarAviso(aviso);
+                    }
+                    catch (e) { }
                 };
                 ThemeEngine.vigilarLineas = function () {
                     var pane = ThemeEngine.q(".transactionLinesPane");
@@ -638,11 +688,13 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         return;
                     var filas = [];
                     var columnas = [];
+                    var posiciones = [];
                     var i = 0;
                     for (i = 0; i < botones.length; i++) {
                         var r = botones[i].getBoundingClientRect();
                         var y = Math.round(r.top);
                         var x = Math.round(r.left);
+                        posiciones.push({ y: y, x: x });
                         if (filas.indexOf(y) < 0)
                             filas.push(y);
                         if (columnas.indexOf(x) < 0)
@@ -665,9 +717,8 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         "height": altoTotal + "px"
                     });
                     for (i = 0; i < botones.length; i++) {
-                        var rect = botones[i].getBoundingClientRect();
-                        var fila = filas.indexOf(Math.round(rect.top));
-                        var columna = columnas.indexOf(Math.round(rect.left));
+                        var fila = filas.indexOf(posiciones[i].y);
+                        var columna = columnas.indexOf(posiciones[i].x);
                         if (fila < 0)
                             fila = 0;
                         if (columna < 0)
@@ -728,9 +779,12 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     if (celdas && ThemeEngine.colocarPagosPorHQ(botones, celdas, ancho, altoZona, hueco))
                         return;
                     var filas = [];
+                    var posiciones = [];
                     var i = 0;
                     for (i = 0; i < botones.length; i++) {
-                        var y = Math.round(botones[i].getBoundingClientRect().top);
+                        var r = botones[i].getBoundingClientRect();
+                        var y = Math.round(r.top);
+                        posiciones.push({ y: y, x: Math.round(r.left) });
                         if (filas.indexOf(y) < 0)
                             filas.push(y);
                     }
@@ -744,20 +798,20 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         var deLaFila = [];
                         var columnas = [];
                         for (i = 0; i < botones.length; i++) {
-                            if (Math.round(botones[i].getBoundingClientRect().top) !== filas[f])
+                            if (posiciones[i].y !== filas[f])
                                 continue;
-                            deLaFila.push(botones[i]);
-                            var x = Math.round(botones[i].getBoundingClientRect().left);
-                            if (columnas.indexOf(x) < 0)
-                                columnas.push(x);
+                            deLaFila.push(i);
+                            if (columnas.indexOf(posiciones[i].x) < 0)
+                                columnas.push(posiciones[i].x);
                         }
                         columnas.sort(function (a, b) { return a - b; });
                         var anchoBoton = Math.floor((ancho - (columnas.length - 1) * hueco) / columnas.length);
                         for (i = 0; i < deLaFila.length; i++) {
-                            var col = columnas.indexOf(Math.round(deLaFila[i].getBoundingClientRect().left));
+                            var indice = deLaFila[i];
+                            var col = columnas.indexOf(posiciones[indice].x);
                             if (col < 0)
                                 col = 0;
-                            ThemeEngine.estilo(deLaFila[i], {
+                            ThemeEngine.estilo(botones[indice], {
                                 "top": (f * (altoBoton + hueco)) + "px",
                                 "left": (col * (anchoBoton + hueco)) + "px",
                                 "width": anchoBoton + "px",
@@ -1146,12 +1200,8 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                                 hojas[0].classList.add("sct-live-direccion");
                         }
                     }
-                    ThemeEngine.anclarZonaPestanas();
-                    ThemeEngine.ajustarNumpad();
-                    ThemeEngine.acomodarColumnaDerecha();
-                    ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
-                    ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
-                    ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
+                    if (!ThemeEngine.soloCarrito)
+                        ThemeEngine.colocarBotones();
                     ThemeEngine.encajarColumnasDeLineas();
                     ThemeEngine.solicitarRecalculoPestanas();
                 };
@@ -1205,13 +1255,17 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         }
                     }
                     ThemeEngine.decorarBoleto(ThemeEngine.todos("#ButtonGrid3Control .buttonGridButton"));
+                    if (!ThemeEngine.soloCarrito)
+                        ThemeEngine.colocarBotones();
+                    ThemeEngine.encajarColumnasDeLineas();
+                };
+                ThemeEngine.colocarBotones = function () {
                     ThemeEngine.anclarZonaPestanas();
                     ThemeEngine.ajustarNumpad();
                     ThemeEngine.acomodarColumnaDerecha();
                     ThemeEngine.repartirPanel("ButtonGrid1Control", 1.27);
                     ThemeEngine.repartirPanel("ButtonGrid2Control", 1.27);
                     ThemeEngine.repartirPanel("ButtonGrid3Control", 1.27);
-                    ThemeEngine.encajarColumnasDeLineas();
                 };
                 ThemeEngine.aplicarTodo = function () {
                     if (!ThemeAssets_1.TEMA_ACTIVO)
@@ -1268,33 +1322,148 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         }
                     }
                 };
-                ThemeEngine.pasada = function () {
+                ThemeEngine.reloj = function () {
+                    try {
+                        if (typeof performance !== "undefined" && performance.now)
+                            return performance.now();
+                    }
+                    catch (e) { }
+                    return new Date().getTime();
+                };
+                ThemeEngine.ms = function (valor) {
+                    return (Math.round(valor * 10) / 10).toString();
+                };
+                ThemeEngine.decir = function (texto) {
+                    try {
+                        if (ThemeEngine.ctx && ThemeEngine.ctx.logger && ThemeEngine.ctx.logger.logInformational) {
+                            ThemeEngine.ctx.logger.logInformational(texto);
+                        }
+                    }
+                    catch (e) { }
+                    try {
+                        if (typeof console !== "undefined" && console.log)
+                            console.log(texto);
+                    }
+                    catch (e) { }
+                };
+                ThemeEngine.anotarPasada = function (origen, msLayout, msObservar) {
+                    var t = ThemeEngine.tiempos;
+                    var total = msLayout + msObservar;
+                    var clave = origen || "?";
+                    t.pasadas++;
+                    t.sumaTotal += total;
+                    t.sumaLayout += msLayout;
+                    t.sumaObservar += msObservar;
+                    if (total > t.maxTotal)
+                        t.maxTotal = total;
+                    if (msLayout > t.maxLayout)
+                        t.maxLayout = msLayout;
+                    if (msObservar > t.maxObservar)
+                        t.maxObservar = msObservar;
+                    t.porOrigen[clave] = (t.porOrigen[clave] || 0) + 1;
+                    try {
+                        window.SCT_TIEMPOS = t;
+                    }
+                    catch (e) { }
+                    if (total >= ThemeEngine.MS_PASADA_LENTA) {
+                        t.lentas++;
+                        var ahora = new Date().getTime();
+                        if (ahora - ThemeEngine.ultimoAvisoLento >= ThemeEngine.MS_ENTRE_AVISOS) {
+                            ThemeEngine.ultimoAvisoLento = ahora;
+                            ThemeEngine.decir("SCT_TIEMPOS lenta " + ThemeEngine.ms(total) + " ms"
+                                + " | layout " + ThemeEngine.ms(msLayout)
+                                + " | observadores " + ThemeEngine.ms(msObservar)
+                                + " | origen " + clave
+                                + " | " + ThemeEngine.pantalla());
+                        }
+                    }
+                    if (t.pasadas % ThemeEngine.PASADAS_POR_RESUMEN === 0) {
+                        ThemeEngine.anunciarResumen();
+                    }
+                };
+                ThemeEngine.pantalla = function () {
+                    return window.innerWidth + "x" + window.innerHeight
+                        + " " + (ThemeEngine.esCompacto() ? "compacto" : "amplio");
+                };
+                ThemeEngine.anunciarResumen = function () {
+                    var t = ThemeEngine.tiempos;
+                    if (t.pasadas === 0)
+                        return;
+                    var minutos = Math.round((new Date().getTime() - t.desde) / 60000);
+                    var origenes = "";
+                    for (var clave in t.porOrigen) {
+                        if (t.porOrigen.hasOwnProperty(clave)) {
+                            origenes += (origenes ? ", " : "") + clave + "=" + t.porOrigen[clave];
+                        }
+                    }
+                    ThemeEngine.decir("SCT_TIEMPOS resumen: " + t.pasadas + " pasadas en " + minutos + " min"
+                        + " | media " + ThemeEngine.ms(t.sumaTotal / t.pasadas) + " ms"
+                        + " | max " + ThemeEngine.ms(t.maxTotal) + " ms"
+                        + " | lentas(>=" + ThemeEngine.MS_PASADA_LENTA + "ms) " + t.lentas
+                        + " | layout media " + ThemeEngine.ms(t.sumaLayout / t.pasadas)
+                        + " max " + ThemeEngine.ms(t.maxLayout)
+                        + " | observadores media " + ThemeEngine.ms(t.sumaObservar / t.pasadas)
+                        + " max " + ThemeEngine.ms(t.maxObservar)
+                        + " | origenes " + origenes
+                        + " | diferidas por lectura " + t.diferidas
+                        + " | " + ThemeEngine.pantalla());
+                };
+                ThemeEngine.aplazableDuranteLectura = function (origen) {
+                    return origen === "carrito-repaso" || origen === "tecla-repaso" || origen === "estilos"
+                        || origen === "estilos-repaso" || origen === "diferida";
+                };
+                ThemeEngine.pasada = function (origen) {
                     if (ThemeEngine.ocupado)
                         return;
+                    var enLectura = LectorCodigoBarras_1.default.rafagaEnVuelo();
+                    var enRitmo = ThemeEngine.aplazableDuranteLectura(origen)
+                        && LectorCodigoBarras_1.default.lecturaReciente(ThemeEngine.MS_RITMO_LECTURA);
+                    if (enLectura || enRitmo) {
+                        var ahoraDiferida = new Date().getTime();
+                        if (!ThemeEngine.diferidaDesde) {
+                            ThemeEngine.diferidaDesde = ahoraDiferida;
+                            ThemeEngine.tiempos.diferidas++;
+                        }
+                        if (ahoraDiferida - ThemeEngine.diferidaDesde < ThemeEngine.MS_DIFERIR_MAX) {
+                            ThemeEngine.programarRepasoFinal(enLectura ? ThemeEngine.MS_REINTENTO_DIFERIDA : ThemeEngine.MS_REINTENTO_RITMO, "diferida");
+                            return;
+                        }
+                    }
+                    if (origen !== "carrito")
+                        ThemeEngine.diferidaDesde = 0;
                     ThemeEngine.ocupado = true;
                     if (ThemeEngine.observadorDom)
                         ThemeEngine.observadorDom.disconnect();
                     if (ThemeEngine.observadorEstilos)
                         ThemeEngine.observadorEstilos.disconnect();
+                    ThemeEngine.soloCarrito = (origen === "carrito");
+                    var inicio = ThemeEngine.reloj();
+                    var finLayout = inicio;
                     try {
                         ThemeEngine.aplicarTodo();
                     }
                     finally {
+                        finLayout = ThemeEngine.reloj();
                         ThemeEngine.ocupado = false;
+                        ThemeEngine.soloCarrito = false;
                         ThemeEngine.observarCambios();
+                        try {
+                            ThemeEngine.anotarPasada(origen || "?", finLayout - inicio, ThemeEngine.reloj() - finLayout);
+                        }
+                        catch (e) { }
                     }
                 };
-                ThemeEngine.pasadaColapsada = function () {
+                ThemeEngine.pasadaColapsada = function (origen) {
                     var ahora = new Date().getTime();
                     if (ahora - ThemeEngine.ultimaPasadaInmediata > 120) {
                         ThemeEngine.ultimaPasadaInmediata = ahora;
-                        ThemeEngine.pasada();
+                        ThemeEngine.pasada(origen);
                     }
-                    ThemeEngine.programarRepasoFinal(60);
+                    ThemeEngine.programarRepasoFinal(60, origen + "-repaso");
                 };
-                ThemeEngine.programarRepasoFinal = function (demora) {
+                ThemeEngine.programarRepasoFinal = function (demora, origen) {
                     window.clearTimeout(ThemeEngine.temporizador);
-                    ThemeEngine.temporizador = window.setTimeout(function () { ThemeEngine.pasada(); }, demora);
+                    ThemeEngine.temporizador = window.setTimeout(function () { ThemeEngine.pasada(origen); }, demora);
                 };
                 ThemeEngine.alInteractuar = function (evento) {
                     var tipo = (evento && evento.type) || "";
@@ -1303,12 +1472,14 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                         var ahora = new Date().getTime();
                         if (ahora - ThemeEngine.ultimaPasadaInmediata > 120) {
                             ThemeEngine.ultimaPasadaInmediata = ahora;
-                            window.setTimeout(function () { ThemeEngine.pasada(); }, 0);
+                            window.setTimeout(function () { ThemeEngine.pasada("toque"); }, 0);
                         }
                     }
-                    ThemeEngine.programarRepasoFinal(escribiendo ? 300 : 60);
+                    ThemeEngine.programarRepasoFinal(escribiendo ? 300 : 60, escribiendo ? "tecla-repaso" : "toque-repaso");
                 };
-                ThemeEngine.iniciar = function () {
+                ThemeEngine.iniciar = function (context) {
+                    if (context)
+                        ThemeEngine.ctx = context;
                     if (!ThemeAssets_1.TEMA_ACTIVO)
                         return;
                     var estilo = document.getElementById(ThemeEngine.ID_ESTILO);
@@ -1323,27 +1494,34 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                     if (ThemeEngine.observadorEstilos)
                         ThemeEngine.observadorEstilos.disconnect();
                     ThemeEngine.observadorDom = new MutationObserver(function (mutaciones) {
-                        var forzar = false;
-                        for (var i = 0; i < mutaciones.length; i++) {
+                        var botones = false;
+                        var carrito = false;
+                        for (var i = 0; i < mutaciones.length && !botones; i++) {
                             var mutacion = mutaciones[i];
                             if (mutacion.type === "childList") {
                                 for (var j = 0; j < mutacion.addedNodes.length; j++) {
                                     var nodo = mutacion.addedNodes[j];
-                                    if (nodo.nodeType === 1) {
-                                        if (nodo.classList && (nodo.classList.contains("buttonGridButton") || nodo.classList.contains("fields") || nodo.id === "ButtonGrid4Control")) {
-                                            forzar = true;
+                                    if (nodo.nodeType === 1 && nodo.classList) {
+                                        if (nodo.classList.contains("buttonGridButton") || nodo.id === "ButtonGrid4Control") {
+                                            botones = true;
                                             break;
+                                        }
+                                        if (nodo.classList.contains("fields")) {
+                                            carrito = true;
                                         }
                                     }
                                 }
                             }
                         }
-                        if (forzar) {
-                            ThemeEngine.pasadaColapsada();
+                        if (botones) {
+                            ThemeEngine.pasadaColapsada("dom");
+                        }
+                        else if (carrito) {
+                            ThemeEngine.pasadaColapsada("carrito");
                         }
                     });
                     ThemeEngine.observadorEstilos = new MutationObserver(function () {
-                        ThemeEngine.pasadaColapsada();
+                        ThemeEngine.pasadaColapsada("estilos");
                     });
                     ThemeEngine.observarCambios();
                     var eventos = ["focusin", "click", "keyup", "mouseup", "pointerup"];
@@ -1352,19 +1530,28 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                             document.addEventListener(eventos[i], ThemeEngine.alInteractuar, true);
                         }
                         window.addEventListener("resize", function () {
-                            ThemeEngine.pasada();
-                            ThemeEngine.programarRepasoFinal(60);
+                            ThemeEngine.pasada("resize");
+                            ThemeEngine.programarRepasoFinal(60, "resize-repaso");
                         });
                         ThemeEngine.vigilarToquesMultiples();
                         ThemeEngine.eventosRegistrados = true;
                     }
-                    ThemeEngine.pasada();
+                    ThemeEngine.pasada("inicio");
+                    ThemeEngine.decir("SCT_TIEMPOS medicion activa | umbral " + ThemeEngine.MS_PASADA_LENTA + " ms"
+                        + " | resumen cada " + ThemeEngine.PASADAS_POR_RESUMEN + " pasadas"
+                        + " | " + ThemeEngine.pantalla());
                 };
                 ThemeEngine.ID_ESTILO = "sct-theme";
                 ThemeEngine.ultimaPasadaInmediata = 0;
                 ThemeEngine.observadorDom = null;
                 ThemeEngine.observadorEstilos = null;
                 ThemeEngine.ocupado = false;
+                ThemeEngine.soloCarrito = false;
+                ThemeEngine.MS_DIFERIR_MAX = 3000;
+                ThemeEngine.MS_REINTENTO_DIFERIDA = 80;
+                ThemeEngine.MS_RITMO_LECTURA = 1200;
+                ThemeEngine.MS_REINTENTO_RITMO = 250;
+                ThemeEngine.diferidaDesde = 0;
                 ThemeEngine.temporizador = 0;
                 ThemeEngine.temporizadorSalidaAmbito = 0;
                 ThemeEngine.eventosRegistrados = false;
@@ -1381,6 +1568,8 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                 ThemeEngine.observadorLineas = null;
                 ThemeEngine.paneVigilado = null;
                 ThemeEngine.temporizadorLineas = 0;
+                ThemeEngine.MS_SILENCIO_PANTALLA = 1500;
+                ThemeEngine.ultimoAvisoPorVenta = 0;
                 ThemeEngine.punteroActivo = -1;
                 ThemeEngine.marcaPuntero = 0;
                 ThemeEngine.MS_SUELTA_PUNTERO = 1500;
@@ -1388,6 +1577,20 @@ System.register(["./ThemeAssets"], function (exports_1, context_1) {
                 ThemeEngine.sondaEstilos = null;
                 ThemeEngine.estilosNormalizados = {};
                 ThemeEngine.recalculoPestanasSolicitado = false;
+                ThemeEngine.MS_PASADA_LENTA = 50;
+                ThemeEngine.PASADAS_POR_RESUMEN = 100;
+                ThemeEngine.MS_ENTRE_AVISOS = 10000;
+                ThemeEngine.ctx = null;
+                ThemeEngine.ultimoAvisoLento = 0;
+                ThemeEngine.tiempos = {
+                    pasadas: 0, lentas: 0,
+                    sumaTotal: 0, maxTotal: 0,
+                    sumaLayout: 0, maxLayout: 0,
+                    sumaObservar: 0, maxObservar: 0,
+                    porOrigen: {},
+                    diferidas: 0,
+                    desde: new Date().getTime()
+                };
                 ThemeEngine.SELECTORES_OBSERVADOS = [
                     "#TransactionGrid", "#TotalsPanel", "#TotalsPanel .fields.row", "#TotalsPanel .panel-footer",
                     ".sct-live-zona-cliente", ".sct-live-zona-montos", ".sct-live-direccion",

@@ -9,8 +9,9 @@ Extensión de Dynamics 365 Commerce para el CSU: **API de facturación electrón
 | Componente | Qué hace |
 |---|---|
 | `src/CommerceRuntime` | API CRT: `TRU_ValesItems` (qué artículos son bebida alcohólica — ver [`docs/vale-sin-alcohol.md`](docs/vale-sin-alcohol.md)), `TRU_SalesTransactions` (consultas con filtros/paginación), `TRU_ElectronicDocuments` (TXT FE), `TRU_GeographicData/ResolveUbigeo` (nombres SUNAT → códigos D365), `TRU_Diagnostics` (sondas del channel DB), `PosExtensionPackagesService` (descubrimiento del paquete POS) |
-| `src/PosExtension` | Módulo clientes en el POS: botón **Consultar SUNAT** (RUC/DNI → datos + padrones + dirección automática validada) y **SunatPadronesControl** (8 padrones editables con refresco en vivo). Además, la regla del **vale con restricción**: cuatro triggers que impiden pagar bebidas alcohólicas con un vale cuyo código empieza con `TA` |
-| `src/ScaleUnit.Api` | Empaquetador: genera el `CloudScaleUnitExtensionPackage.zip` para LCS. Incluye `dp-overrides/` (guard anti descarga duplicada del TXT + fixes del DP) |
+| `src/CommerceRuntime.Impuestos` | Handler entre DP y el motor estándar: evita repetir el cálculo de impuestos cuando la transacción no cambió (DP lo pide hasta 3 veces por recálculo). Se registra **después de DP** en `Customization.settings`; estado en `TRU_Diagnostics/Run(mode='Impuestos',receiptId='')` |
+| `src/PosExtension` | Módulo clientes en el POS: botón **Consultar SUNAT** (RUC/DNI → datos + padrones + dirección automática validada) y **SunatPadronesControl** (8 padrones editables con refresco en vivo). Además, la regla del **vale con restricción**: cuatro triggers que impiden pagar bebidas alcohólicas con un vale cuyo código empieza con `TA`. También `BotonesDePago`: un Enter no abre el cobro y los intentos quedan en el log con el prefijo `SCT_PAGO` |
+| `src/ScaleUnit.Api` | Empaquetador: genera el `CloudScaleUnitExtensionPackage.zip` para LCS. Incluye `dp-overrides/` (guard anti descarga duplicada del TXT + fixes del DP) y `sql/` (scripts propios, fuera de la entrega de DP) |
 | `10.0.47-4/` | Entrega de la localización DP que el build fusiona al paquete (DLL CRT + POS + 13 SQL) |
 
 ## Requisitos

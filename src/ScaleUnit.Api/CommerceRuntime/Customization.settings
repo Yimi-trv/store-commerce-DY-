@@ -2,6 +2,8 @@
 <commerceRuntimeExtensions>
   <composition>
     <add source="assembly" value="DP.LocalizacionPeru.CommerceRuntime" />
+    <!-- Tiene que quedar DESPUES de DP: el handler se ubica entre DP y el motor de impuestos. -->
+    <add source="assembly" value="Trujillo.PeruEInvoicing.Impuestos" />
   </composition>
   <settings />
 </commerceRuntimeExtensions>

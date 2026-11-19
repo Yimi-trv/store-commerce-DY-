@@ -1,4 +1,4 @@
-System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "../Theme/ThemeEngine"], function (exports_1, context_1) {
+System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "../Theme/ThemeEngine", "../Services/LectorCodigoBarras", "../Services/BotonesDePago"], function (exports_1, context_1) {
     "use strict";
     var __extends = (this && this.__extends) || (function () {
         var extendStatics = function (d, b) {
@@ -15,7 +15,7 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "../Theme/ThemeEn
             d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
         };
     })();
-    var ApplicationTriggers_1, ThemeEngine_1, ApplyThemeTrigger;
+    var ApplicationTriggers_1, ThemeEngine_1, LectorCodigoBarras_1, BotonesDePago_1, ApplyThemeTrigger;
     var __moduleName = context_1 && context_1.id;
     return {
         setters: [
@@ -24,6 +24,12 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "../Theme/ThemeEn
             },
             function (ThemeEngine_1_1) {
                 ThemeEngine_1 = ThemeEngine_1_1;
+            },
+            function (LectorCodigoBarras_1_1) {
+                LectorCodigoBarras_1 = LectorCodigoBarras_1_1;
+            },
+            function (BotonesDePago_1_1) {
+                BotonesDePago_1 = BotonesDePago_1_1;
             }
         ],
         execute: function () {
@@ -33,7 +39,9 @@ System.register(["PosApi/Extend/Triggers/ApplicationTriggers", "../Theme/ThemeEn
                     return _super !== null && _super.apply(this, arguments) || this;
                 }
                 ApplyThemeTrigger.prototype.execute = function (options) {
-                    ThemeEngine_1.ThemeEngine.iniciar();
+                    LectorCodigoBarras_1.default.instalar(this.context);
+                    BotonesDePago_1.default.instalar(this.context);
+                    ThemeEngine_1.ThemeEngine.iniciar(this.context);
                     return Promise.resolve();
                 };
                 return ApplyThemeTrigger;

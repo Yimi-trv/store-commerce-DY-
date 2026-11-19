@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>Trujillo.PeruEInvoicing.Impuestos</AssemblyName>
+    <RootNamespace>Trujillo.PeruEInvoicing.Impuestos</RootNamespace>
+    <Version>1.0.0.0</Version>
+  </PropertyGroup>
+
+  <!-- Sin Microsoft.Dynamics.Commerce.Sdk.Runtime a proposito: ese paquete hace que el empaquetador
+       registre el ensamblado ANTES que DP en CommerceRuntime.ext.config, y este handler tiene que
+       quedar DESPUES (precedencia "primero registrado gana"). Se registra a mano en
+       ScaleUnit.Api\CommerceRuntime\Customization.settings. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Dynamics.Commerce.Runtime.Services.Messages" Version="9.51.25108.2" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

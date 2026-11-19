@@ -2,7 +2,7 @@
  "$schema": "./devDependencies/schemas/manifestSchema.json",
  "name": "RegenerateFE",
  "publisher": "DP",
- "version": "1.6.5",
+ "version": "1.6.10",
  "minimumPosVersion": "9.51.0.0",
  "description": "Extension POS: consulta de RUC y DNI via SUNAT en Customer Add/Edit + vale de consumo con restriccion (los que empiezan con TA no pagan bebidas alcoholicas) + tema visual Trujillo Market (layout amplio y compacto 1024x768)",
  "components": {
@@ -60,9 +60,21 @@
     },
     {
      "triggerType": "PostProductSale",
+     "modulePath": "Triggers/AvisoProductoTrigger",
+     "name": "AvisoProductoTrigger",
+     "description": "Muestra el aviso de producto agregado o sumado en el momento en que el producto entra a la venta, con la cantidad del carrito, en vez de esperar a que se repinte la pantalla."
+    },
+    {
+     "triggerType": "PostProductSale",
      "modulePath": "Triggers/DefaultCustomerTrigger",
      "name": "DefaultCustomerTrigger",
      "description": "Asigna el cliente descriptivo (TRV-000001) al agregar un producto si la venta no tiene cliente, para que el panel muestre la tarjeta y la boleta salga con cliente desde el primer articulo."
+    },
+    {
+     "triggerType": "PostProductSale",
+     "modulePath": "Triggers/LectorProductoTrigger",
+     "name": "LectorProductoTrigger",
+     "description": "Avisa a LectorCodigoBarras de cada producto que entra a la venta, para emparejarlo con su lectura y detectar escaneos perdidos."
     },
     {
      "triggerType": "ApplicationStart",
@@ -75,6 +87,12 @@
      "modulePath": "Triggers/PrePaymentDocumentTypeTrigger",
      "name": "PrePaymentDocumentTypeTrigger",
      "description": "Impide cobrar si el comprobante elegido no corresponde al documento del cliente: boleta a un RUC, o factura a un cliente sin RUC."
+    },
+    {
+     "triggerType": "PrePayment",
+     "modulePath": "Triggers/PagoSinToqueTrigger",
+     "name": "PagoSinToqueTrigger",
+     "description": "Deja constancia en el log cuando un pago arranca sin que se haya tocado un boton de pago. Solo anota, nunca cancela."
     },
     {
      "triggerType": "PreEndTransaction",

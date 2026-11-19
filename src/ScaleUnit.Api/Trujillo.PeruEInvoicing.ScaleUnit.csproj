@@ -9,7 +9,7 @@
     <PackageDescription>API de consulta de transacciones y descarga de TXT de facturacion electronica</PackageDescription>
     <PackageName>Trujillo.PeruEInvoicing.ScaleUnit</PackageName>
     <PackagePublisher>DP</PackagePublisher>
-    <PackageVersion>2.10.5.0</PackageVersion>
+    <PackageVersion>2.10.11.0</PackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +19,9 @@
   <ItemGroup>
     <!-- CRT extension -->
     <ProjectReference Include="..\CommerceRuntime\RegenerateFE.CommerceRuntime.csproj" />
+    <!-- Solo para compilarlo antes: su DLL se agrega abajo y se registra en Customization.settings,
+         porque tiene que quedar despues de DP en CommerceRuntime.ext.config. -->
+    <ProjectReference Include="..\CommerceRuntime.Impuestos\Trujillo.PeruEInvoicing.Impuestos.csproj" ReferenceOutputAssembly="false" Private="false" />
     <!-- POS extension (SOLO builds de prueba: msbuild -p:IncludePos=true). Prod = API-only (default). -->
     <ProjectReference Include="..\PosExtension\Terranova.PosExtension.csproj" Condition="'$(IncludePos)' == 'true'" />
   </ItemGroup>
@@ -41,6 +44,7 @@
   <Target Name="IncludeDPExtensionDlls" AfterTargets="GetUpstreamPackagingOutput" BeforeTargets="GenerateSdkPackage">
     <ItemGroup>
       <CommerceRuntime_Ext_Files Include="..\..\10.0.47-4\RetailServer\Code\bin\ext\DP.LocalizacionPeru.CommerceRuntime.dll" />
+      <CommerceRuntime_Ext_Files Include="..\CommerceRuntime.Impuestos\bin\$(Configuration)\netstandard2.0\Trujillo.PeruEInvoicing.Impuestos.dll" />
     </ItemGroup>
   </Target>
 
@@ -83,6 +87,14 @@
       <DPSqlScripts Include="..\..\10.0.47-4\RetailServer\Data\Upgrade\Custom\*.sql" />
     </ItemGroup>
     <Copy SourceFiles="@(DPSqlScripts)"
+          DestinationFolder="$(OutputPath)CloudScaleUnitExtensionPackage\RetailServer\Data\Upgrade\Custom\"
+          SkipUnchangedFiles="true" />
+
+    <!-- SQL propio: fuera de 10.0.47-4 para que una entrega nueva de DP no lo pise. -->
+    <ItemGroup>
+      <TruSqlScripts Include="sql\*.sql" />
+    </ItemGroup>
+    <Copy SourceFiles="@(TruSqlScripts)"
           DestinationFolder="$(OutputPath)CloudScaleUnitExtensionPackage\RetailServer\Data\Upgrade\Custom\"
           SkipUnchangedFiles="true" />
 

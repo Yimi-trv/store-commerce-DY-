@@ -34,6 +34,11 @@ lo DUPLICÁS → el POS puede cargarlo dos veces → triggers registrados 2 vece
 dobles (nuestro TXT descargado duplicado) y sus operaciones fallan al re-registrarse
 (Error visible en Paquetes de extensión). Reportá SOLO lo tuyo.
 
+**7b. Un handler que deba ir DESPUÉS de DP no puede usar `Microsoft.Dynamics.Commerce.Sdk.Runtime`.**
+Ese paquete hace que el empaquetador lo registre primero en `CommerceRuntime.ext.config`, y gana
+el primero registrado. Va sin ese paquete, con `ReferenceOutputAssembly="false"` en el
+empaquetador y registrado a mano en `Customization.settings`. Verificá el orden en el ZIP.
+
 ## POS
 
 **8. Triggers idempotentes, siempre.**
@@ -62,6 +67,11 @@ ZIP. Código muerto: exclusión explícita en `tsconfig` (documentada), no comen
 **13. Caché de extensiones en la caja.**
 Tras deploy: cerrar la app POR COMPLETO. Si el manifest de un paquete no bumpea `version`,
 la caja puede servir el bundle viejo — bump del campo `version` invalida.
+
+**13b. Un Enter con foco en un botón de pago abre el cobro.**
+Con el numpad vacío, el Enter genera un clic de teclado (`detail` 0, x=0, y=0) sobre el botón con
+foco. `BotonesDePago` descarta ese clic y deja el aviso `SCT_PAGO` en el log. No canceles el
+`keydown`: es el mismo Enter que usa el lector para agregar el producto.
 
 ## Plataforma / Operación
 
